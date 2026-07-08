@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Ourchival Clipper",
+  "version": "0.0.1",
+  "description": "Save images and source metadata to your private Ourchival vault.",
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+  "action": {
+    "default_title": "Save to Ourchival",
+    "default_popup": "popup.html"
+  }
+}
