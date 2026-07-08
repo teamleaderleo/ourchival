@@ -1,0 +1,12 @@
+node_modules
+.next
+dist
+build
+out
+.convex
+.env
+.env.local
+.env.*.local
+.DS_Store
+pnpm-debug.log*
+*.tsbuildinfo
