@@ -93,7 +93,7 @@ http.route({
 
     const referenceId = await ctx.db.insert("references", {
       kind,
-      title: pageTitle,
+      ...(pageTitle ? { title: pageTitle } : {}),
       sourceUrl,
       platform,
       capturedAt,
@@ -116,8 +116,8 @@ http.route({
 
     await ctx.db.insert("sourceSnapshots", {
       referenceId,
-      pageTitle,
-      selectedText,
+      ...(pageTitle ? { pageTitle } : {}),
+      ...(selectedText ? { selectedText } : {}),
       jsonMetadata: JSON.stringify(body),
       createdAt: Date.now(),
     });
