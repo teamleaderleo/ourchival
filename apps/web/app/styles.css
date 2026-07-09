@@ -332,6 +332,12 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.inspector-actions .danger {
+  background: transparent;
+  color: #f0b8a8;
+  border: 1px solid color-mix(in srgb, #f0b8a8, transparent 58%);
+}
+
 @media (max-width: 1180px) {
   .vault-workspace {
     grid-template-columns: 190px minmax(0, 1fr);
