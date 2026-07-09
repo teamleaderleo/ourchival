@@ -98,13 +98,31 @@ h1 {
 }
 
 .manual-capture input,
-.vault-toolbar input {
+.vault-toolbar input,
+.inspector-fields input,
+.inspector-fields textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 11px 12px;
   background: var(--bg);
   color: var(--text);
+  font: inherit;
+}
+
+.inspector-fields textarea {
+  resize: vertical;
+  min-height: 64px;
+  line-height: 1.45;
+}
+
+.manual-capture input:focus-visible,
+.vault-toolbar input:focus-visible,
+.inspector-fields input:focus-visible,
+.inspector-fields textarea:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent), transparent 30%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 82%);
 }
 
 .endpoint-panel code {
@@ -231,8 +249,74 @@ button:disabled {
   border-color: color-mix(in srgb, var(--accent), transparent 28%);
 }
 
+.card.selected {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent), transparent 40%);
+}
+
 .card:hover {
   transform: translateY(-2px);
+}
+
+.card:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent), transparent 28%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 78%);
+}
+
+.thumb-wrap {
+  position: relative;
+}
+
+.favorite-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg), transparent 15%);
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.favorite-toggle:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent), transparent 48%);
+}
+
+.favorite-toggle.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent), transparent 40%);
+}
+
+.favorite-toggle.inline {
+  position: static;
+  flex: none;
+}
+
+.pill-toggle {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.pill-toggle.active {
+  background: color-mix(in srgb, var(--accent), transparent 84%);
+  border-color: color-mix(in srgb, var(--accent), transparent 48%);
+  color: var(--accent);
+}
+
+.toolbar-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .empty-card {
@@ -286,9 +370,48 @@ button:disabled {
   background: var(--panel-2);
 }
 
+.inspector-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.inspector-heading h2 {
+  font-size: 1.05rem;
+  margin: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
 .selected-reference h2 {
   font-size: 1.05rem;
   margin: 14px 0;
+}
+
+.inspector-fields {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.inspector-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.status-line {
+  overflow-wrap: anywhere;
+}
+
+.status-error {
+  color: #f0b8a8;
+}
+
+.status-success {
+  color: color-mix(in srgb, var(--accent), var(--text) 30%);
 }
 
 .selected-reference dl {

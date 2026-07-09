@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
 
 type ReferenceAsset = {
   _id: string;
@@ -17,6 +17,8 @@ type SavedReference = {
   _id: string;
   kind: string;
   title?: string;
+  notes?: string;
+  favorite?: boolean;
   sourceUrl: string;
   platform: string;
   capturedAt: number;
@@ -29,6 +31,8 @@ type ReferencesResponse = {
   error?: string;
 };
 
+type StatusTone = "info" | "success" | "error";
+
 const projectShelves = [
   "Current study",
   "Character ideas",
@@ -40,32 +44,51 @@ export function ReferenceVault() {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
   const [references, setReferences] = useState<SavedReference[]>([]);
   const [status, setStatus] = useState("Loading saved references…");
+  const [statusTone, setStatusTone] = useState<StatusTone>("info");
   const [refreshKey, setRefreshKey] = useState(0);
   const [sourceUrl, setSourceUrl] = useState("");
   const [assetUrl, setAssetUrl] = useState("");
   const [pageTitle, setPageTitle] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [query, setQuery] = useState("");
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [activeShelf, setActiveShelf] = useState(projectShelves[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  function report(message: string, tone: StatusTone = "info") {
+    setStatus(message);
+    setStatusTone(tone);
+  }
+
   const filteredReferences = useMemo(() => {
+    let list = references;
+
+    if (favoritesOnly) {
+      list = list.filter((reference) => reference.favorite);
+    }
+
     const needle = query.trim().toLowerCase();
-    if (!needle) return references;
+    if (needle) {
+      list = list.filter((reference) =>
+        [reference.title, reference.notes, reference.sourceUrl, reference.platform, reference.kind]
+          .filter(Boolean)
+          .some((value) => value?.toLowerCase().includes(needle)),
+      );
+    }
 
-    return references.filter((reference) => {
-      return [reference.title, reference.sourceUrl, reference.platform, reference.kind]
-        .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(needle));
-    });
-  }, [query, references]);
+    return list;
+  }, [query, references, favoritesOnly]);
 
+  // Explicit selection wins; otherwise show the first visible card in the inspector.
   const selectedReference =
-    references.find((reference) => reference._id === selectedId) ?? filteredReferences[0];
+    filteredReferences.find((reference) => reference._id === selectedId) ?? filteredReferences[0];
 
   useEffect(() => {
     if (!siteUrl) {
-      setStatus("Add NEXT_PUBLIC_CONVEX_URL or NEXT_PUBLIC_CONVEX_SITE_URL to load saved references.");
+      report(
+        "Add NEXT_PUBLIC_CONVEX_URL or NEXT_PUBLIC_CONVEX_SITE_URL to load saved references.",
+        "error",
+      );
       return;
     }
 
@@ -79,15 +102,15 @@ export function ReferenceVault() {
         if (cancelled) return;
 
         if (!response.ok || body.ok === false) {
-          setStatus(body.error ?? response.statusText);
+          report(body.error ?? response.statusText, "error");
           return;
         }
 
         setReferences(body.references ?? []);
-        setStatus(`Loaded ${body.references?.length ?? 0} saved references.`);
+        report(`Loaded ${body.references?.length ?? 0} saved references.`, "info");
       } catch (error) {
         if (cancelled) return;
-        setStatus(error instanceof Error ? error.message : "Could not load saved references.");
+        report(error instanceof Error ? error.message : "Could not load saved references.", "error");
       }
     }
 
@@ -105,12 +128,12 @@ export function ReferenceVault() {
     event.preventDefault();
 
     if (!siteUrl) {
-      setStatus("Add a Convex site URL before saving.");
+      report("Add a Convex site URL before saving.", "error");
       return;
     }
 
     setIsSaving(true);
-    setStatus("Saving reference…");
+    report("Saving reference…", "info");
 
     try {
       const response = await fetch(`${siteUrl}/capture`, {
@@ -134,7 +157,7 @@ export function ReferenceVault() {
       };
 
       if (!response.ok || body.ok === false) {
-        setStatus(body.error ?? response.statusText);
+        report(body.error ?? response.statusText, "error");
         return;
       }
 
@@ -142,12 +165,55 @@ export function ReferenceVault() {
       setAssetUrl("");
       setPageTitle("");
       setRefreshKey((key) => key + 1);
-      setStatus(`Saved reference. ${body.storageStatus ?? ""}`.trim());
+      report(`Saved reference. ${body.storageStatus ?? ""}`.trim(), "success");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not save reference.");
+      report(error instanceof Error ? error.message : "Could not save reference.", "error");
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function patchReference(referenceId: string, patch: Partial<SavedReference>) {
+    if (!siteUrl) {
+      report("Add a Convex site URL before editing.", "error");
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${siteUrl}/reference?id=${encodeURIComponent(referenceId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const body = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+
+      if (!response.ok || body.ok === false) {
+        report(body.error ?? response.statusText, "error");
+        return false;
+      }
+
+      setReferences((items) =>
+        items.map((item) => (item._id === referenceId ? { ...item, ...patch } : item)),
+      );
+      return true;
+    } catch (error) {
+      report(error instanceof Error ? error.message : "Could not update reference.", "error");
+      return false;
+    }
+  }
+
+  async function toggleFavorite(reference: SavedReference) {
+    const next = !reference.favorite;
+    const ok = await patchReference(reference._id, { favorite: next });
+    if (ok) {
+      report(next ? "Marked as favorite." : "Removed from favorites.", "success");
+    }
+  }
+
+  async function saveDetails(referenceId: string, patch: { title?: string; notes?: string }) {
+    const ok = await patchReference(referenceId, patch);
+    if (ok) report("Reference details saved.", "success");
+    return ok;
   }
 
   async function deleteReference(referenceId: string) {
@@ -163,17 +229,19 @@ export function ReferenceVault() {
       const body = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
 
       if (!response.ok || body.ok === false) {
-        setStatus(body.error ?? response.statusText);
+        report(body.error ?? response.statusText, "error");
         return;
       }
 
       setReferences((items) => items.filter((item) => item._id !== referenceId));
       setSelectedId(null);
-      setStatus("Reference removed from Reliquary. Original file kept.");
+      report("Reference removed from Reliquary. Original file kept.", "success");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not delete reference.");
+      report(error instanceof Error ? error.message : "Could not delete reference.", "error");
     }
   }
+
+  const favoriteCount = references.filter((reference) => reference.favorite).length;
 
   return (
     <>
@@ -196,6 +264,7 @@ export function ReferenceVault() {
           Source URL
           <input
             required
+            type="url"
             value={sourceUrl}
             onChange={(event) => setSourceUrl(event.target.value)}
             placeholder="https://example.com/post"
@@ -204,6 +273,7 @@ export function ReferenceVault() {
         <label>
           Image URL
           <input
+            type="url"
             value={assetUrl}
             onChange={(event) => setAssetUrl(event.target.value)}
             placeholder="https://example.com/image.jpg"
@@ -226,6 +296,7 @@ export function ReferenceVault() {
           <div className="shelf-list">
             {projectShelves.map((shelf) => (
               <button
+                type="button"
                 className={shelf === activeShelf ? "active" : ""}
                 key={shelf}
                 onClick={() => setActiveShelf(shelf)}
@@ -237,7 +308,7 @@ export function ReferenceVault() {
 
           <div className="sidebar-block">
             <p className="eyebrow">Status</p>
-            <p>{status}</p>
+            <p className={`status-line status-${statusTone}`}>{status}</p>
           </div>
         </aside>
 
@@ -246,46 +317,85 @@ export function ReferenceVault() {
             <label>
               Search references
               <input
+                type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="artist, source, lighting, x.com…"
               />
             </label>
             <div className="toolbar-actions">
-              <button>Upload</button>
-              <button>New board</button>
-              <button>Export pack</button>
+              <button
+                type="button"
+                className={`pill-toggle ${favoritesOnly ? "active" : ""}`}
+                aria-pressed={favoritesOnly}
+                onClick={() => setFavoritesOnly((value) => !value)}
+              >
+                {favoritesOnly ? "★ Favorites" : "☆ Favorites"}
+                {favoriteCount > 0 ? ` (${favoriteCount})` : ""}
+              </button>
+              <button type="button" disabled title="Not wired up yet">
+                Upload
+              </button>
+              <button type="button" disabled title="Not wired up yet">
+                New board
+              </button>
+              <button type="button" disabled title="Not wired up yet">
+                Export pack
+              </button>
             </div>
           </div>
 
           <div className="result-summary">
             <strong>{filteredReferences.length}</strong> references · {activeShelf}
+            {favoritesOnly ? " · favorites only" : ""}
           </div>
 
           <section className="grid">
             {filteredReferences.length === 0 ? (
               <article className="empty-card">
-                <h2>Your Reliquary is waiting.</h2>
-                <p>Right-click an image in Edge, save it to Ourchival, then watch it appear here.</p>
+                <h2>{favoritesOnly || query ? "No matching references." : "Your Reliquary is waiting."}</h2>
+                <p>
+                  {favoritesOnly || query
+                    ? "Try clearing the search or the favorites filter."
+                    : "Right-click an image in Edge, save it to Ourchival, then watch it appear here."}
+                </p>
               </article>
             ) : (
               filteredReferences.map((reference) => {
                 const asset = reference.assets[0];
                 const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
-                const isSelected = selectedReference?._id === reference._id;
+                const isSelected = reference._id === selectedId;
 
                 return (
                   <article
                     className={`card ${isSelected ? "selected" : ""}`}
                     key={reference._id}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isSelected}
                     onClick={() => setSelectedId(reference._id)}
+                    onKeyDown={(event: KeyboardEvent<HTMLElement>) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedId(reference._id);
+                      }
+                    }}
                   >
-                    {imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img className="thumb" src={imageUrl} alt={reference.title ?? "Saved reference"} />
-                    ) : (
-                      <div className="thumb placeholder" />
-                    )}
+                    <div className="thumb-wrap">
+                      <ThumbImage imageUrl={imageUrl} title={reference.title} />
+                      <button
+                        type="button"
+                        className={`favorite-toggle ${reference.favorite ? "active" : ""}`}
+                        aria-label={reference.favorite ? "Remove from favorites" : "Add to favorites"}
+                        aria-pressed={Boolean(reference.favorite)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void toggleFavorite(reference);
+                        }}
+                      >
+                        {reference.favorite ? "★" : "☆"}
+                      </button>
+                    </div>
                     <h2>{reference.title || reference.sourceUrl}</h2>
                     <p>{reference.platform} · {new Date(reference.capturedAt).toLocaleString()}</p>
                   </article>
@@ -298,7 +408,13 @@ export function ReferenceVault() {
         <aside className="inspector">
           <p className="eyebrow">Inspector</p>
           {selectedReference ? (
-            <SelectedReference reference={selectedReference} onDelete={deleteReference} />
+            <SelectedReference
+              key={selectedReference._id}
+              reference={selectedReference}
+              onDelete={deleteReference}
+              onToggleFavorite={toggleFavorite}
+              onSaveDetails={saveDetails}
+            />
           ) : (
             <p>Select a reference to view source, project use, and actions.</p>
           )}
@@ -308,26 +424,79 @@ export function ReferenceVault() {
   );
 }
 
+function ThumbImage({ imageUrl, title }: { imageUrl?: string | null; title?: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!imageUrl || failed) {
+    return <div className="thumb placeholder" aria-hidden={!title} />;
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className="thumb"
+      src={imageUrl}
+      alt={title ?? "Saved reference"}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function SelectedReference({
   reference,
   onDelete,
+  onToggleFavorite,
+  onSaveDetails,
 }: {
   reference: SavedReference;
   onDelete: (referenceId: string) => void;
+  onToggleFavorite: (reference: SavedReference) => void;
+  onSaveDetails: (referenceId: string, patch: { title?: string; notes?: string }) => Promise<boolean>;
 }) {
   const asset = reference.assets[0];
   const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
 
+  const [titleDraft, setTitleDraft] = useState(reference.title ?? "");
+  const [notesDraft, setNotesDraft] = useState(reference.notes ?? "");
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const isDirty =
+    titleDraft.trim() !== (reference.title ?? "") || notesDraft.trim() !== (reference.notes ?? "");
+
+  async function handleSave() {
+    setSavingDetails(true);
+    await onSaveDetails(reference._id, { title: titleDraft.trim(), notes: notesDraft.trim() });
+    setSavingDetails(false);
+  }
+
   return (
     <div className="selected-reference">
-      {imageUrl ? (
+      {imageUrl && !imageFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={imageUrl} alt={reference.title ?? "Selected reference"} />
+        <img
+          src={imageUrl}
+          alt={reference.title ?? "Selected reference"}
+          onError={() => setImageFailed(true)}
+        />
       ) : (
         <div className="selected-placeholder" />
       )}
 
-      <h2>{reference.title || "Untitled reference"}</h2>
+      <div className="inspector-heading">
+        <h2>{reference.title || "Untitled reference"}</h2>
+        <button
+          type="button"
+          className={`favorite-toggle inline ${reference.favorite ? "active" : ""}`}
+          aria-label={reference.favorite ? "Remove from favorites" : "Add to favorites"}
+          aria-pressed={Boolean(reference.favorite)}
+          onClick={() => onToggleFavorite(reference)}
+        >
+          {reference.favorite ? "★" : "☆"}
+        </button>
+      </div>
+
       <dl>
         <div>
           <dt>Platform</dt>
@@ -349,6 +518,29 @@ function SelectedReference({
         ) : null}
       </dl>
 
+      <div className="inspector-fields">
+        <label>
+          Title
+          <input
+            value={titleDraft}
+            onChange={(event) => setTitleDraft(event.target.value)}
+            placeholder="Name this reference"
+          />
+        </label>
+        <label>
+          Notes
+          <textarea
+            value={notesDraft}
+            onChange={(event) => setNotesDraft(event.target.value)}
+            placeholder="Lighting, palette, why you saved it…"
+            rows={3}
+          />
+        </label>
+        <button type="button" onClick={handleSave} disabled={!isDirty || savingDetails}>
+          {savingDetails ? "Saving…" : "Save details"}
+        </button>
+      </div>
+
       <div className="inspector-actions">
         <a href={reference.sourceUrl} target="_blank" rel="noreferrer">
           Open source
@@ -363,8 +555,10 @@ function SelectedReference({
             Open image
           </a>
         ) : null}
-        <button>Add to project</button>
-        <button className="danger" onClick={() => onDelete(reference._id)}>
+        <button type="button" disabled title="Not wired up yet">
+          Add to project
+        </button>
+        <button type="button" className="danger" onClick={() => onDelete(reference._id)}>
           Remove reference
         </button>
       </div>
