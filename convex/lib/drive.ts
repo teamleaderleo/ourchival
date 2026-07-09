@@ -67,7 +67,7 @@ export async function uploadBlobToDrive(args: {
   const boundary = `ourchival_${crypto.randomUUID()}`;
   const delimiter = `--${boundary}`;
   const closeDelimiter = `--${boundary}--`;
-  const mimeType = args.mimeType ?? args.blob.type || "application/octet-stream";
+  const mimeType = (args.mimeType ?? args.blob.type) || "application/octet-stream";
 
   const body = new Blob(
     [
