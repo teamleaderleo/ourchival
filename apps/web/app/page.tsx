@@ -1,15 +1,4 @@
-const sampleReferences = [
-  {
-    title: "First saved reference",
-    source: "https://example.com/source",
-    tags: ["study", "lighting", "composition"],
-  },
-  {
-    title: "Character silhouette study",
-    source: "Manual upload",
-    tags: ["character", "form", "gesture"],
-  },
-];
+import { ReferenceVault } from "./ReferenceVault";
 
 export default function HomePage() {
   return (
@@ -23,26 +12,7 @@ export default function HomePage() {
         </p>
       </section>
 
-      <section className="toolbar">
-        <button>Upload reference</button>
-        <button>New board</button>
-        <button>Install clipper</button>
-      </section>
-
-      <section className="grid">
-        {sampleReferences.map((reference) => (
-          <article className="card" key={reference.title}>
-            <div className="thumb" />
-            <h2>{reference.title}</h2>
-            <p>{reference.source}</p>
-            <div className="tags">
-              {reference.tags.map((tag) => (
-                <span key={tag}>{tag}</span>
-              ))}
-            </div>
-          </article>
-        ))}
-      </section>
+      <ReferenceVault />
     </main>
   );
 }
