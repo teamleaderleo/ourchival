@@ -59,12 +59,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       error?: string;
       referenceId?: string;
       assetId?: string | null;
+      storageStatus?: string;
     };
 
     await markResult({
       ok: response.ok && body.ok !== false,
       status: response.status,
-      message: response.ok ? "Saved to Ourchival." : body.error ?? response.statusText,
+      message: response.ok
+        ? ["Saved to Ourchival.", body.storageStatus].filter(Boolean).join(" ")
+        : body.error ?? response.statusText,
+      storageStatus: body.storageStatus,
       referenceId: body.referenceId,
       assetId: body.assetId,
       savedAt: new Date().toISOString(),
