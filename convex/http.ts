@@ -9,7 +9,7 @@ const maxRemoteAssetBytes = 25 * 1024 * 1024;
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
 };
 
 type CaptureBody = {
@@ -19,6 +19,13 @@ type CaptureBody = {
   pageTitle?: string;
   selectedText?: string;
   capturedAt?: string;
+};
+
+type UpdateReferenceBody = {
+  title?: string;
+  notes?: string;
+  favorite?: boolean;
+  archived?: boolean;
 };
 
 type StoredRemoteAsset = {
@@ -48,6 +55,17 @@ http.route({
 
 http.route({
   path: "/references",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
+  }),
+});
+
+http.route({
+  path: "/reference",
   method: "OPTIONS",
   handler: httpAction(async () => {
     return new Response(null, {
@@ -105,10 +123,12 @@ http.route({
       .query("references")
       .withIndex("by_captured_at")
       .order("desc")
-      .take(80);
+      .take(120);
+
+    const visibleReferences = references.filter((reference) => !reference.deleted);
 
     const items = await Promise.all(
-      references.map(async (reference) => {
+      visibleReferences.map(async (reference) => {
         const assets = await ctx.db
           .query("assets")
           .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
@@ -130,6 +150,58 @@ http.route({
     );
 
     return jsonResponse({ ok: true, references: items });
+  }),
+});
+
+http.route({
+  path: "/reference",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const referenceId = url.searchParams.get("id");
+
+    if (!referenceId) {
+      return jsonResponse({ ok: false, error: "id is required" }, 400);
+    }
+
+    let body: UpdateReferenceBody;
+
+    try {
+      body = (await request.json()) as UpdateReferenceBody;
+    } catch {
+      return jsonResponse({ ok: false, error: "Invalid JSON" }, 400);
+    }
+
+    const patch = {
+      ...(typeof body.title === "string" ? { title: body.title.trim() || undefined } : {}),
+      ...(typeof body.notes === "string" ? { notes: body.notes.trim() || undefined } : {}),
+      ...(typeof body.favorite === "boolean" ? { favorite: body.favorite } : {}),
+      ...(typeof body.archived === "boolean" ? { archived: body.archived } : {}),
+    };
+
+    await ctx.db.patch(referenceId as any, patch);
+
+    return jsonResponse({ ok: true });
+  }),
+});
+
+http.route({
+  path: "/reference",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const referenceId = url.searchParams.get("id");
+
+    if (!referenceId) {
+      return jsonResponse({ ok: false, error: "id is required" }, 400);
+    }
+
+    await ctx.db.patch(referenceId as any, {
+      deleted: true,
+      archived: true,
+    });
+
+    return jsonResponse({ ok: true });
   }),
 });
 
