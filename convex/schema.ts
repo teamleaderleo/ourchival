@@ -43,10 +43,23 @@ export default defineSchema({
 
   assets: defineTable({
     referenceId: v.id("references"),
+    storageProvider: v.optional(
+      v.union(
+        v.literal("google_drive"),
+        v.literal("convex"),
+        v.literal("linked"),
+      ),
+    ),
     originalStorageId: v.optional(v.id("_storage")),
     previewStorageId: v.optional(v.id("_storage")),
     thumbStorageId: v.optional(v.id("_storage")),
     originalUrl: v.optional(v.string()),
+    driveFileId: v.optional(v.string()),
+    driveFolderId: v.optional(v.string()),
+    driveWebViewLink: v.optional(v.string()),
+    driveWebContentLink: v.optional(v.string()),
+    driveThumbnailLink: v.optional(v.string()),
+    driveMimeType: v.optional(v.string()),
     mimeType: v.optional(v.string()),
     originalFileName: v.optional(v.string()),
     width: v.optional(v.number()),
@@ -55,7 +68,9 @@ export default defineSchema({
     contentHash: v.optional(v.string()),
     perceptualHash: v.optional(v.string()),
     dominantColors: v.array(v.string()),
-  }).index("by_reference", ["referenceId"]),
+  })
+    .index("by_reference", ["referenceId"])
+    .index("by_drive_file_id", ["driveFileId"]),
 
   boards: defineTable({
     name: v.string(),
@@ -63,6 +78,46 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_name", ["name"]),
+
+  projects: defineTable({
+    name: v.string(),
+    description: v.optional(v.string()),
+    status: v.union(
+      v.literal("active"),
+      v.literal("paused"),
+      v.literal("finished"),
+      v.literal("archived"),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_name", ["name"]),
+
+  projectReferences: defineTable({
+    projectId: v.id("projects"),
+    referenceId: v.id("references"),
+    assetId: v.optional(v.id("assets")),
+    reason: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_reference", ["referenceId"]),
+
+  exports: defineTable({
+    referenceId: v.id("references"),
+    assetId: v.optional(v.id("assets")),
+    target: v.union(
+      v.literal("download"),
+      v.literal("clip_studio_paint"),
+      v.literal("procreate"),
+      v.literal("google_photos"),
+      v.literal("other"),
+    ),
+    createdAt: v.number(),
+  }).index("by_reference", ["referenceId"]),
 
   tags: defineTable({
     name: v.string(),
