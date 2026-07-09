@@ -19,9 +19,12 @@ export type SavedReference = {
   assets: ReferenceAsset[];
 };
 
+export type ReferenceLane = "all" | "images" | "links";
+
 export type ReferenceFilterOptions = {
   query?: string;
   favoritesOnly?: boolean;
+  lane?: ReferenceLane;
 };
 
 export function filterReferences(
@@ -29,6 +32,10 @@ export function filterReferences(
   options: ReferenceFilterOptions = {},
 ) {
   let list = references;
+
+  if (options.lane && options.lane !== "all") {
+    list = list.filter((reference) => referenceMode(reference.kind) === options.lane);
+  }
 
   if (options.favoritesOnly) {
     list = list.filter((reference) => reference.favorite);
@@ -53,17 +60,26 @@ export function getSelectedReference(
   return visibleReferences.find((reference) => reference._id === selectedId) ?? visibleReferences[0];
 }
 
-export function assetLabel(asset: ReferenceAsset | undefined) {
-  if (!asset) return "Page only";
+export function assetLabel(asset: ReferenceAsset | undefined, kind?: string) {
+  if (!asset) return referenceMode(kind ?? "") === "links" ? "Link only" : "Page only";
   if (asset.storageProvider === "google_drive") return "Google Drive original";
   if (asset.storageProvider === "convex") return "Convex fallback original";
   if (asset.storageProvider === "linked") return "Linked source URL";
   if (asset.storedUrl) return "Stored original";
   if (asset.originalUrl) return "Linked URL";
-  return "Page only";
+  return referenceMode(kind ?? "") === "links" ? "Link only" : "Page only";
 }
 
-export function referenceMode(kind: string) {
+export function referenceMode(kind: string): Exclude<ReferenceLane, "all"> {
   if (kind === "link" || kind === "article" || kind === "page") return "links";
   return "images";
+}
+
+export function referenceKindLabel(kind: string) {
+  if (kind === "link") return "Link";
+  if (kind === "article") return "Article";
+  if (kind === "page") return "Page";
+  if (kind === "image") return "Image";
+  if (kind === "post") return "Post";
+  return "Reference";
 }
