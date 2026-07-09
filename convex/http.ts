@@ -20,6 +20,13 @@ type CaptureBody = {
   capturedAt?: string;
 };
 
+type StoredRemoteAsset = {
+  status: string;
+  storageId?: any;
+  mimeType?: string;
+  fileSize?: number;
+};
+
 http.route({
   path: "/capture",
   method: "OPTIONS",
@@ -144,9 +151,9 @@ http.route({
 });
 
 async function fetchAndStoreRemoteAsset(
-  ctx: { storage: { store: (blob: Blob) => Promise<string> } },
+  ctx: { storage: { store: (blob: Blob) => Promise<any> } },
   assetUrl: string,
-) {
+): Promise<StoredRemoteAsset> {
   try {
     const response = await fetch(assetUrl, {
       headers: {
