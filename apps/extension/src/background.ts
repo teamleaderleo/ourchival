@@ -15,21 +15,20 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 
   chrome.contextMenus.create({
+    id: "save-link-to-ourchival",
+    title: "Save link to Ourchival",
+    contexts: ["link"],
+  });
+
+  chrome.contextMenus.create({
     id: "save-page-to-ourchival",
     title: "Save page to Ourchival",
-    contexts: ["page", "selection", "link"],
+    contexts: ["page", "selection"],
   });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  const payload: CapturePayload = {
-    kind: info.srcUrl ? "image" : "page",
-    sourceUrl: info.pageUrl ?? tab?.url ?? "",
-    assetUrl: info.srcUrl,
-    pageTitle: tab?.title,
-    selectedText: info.selectionText,
-    capturedAt: new Date().toISOString(),
-  };
+  const payload = buildCapturePayload(info, tab);
 
   await saveLastCapture(payload);
 
@@ -81,6 +80,40 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     });
   }
 });
+
+function buildCapturePayload(
+  info: chrome.contextMenus.OnClickData,
+  tab?: chrome.tabs.Tab,
+): CapturePayload {
+  if (info.srcUrl) {
+    return {
+      kind: "image",
+      sourceUrl: info.pageUrl ?? tab?.url ?? info.srcUrl,
+      assetUrl: info.srcUrl,
+      pageTitle: tab?.title,
+      selectedText: info.selectionText,
+      capturedAt: new Date().toISOString(),
+    };
+  }
+
+  if (info.linkUrl) {
+    return {
+      kind: "link",
+      sourceUrl: info.linkUrl,
+      pageTitle: info.linkText || tab?.title,
+      selectedText: info.selectionText,
+      capturedAt: new Date().toISOString(),
+    };
+  }
+
+  return {
+    kind: "page",
+    sourceUrl: info.pageUrl ?? tab?.url ?? "",
+    pageTitle: tab?.title,
+    selectedText: info.selectionText,
+    capturedAt: new Date().toISOString(),
+  };
+}
 
 async function markResult(result: CaptureResult) {
   await saveLastResult(result);
