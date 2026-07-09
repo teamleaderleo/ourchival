@@ -74,7 +74,9 @@ Right-click an image in Edge and choose:
 Save image to Ourchival
 ```
 
-The extension badge will show a checkmark on success. The Reliquary gallery refreshes every few seconds.
+The extension badge will show a checkmark on success. The popup reports whether Convex stored the image file or only captured the source URL.
+
+The Reliquary gallery refreshes every few seconds. It prefers stored Convex file URLs and falls back to the original image URL.
 
 ## Manual test path
 
