@@ -21,12 +21,13 @@ Save a reference through either path:
 
 Saved references appear in the Reliquary gallery with:
 
-- image URL
+- image URL or proxied Drive original
 - source URL
 - page title when available
 - platform detection
 - capture timestamp
 - source snapshot metadata
+- storage provider status
 
 ## Setup
 
@@ -43,28 +44,32 @@ pnpm dev
 
 For full local instructions, see [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md).
 
+For Google Drive storage, see [`docs/GOOGLE_DRIVE.md`](docs/GOOGLE_DRIVE.md).
+
 Copy `.env.example` to `.env.local` and fill in your Convex values.
 
 ## Scripts
 
 ```bash
-pnpm dev              # run web app
-pnpm extension:dev    # run extension dev build
-pnpm extension:build  # build Edge/Chrome extension
-pnpm build            # build all packages/apps
-pnpm lint             # lint
-pnpm typecheck        # typecheck
-pnpm convex:dev       # start Convex dev
+pnpm dev                # run web app
+pnpm extension:dev      # run extension dev build
+pnpm extension:build    # build Edge/Chrome extension
+pnpm google:drive-auth  # generate Google Drive refresh token
+pnpm build              # build all packages/apps
+pnpm lint               # lint
+pnpm typecheck          # typecheck
+pnpm convex:dev         # start Convex dev
 ```
 
 ## HTTP endpoints
 
 ```txt
 GET  /references
+GET  /drive-file?id=...
 POST /capture
 ```
 
-The extension and manual web form both write through `/capture`.
+The extension and manual web form both write through `/capture`. Drive-backed images render through `/drive-file` so originals can stay private.
 
 ## Storage principle
 
@@ -78,4 +83,4 @@ Ourchival keeps files portable:
   metadata.json
 ```
 
-The database tracks source, tags, boards, projects, notes, and generated metadata.
+The database tracks source, tags, boards, projects, notes, Drive file IDs, and generated metadata.
