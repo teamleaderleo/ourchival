@@ -26,6 +26,13 @@ type ReferencesResponse = {
   error?: string;
 };
 
+const projectShelves = [
+  "Current study",
+  "Character ideas",
+  "Color language",
+  "CSP handoff",
+];
+
 export function ReferenceVault() {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
   const [references, setReferences] = useState<SavedReference[]>([]);
@@ -35,6 +42,23 @@ export function ReferenceVault() {
   const [assetUrl, setAssetUrl] = useState("");
   const [pageTitle, setPageTitle] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeShelf, setActiveShelf] = useState(projectShelves[0]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const filteredReferences = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return references;
+
+    return references.filter((reference) => {
+      return [reference.title, reference.sourceUrl, reference.platform, reference.kind]
+        .filter(Boolean)
+        .some((value) => value?.toLowerCase().includes(needle));
+    });
+  }, [query, references]);
+
+  const selectedReference =
+    references.find((reference) => reference._id === selectedId) ?? filteredReferences[0];
 
   useEffect(() => {
     if (!siteUrl) {
@@ -168,43 +192,135 @@ export function ReferenceVault() {
         <button disabled={isSaving}>{isSaving ? "Saving…" : "Save reference"}</button>
       </form>
 
-      <section className="toolbar">
-        <button>Upload reference</button>
-        <button>New board</button>
-        <button>Install clipper</button>
-        <span>{status}</span>
-      </section>
+      <section className="vault-workspace">
+        <aside className="vault-sidebar">
+          <p className="eyebrow">Projects</p>
+          <div className="shelf-list">
+            {projectShelves.map((shelf) => (
+              <button
+                className={shelf === activeShelf ? "active" : ""}
+                key={shelf}
+                onClick={() => setActiveShelf(shelf)}
+              >
+                {shelf}
+              </button>
+            ))}
+          </div>
 
-      <section className="grid">
-        {references.length === 0 ? (
-          <article className="empty-card">
-            <h2>Your Reliquary is waiting.</h2>
-            <p>Right-click an image in Edge, save it to Ourchival, then watch it appear here.</p>
-          </article>
-        ) : (
-          references.map((reference) => {
-            const asset = reference.assets[0];
-            const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
+          <div className="sidebar-block">
+            <p className="eyebrow">Status</p>
+            <p>{status}</p>
+          </div>
+        </aside>
 
-            return (
-              <article className="card" key={reference._id}>
-                {imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img className="thumb" src={imageUrl} alt={reference.title ?? "Saved reference"} />
-                ) : (
-                  <div className="thumb placeholder" />
-                )}
-                <h2>{reference.title || reference.sourceUrl}</h2>
-                <p>{reference.platform} · {new Date(reference.capturedAt).toLocaleString()}</p>
-                <a href={reference.sourceUrl} target="_blank" rel="noreferrer">
-                  Open source
-                </a>
+        <section className="vault-main">
+          <div className="vault-toolbar">
+            <label>
+              Search references
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="artist, source, lighting, x.com…"
+              />
+            </label>
+            <div className="toolbar-actions">
+              <button>Upload</button>
+              <button>New board</button>
+              <button>Export pack</button>
+            </div>
+          </div>
+
+          <div className="result-summary">
+            <strong>{filteredReferences.length}</strong> references · {activeShelf}
+          </div>
+
+          <section className="grid">
+            {filteredReferences.length === 0 ? (
+              <article className="empty-card">
+                <h2>Your Reliquary is waiting.</h2>
+                <p>Right-click an image in Edge, save it to Ourchival, then watch it appear here.</p>
               </article>
-            );
-          })
-        )}
+            ) : (
+              filteredReferences.map((reference) => {
+                const asset = reference.assets[0];
+                const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
+                const isSelected = selectedReference?._id === reference._id;
+
+                return (
+                  <article
+                    className={`card ${isSelected ? "selected" : ""}`}
+                    key={reference._id}
+                    onClick={() => setSelectedId(reference._id)}
+                  >
+                    {imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img className="thumb" src={imageUrl} alt={reference.title ?? "Saved reference"} />
+                    ) : (
+                      <div className="thumb placeholder" />
+                    )}
+                    <h2>{reference.title || reference.sourceUrl}</h2>
+                    <p>{reference.platform} · {new Date(reference.capturedAt).toLocaleString()}</p>
+                  </article>
+                );
+              })
+            )}
+          </section>
+        </section>
+
+        <aside className="inspector">
+          <p className="eyebrow">Inspector</p>
+          {selectedReference ? (
+            <SelectedReference reference={selectedReference} />
+          ) : (
+            <p>Select a reference to view source, project use, and actions.</p>
+          )}
+        </aside>
       </section>
     </>
+  );
+}
+
+function SelectedReference({ reference }: { reference: SavedReference }) {
+  const asset = reference.assets[0];
+  const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
+
+  return (
+    <div className="selected-reference">
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageUrl} alt={reference.title ?? "Selected reference"} />
+      ) : (
+        <div className="selected-placeholder" />
+      )}
+
+      <h2>{reference.title || "Untitled reference"}</h2>
+      <dl>
+        <div>
+          <dt>Platform</dt>
+          <dd>{reference.platform}</dd>
+        </div>
+        <div>
+          <dt>Captured</dt>
+          <dd>{new Date(reference.capturedAt).toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>Asset</dt>
+          <dd>{asset?.storedUrl ? "Drive/Convex stored" : asset?.originalUrl ? "Linked URL" : "Page only"}</dd>
+        </div>
+      </dl>
+
+      <div className="inspector-actions">
+        <a href={reference.sourceUrl} target="_blank" rel="noreferrer">
+          Open source
+        </a>
+        {imageUrl ? (
+          <a href={imageUrl} target="_blank" rel="noreferrer">
+            Open image
+          </a>
+        ) : null}
+        <button>Add to project</button>
+      </div>
+    </div>
   );
 }
 
