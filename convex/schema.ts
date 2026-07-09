@@ -7,6 +7,8 @@ export default defineSchema({
       v.literal("image"),
       v.literal("post"),
       v.literal("page"),
+      v.literal("link"),
+      v.literal("article"),
       v.literal("video_frame"),
       v.literal("file"),
     ),
