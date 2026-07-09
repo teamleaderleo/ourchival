@@ -1,8 +1,8 @@
 # Ourchival
 
-A private visual reference archive for saving images, sources, notes, tags, and boards.
+A private archive for saving images, links, sources, notes, tags, boards, and project references.
 
-Ourchival is the overall project. **Reliquary** is the vault experience inside it. **Ourchival Clipper** is the browser extension for saving images and source metadata from the web.
+Ourchival is the overall project. **Reliquary** is the vault experience inside it. **Ourchival Clipper** is the browser extension for saving images, links, pages, and source metadata from the web.
 
 ## Apps
 
@@ -14,18 +14,23 @@ Ourchival is the overall project. **Reliquary** is the vault experience inside i
 
 ## Current milestone
 
-Save a reference through either path:
+Save a reference through any path:
 
 - right-click an image in Edge with Ourchival Clipper
+- right-click a link in Edge with Ourchival Clipper
+- right-click the current page in Edge with Ourchival Clipper
 - paste source/image URLs into the manual Reliquary form
 
-Saved references appear in the Reliquary gallery with:
+Saved items appear in the Reliquary gallery with:
 
-- image URL or proxied Drive original
+- All / Images / Links lanes
+- image URL or proxied Drive original when available
 - source URL
 - page title when available
 - platform detection
 - capture timestamp
+- editable title and notes
+- favorite state
 - source snapshot metadata
 - storage provider status
 
@@ -46,6 +51,8 @@ For full local instructions, see [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md).
 
 For Google Drive storage, see [`docs/GOOGLE_DRIVE.md`](docs/GOOGLE_DRIVE.md).
 
+For the links vault direction, see [`docs/LINKS_VAULT.md`](docs/LINKS_VAULT.md).
+
 Copy `.env.example` to `.env.local` and fill in your Convex values.
 
 ## Scripts
@@ -55,6 +62,7 @@ pnpm dev                # run web app
 pnpm extension:dev      # run extension dev build
 pnpm extension:build    # build Edge/Chrome extension
 pnpm google:drive-auth  # generate Google Drive refresh token
+pnpm test               # run model tests
 pnpm build              # build all packages/apps
 pnpm lint               # lint
 pnpm typecheck          # typecheck
@@ -64,12 +72,14 @@ pnpm convex:dev         # start Convex dev
 ## HTTP endpoints
 
 ```txt
-GET  /references
-GET  /drive-file?id=...
-POST /capture
+GET    /references
+GET    /drive-file?id=...
+PATCH  /reference?id=...
+DELETE /reference?id=...
+POST   /capture
 ```
 
-The extension and manual web form both write through `/capture`. Drive-backed images render through `/drive-file` so originals can stay private.
+The extension and manual web form both write through `/capture`. Drive-backed images render through `/drive-file` so originals can stay private. Link-only captures save metadata without creating a Drive file.
 
 ## Storage principle
 
@@ -83,4 +93,4 @@ Ourchival keeps files portable:
   metadata.json
 ```
 
-The database tracks source, tags, boards, projects, notes, Drive file IDs, and generated metadata.
+The database tracks source, tags, boards, projects, notes, Drive file IDs, links, and generated metadata.
