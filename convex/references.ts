@@ -37,7 +37,11 @@ export const create = mutation({
     const now = Date.now();
 
     return await ctx.db.insert("references", {
-      ...args,
+      kind: args.kind,
+      sourceUrl: args.sourceUrl,
+      ...(args.title ? { title: args.title } : {}),
+      ...(args.notes ? { notes: args.notes } : {}),
+      platform: args.platform,
       capturedAt: now,
       boardIds: [],
       tagIds: [],
