@@ -8,6 +8,7 @@
     "dev": "pnpm --filter @ourchival/web dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
+    "test": "vitest --run",
     "typecheck": "pnpm -r typecheck",
     "extension:dev": "pnpm --filter @ourchival/extension dev",
     "extension:build": "pnpm --filter @ourchival/extension build",
@@ -20,6 +21,7 @@
     "convex": "^1.17.4",
     "eslint": "^9.17.0",
     "prettier": "^3.4.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
   }
 }
