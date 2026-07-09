@@ -13,7 +13,7 @@ const corsHeaders = {
 };
 
 type CaptureBody = {
-  kind?: "image" | "post" | "page" | "video_frame" | "file";
+  kind?: "image" | "post" | "page" | "link" | "article" | "video_frame" | "file";
   sourceUrl?: string;
   assetUrl?: string;
   pageTitle?: string;
@@ -45,45 +45,25 @@ type StoredRemoteAsset = {
 http.route({
   path: "/capture",
   method: "OPTIONS",
-  handler: httpAction(async () => {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }),
+  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
 });
 
 http.route({
   path: "/references",
   method: "OPTIONS",
-  handler: httpAction(async () => {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }),
+  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
 });
 
 http.route({
   path: "/reference",
   method: "OPTIONS",
-  handler: httpAction(async () => {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }),
+  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
 });
 
 http.route({
   path: "/drive-file",
   method: "OPTIONS",
-  handler: httpAction(async () => {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }),
+  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
 });
 
 http.route({
@@ -100,7 +80,10 @@ http.route({
     const driveResponse = await fetchDriveFile(fileId);
 
     if (!driveResponse.ok || !driveResponse.body) {
-      return jsonResponse({ ok: false, error: `Drive file fetch failed: ${driveResponse.status}` }, driveResponse.status);
+      return jsonResponse(
+        { ok: false, error: `Drive file fetch failed: ${driveResponse.status}` },
+        driveResponse.status,
+      );
     }
 
     return new Response(driveResponse.body, {
@@ -173,8 +156,8 @@ http.route({
     }
 
     const patch = {
-      ...(typeof body.title === "string" ? { title: body.title.trim() || undefined } : {}),
-      ...(typeof body.notes === "string" ? { notes: body.notes.trim() || undefined } : {}),
+      ...(typeof body.title === "string" ? { title: body.title.trim() } : {}),
+      ...(typeof body.notes === "string" ? { notes: body.notes.trim() } : {}),
       ...(typeof body.favorite === "boolean" ? { favorite: body.favorite } : {}),
       ...(typeof body.archived === "boolean" ? { archived: body.archived } : {}),
     };
@@ -227,7 +210,7 @@ http.route({
     }
 
     const capturedAt = parseCapturedAt(body.capturedAt);
-    const kind = body.kind ?? (assetUrl ? "image" : "page");
+    const kind = body.kind ?? (assetUrl ? "image" : "link");
     const platform = detectPlatform(sourceUrl);
 
     const referenceId = await ctx.db.insert("references", {
@@ -244,7 +227,7 @@ http.route({
     });
 
     let assetId = null;
-    let storageStatus = "no asset url";
+    let storageStatus = assetUrl ? "asset pending" : "link only";
 
     if (assetUrl) {
       const storedAsset = await fetchAndStoreRemoteAsset(ctx, {
