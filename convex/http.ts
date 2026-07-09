@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
+import { uploadBlobToDrive } from "./lib/drive";
 import { detectPlatform } from "./lib/platform";
 
 const http = httpRouter();
@@ -22,9 +23,16 @@ type CaptureBody = {
 
 type StoredRemoteAsset = {
   status: string;
+  storageProvider: "google_drive" | "convex" | "linked";
   storageId?: any;
   mimeType?: string;
   fileSize?: number;
+  driveFileId?: string;
+  driveFolderId?: string;
+  driveWebViewLink?: string;
+  driveWebContentLink?: string;
+  driveThumbnailLink?: string;
+  driveMimeType?: string;
 };
 
 http.route({
@@ -69,9 +77,9 @@ http.route({
         const assetsWithUrls = await Promise.all(
           assets.map(async (asset) => ({
             ...asset,
-            storedUrl: asset.originalStorageId
+            storedUrl: asset.driveThumbnailLink ?? asset.driveWebContentLink ?? asset.driveWebViewLink ?? (asset.originalStorageId
               ? await ctx.storage.getUrl(asset.originalStorageId)
-              : null,
+              : null),
           })),
         );
 
@@ -125,15 +133,26 @@ http.route({
     let storageStatus = "no asset url";
 
     if (assetUrl) {
-      const storedAsset = await fetchAndStoreRemoteAsset(ctx, assetUrl);
+      const storedAsset = await fetchAndStoreRemoteAsset(ctx, {
+        assetUrl,
+        sourceUrl,
+        title: pageTitle,
+      });
       storageStatus = storedAsset.status;
 
       assetId = await ctx.db.insert("assets", {
         referenceId,
+        storageProvider: storedAsset.storageProvider,
         originalUrl: assetUrl,
         ...(storedAsset.storageId ? { originalStorageId: storedAsset.storageId } : {}),
         ...(storedAsset.mimeType ? { mimeType: storedAsset.mimeType } : {}),
         ...(storedAsset.fileSize ? { fileSize: storedAsset.fileSize } : {}),
+        ...(storedAsset.driveFileId ? { driveFileId: storedAsset.driveFileId } : {}),
+        ...(storedAsset.driveFolderId ? { driveFolderId: storedAsset.driveFolderId } : {}),
+        ...(storedAsset.driveWebViewLink ? { driveWebViewLink: storedAsset.driveWebViewLink } : {}),
+        ...(storedAsset.driveWebContentLink ? { driveWebContentLink: storedAsset.driveWebContentLink } : {}),
+        ...(storedAsset.driveThumbnailLink ? { driveThumbnailLink: storedAsset.driveThumbnailLink } : {}),
+        ...(storedAsset.driveMimeType ? { driveMimeType: storedAsset.driveMimeType } : {}),
         dominantColors: [],
       });
     }
@@ -152,40 +171,63 @@ http.route({
 
 async function fetchAndStoreRemoteAsset(
   ctx: { storage: { store: (blob: Blob) => Promise<any> } },
-  assetUrl: string,
+  args: { assetUrl: string; sourceUrl: string; title?: string },
 ): Promise<StoredRemoteAsset> {
   try {
-    const response = await fetch(assetUrl, {
+    const response = await fetch(args.assetUrl, {
       headers: {
         Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
       },
     });
 
     if (!response.ok) {
-      return { status: `fetch failed: ${response.status}` };
+      return { status: `fetch failed: ${response.status}`, storageProvider: "linked" };
     }
 
     const mimeType = response.headers.get("Content-Type") ?? undefined;
     const contentLength = Number(response.headers.get("Content-Length") ?? 0);
 
     if (contentLength > maxRemoteAssetBytes) {
-      return { status: "remote asset too large" };
+      return { status: "remote asset too large", storageProvider: "linked" };
     }
 
     if (mimeType && !mimeType.toLowerCase().startsWith("image/")) {
-      return { status: `remote asset is ${mimeType}` };
+      return { status: `remote asset is ${mimeType}`, storageProvider: "linked" };
     }
 
     const blob = await response.blob();
 
     if (blob.size > maxRemoteAssetBytes) {
-      return { status: "remote asset too large" };
+      return { status: "remote asset too large", storageProvider: "linked" };
+    }
+
+    const driveUpload = await uploadBlobToDrive({
+      blob,
+      sourceUrl: args.sourceUrl,
+      title: args.title,
+      mimeType,
+    });
+
+    if (driveUpload.ok && driveUpload.file?.id) {
+      return {
+        status: driveUpload.status,
+        storageProvider: "google_drive",
+        mimeType,
+        fileSize: blob.size,
+        driveFileId: driveUpload.file.id,
+        driveFolderId: driveUpload.file.parents?.[0],
+        driveWebViewLink: driveUpload.file.webViewLink,
+        driveWebContentLink: driveUpload.file.webContentLink,
+        driveThumbnailLink: driveUpload.file.thumbnailLink,
+        driveMimeType: driveUpload.file.mimeType,
+      };
     }
 
     const storageId = await ctx.storage.store(blob);
 
     return {
-      status: "stored original asset",
+      status: `${driveUpload.status}; stored original asset in Convex Storage fallback`,
+      storageProvider: "convex",
       storageId,
       mimeType,
       fileSize: blob.size,
@@ -193,6 +235,7 @@ async function fetchAndStoreRemoteAsset(
   } catch (error) {
     return {
       status: error instanceof Error ? error.message : "remote asset fetch failed",
+      storageProvider: "linked",
     };
   }
 }
