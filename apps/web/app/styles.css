@@ -54,11 +54,42 @@ h1 {
   max-width: 680px;
 }
 
+.endpoint-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  align-items: end;
+  margin: 48px 0 18px;
+  padding: 18px;
+  background: color-mix(in srgb, var(--panel), transparent 10%);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+}
+
+.endpoint-panel code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.endpoint-panel p:last-child {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
 .toolbar {
   display: flex;
+  align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin: 48px 0 32px;
+  margin: 18px 0 32px;
+}
+
+.toolbar span {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 button {
@@ -77,15 +108,24 @@ button {
   gap: 18px;
 }
 
-.card {
+.card,
+.empty-card {
   background: color-mix(in srgb, var(--panel), transparent 12%);
   border: 1px solid var(--line);
   border-radius: 24px;
   padding: 14px;
 }
 
+.empty-card {
+  grid-column: 1 / -1;
+  padding: 28px;
+}
+
 .thumb {
+  display: block;
+  width: 100%;
   aspect-ratio: 4 / 3;
+  object-fit: cover;
   border-radius: 18px;
   background:
     linear-gradient(135deg, rgba(243, 234, 223, 0.18), rgba(243, 234, 223, 0.03)),
@@ -93,27 +133,31 @@ button {
   border: 1px solid var(--line);
 }
 
-.card h2 {
+.thumb.placeholder {
+  min-height: 180px;
+}
+
+.card h2,
+.empty-card h2 {
   font-size: 1rem;
   margin: 14px 0 6px;
 }
 
-.card p {
+.card p,
+.empty-card p {
   color: var(--muted);
   margin: 0 0 12px;
   font-size: 0.9rem;
 }
 
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.card a {
+  color: var(--text);
+  text-decoration-color: var(--muted);
+  text-underline-offset: 4px;
 }
 
-.tags span {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  padding: 4px 8px;
-  font-size: 0.75rem;
+@media (max-width: 760px) {
+  .endpoint-panel {
+    grid-template-columns: 1fr;
+  }
 }
