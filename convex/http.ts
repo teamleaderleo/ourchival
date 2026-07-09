@@ -7,7 +7,7 @@ const http = httpRouter();
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 type CaptureBody = {
@@ -27,6 +27,42 @@ http.route({
       status: 204,
       headers: corsHeaders,
     });
+  }),
+});
+
+http.route({
+  path: "/references",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
+  }),
+});
+
+http.route({
+  path: "/references",
+  method: "GET",
+  handler: httpAction(async (ctx) => {
+    const references = await ctx.db
+      .query("references")
+      .withIndex("by_captured_at")
+      .order("desc")
+      .take(80);
+
+    const items = await Promise.all(
+      references.map(async (reference) => {
+        const assets = await ctx.db
+          .query("assets")
+          .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
+          .collect();
+
+        return { ...reference, assets };
+      }),
+    );
+
+    return jsonResponse({ ok: true, references: items });
   }),
 });
 
