@@ -12,6 +12,22 @@ Ourchival is the overall project. **Reliquary** is the vault experience inside i
 - `packages/shared` — shared metadata types and helpers
 - `packages/parsers` — platform-specific source parsers
 
+## Domain
+
+The owned domain is:
+
+```txt
+ourchival.com
+```
+
+Recommended production app URL:
+
+```txt
+https://app.ourchival.com
+```
+
+For DNS and deployment notes, see [`docs/DOMAIN.md`](docs/DOMAIN.md).
+
 ## Current milestone
 
 Save a reference through any path:
