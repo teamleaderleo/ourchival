@@ -4,6 +4,7 @@ export type CaptureResult = {
   ok: boolean;
   status?: number;
   message?: string;
+  storageStatus?: string;
   referenceId?: string;
   assetId?: string | null;
   savedAt: string;
