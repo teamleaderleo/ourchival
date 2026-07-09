@@ -150,6 +150,31 @@ export function ReferenceVault() {
     }
   }
 
+  async function deleteReference(referenceId: string) {
+    if (!siteUrl) return;
+
+    const confirmed = window.confirm("Remove this reference from Reliquary? The original Drive file is kept.");
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`${siteUrl}/reference?id=${encodeURIComponent(referenceId)}`, {
+        method: "DELETE",
+      });
+      const body = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+
+      if (!response.ok || body.ok === false) {
+        setStatus(body.error ?? response.statusText);
+        return;
+      }
+
+      setReferences((items) => items.filter((item) => item._id !== referenceId));
+      setSelectedId(null);
+      setStatus("Reference removed from Reliquary. Original file kept.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not delete reference.");
+    }
+  }
+
   return (
     <>
       <section className="endpoint-panel">
@@ -273,7 +298,7 @@ export function ReferenceVault() {
         <aside className="inspector">
           <p className="eyebrow">Inspector</p>
           {selectedReference ? (
-            <SelectedReference reference={selectedReference} />
+            <SelectedReference reference={selectedReference} onDelete={deleteReference} />
           ) : (
             <p>Select a reference to view source, project use, and actions.</p>
           )}
@@ -283,7 +308,13 @@ export function ReferenceVault() {
   );
 }
 
-function SelectedReference({ reference }: { reference: SavedReference }) {
+function SelectedReference({
+  reference,
+  onDelete,
+}: {
+  reference: SavedReference;
+  onDelete: (referenceId: string) => void;
+}) {
   const asset = reference.assets[0];
   const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
 
@@ -333,6 +364,9 @@ function SelectedReference({ reference }: { reference: SavedReference }) {
           </a>
         ) : null}
         <button>Add to project</button>
+        <button className="danger" onClick={() => onDelete(reference._id)}>
+          Remove reference
+        </button>
       </div>
     </div>
   );
