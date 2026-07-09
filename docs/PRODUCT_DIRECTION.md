@@ -92,4 +92,4 @@ Core objects:
 
 One image, many meanings.
 
-A reference can belong to many projects because the reason you saved it changes: lighting, fabric, pose, line economy, color, mood, hand shape, composition, outfit, creature design, architecture, a whole spell of small visual decisions.
+A reference can belong to many projects because the reason you saved it changes: lighting, fabric, pose, line economy, color, mood, hands, composition, outfit, creature design, buildings, a whole spell of small visual decisions.
