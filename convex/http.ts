@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { uploadBlobToDrive } from "./lib/drive";
+import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
 import { detectPlatform } from "./lib/platform";
 
 const http = httpRouter();
@@ -58,9 +58,49 @@ http.route({
 });
 
 http.route({
+  path: "/drive-file",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
+  }),
+});
+
+http.route({
+  path: "/drive-file",
+  method: "GET",
+  handler: httpAction(async (_ctx, request) => {
+    const url = new URL(request.url);
+    const fileId = url.searchParams.get("id");
+
+    if (!fileId) {
+      return jsonResponse({ ok: false, error: "id is required" }, 400);
+    }
+
+    const driveResponse = await fetchDriveFile(fileId);
+
+    if (!driveResponse.ok || !driveResponse.body) {
+      return jsonResponse({ ok: false, error: `Drive file fetch failed: ${driveResponse.status}` }, driveResponse.status);
+    }
+
+    return new Response(driveResponse.body, {
+      status: driveResponse.status,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": driveResponse.headers.get("Content-Type") ?? "application/octet-stream",
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  }),
+});
+
+http.route({
   path: "/references",
   method: "GET",
-  handler: httpAction(async (ctx) => {
+  handler: httpAction(async (ctx, request) => {
+    const origin = new URL(request.url).origin;
     const references = await ctx.db
       .query("references")
       .withIndex("by_captured_at")
@@ -77,9 +117,11 @@ http.route({
         const assetsWithUrls = await Promise.all(
           assets.map(async (asset) => ({
             ...asset,
-            storedUrl: asset.driveThumbnailLink ?? asset.driveWebContentLink ?? asset.driveWebViewLink ?? (asset.originalStorageId
-              ? await ctx.storage.getUrl(asset.originalStorageId)
-              : null),
+            storedUrl: asset.driveFileId
+              ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
+              : asset.originalStorageId
+                ? await ctx.storage.getUrl(asset.originalStorageId)
+                : null,
           })),
         );
 
