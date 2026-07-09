@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 type ReferenceAsset = {
   _id: string;
   originalUrl?: string;
+  storedUrl?: string | null;
   width?: number;
   height?: number;
 };
@@ -99,7 +100,11 @@ export function ReferenceVault() {
         }),
       });
 
-      const body = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const body = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        storageStatus?: string;
+      };
 
       if (!response.ok || body.ok === false) {
         setStatus(body.error ?? response.statusText);
@@ -110,7 +115,7 @@ export function ReferenceVault() {
       setAssetUrl("");
       setPageTitle("");
       setRefreshKey((key) => key + 1);
-      setStatus("Saved reference.");
+      setStatus(`Saved reference. ${body.storageStatus ?? ""}`.trim());
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not save reference.");
     } finally {
@@ -179,12 +184,13 @@ export function ReferenceVault() {
         ) : (
           references.map((reference) => {
             const asset = reference.assets[0];
+            const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
 
             return (
               <article className="card" key={reference._id}>
-                {asset?.originalUrl ? (
+                {imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img className="thumb" src={asset.originalUrl} alt={reference.title ?? "Saved reference"} />
+                  <img className="thumb" src={imageUrl} alt={reference.title ?? "Saved reference"} />
                 ) : (
                   <div className="thumb placeholder" />
                 )}
