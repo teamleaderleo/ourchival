@@ -109,6 +109,19 @@ export async function uploadBlobToDrive(args: {
   };
 }
 
+export async function fetchDriveFile(fileId: string) {
+  const config = getDriveConfig();
+  if (!config) throw new Error("Google Drive env vars are missing");
+
+  const accessToken = await getAccessToken(config);
+
+  return await fetch(`${driveFilesEndpoint}/${encodeURIComponent(fileId)}?alt=media`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+}
+
 export async function createDriveFolder(name: string, parentFolderId?: string) {
   const config = getDriveConfig();
   if (!config) throw new Error("Google Drive env vars are missing");
