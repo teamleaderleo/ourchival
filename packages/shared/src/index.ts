@@ -1,4 +1,11 @@
-export type ReferenceKind = "image" | "post" | "page" | "video_frame" | "file";
+export type ReferenceKind =
+  | "image"
+  | "post"
+  | "page"
+  | "link"
+  | "article"
+  | "video_frame"
+  | "file";
 
 export type CapturePayload = {
   kind: ReferenceKind;
