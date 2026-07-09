@@ -213,6 +213,27 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.segmented {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg), transparent 26%);
+}
+
+.segmented button {
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-radius: 999px;
+}
+
+.segmented button.active {
+  background: color-mix(in srgb, var(--accent), transparent 84%);
+  color: var(--accent);
+}
+
 .result-summary {
   color: var(--muted);
   font-size: 0.9rem;
@@ -301,6 +322,20 @@ button:disabled {
   flex: none;
 }
 
+.kind-badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg), transparent 12%);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  backdrop-filter: blur(6px);
+}
+
 .pill-toggle {
   background: transparent;
   color: var(--text);
@@ -338,6 +373,19 @@ button:disabled {
 
 .thumb.placeholder {
   min-height: 140px;
+}
+
+.link-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.link-placeholder::before {
+  content: "↗";
+  font-size: 2.4rem;
+  line-height: 1;
+  opacity: 0.65;
 }
 
 .card h2,
