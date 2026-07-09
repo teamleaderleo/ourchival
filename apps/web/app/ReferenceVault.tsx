@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type ReferenceAsset = {
   _id: string;
@@ -29,6 +29,11 @@ export function ReferenceVault() {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
   const [references, setReferences] = useState<SavedReference[]>([]);
   const [status, setStatus] = useState("Loading saved references…");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [assetUrl, setAssetUrl] = useState("");
+  const [pageTitle, setPageTitle] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!siteUrl) {
@@ -66,7 +71,52 @@ export function ReferenceVault() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [siteUrl]);
+  }, [siteUrl, refreshKey]);
+
+  async function saveManualReference(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!siteUrl) {
+      setStatus("Add a Convex site URL before saving.");
+      return;
+    }
+
+    setIsSaving(true);
+    setStatus("Saving reference…");
+
+    try {
+      const response = await fetch(`${siteUrl}/capture`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          kind: assetUrl.trim() ? "image" : "page",
+          sourceUrl,
+          assetUrl,
+          pageTitle,
+          capturedAt: new Date().toISOString(),
+        }),
+      });
+
+      const body = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+
+      if (!response.ok || body.ok === false) {
+        setStatus(body.error ?? response.statusText);
+        return;
+      }
+
+      setSourceUrl("");
+      setAssetUrl("");
+      setPageTitle("");
+      setRefreshKey((key) => key + 1);
+      setStatus("Saved reference.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not save reference.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <>
@@ -79,6 +129,39 @@ export function ReferenceVault() {
           Paste this into the Edge extension popup. The gallery refreshes every few seconds while your dev server is open.
         </p>
       </section>
+
+      <form className="manual-capture" onSubmit={saveManualReference}>
+        <div>
+          <p className="eyebrow">Manual save</p>
+          <h2>Add a reference</h2>
+        </div>
+        <label>
+          Source URL
+          <input
+            required
+            value={sourceUrl}
+            onChange={(event) => setSourceUrl(event.target.value)}
+            placeholder="https://example.com/post"
+          />
+        </label>
+        <label>
+          Image URL
+          <input
+            value={assetUrl}
+            onChange={(event) => setAssetUrl(event.target.value)}
+            placeholder="https://example.com/image.jpg"
+          />
+        </label>
+        <label>
+          Title
+          <input
+            value={pageTitle}
+            onChange={(event) => setPageTitle(event.target.value)}
+            placeholder="Optional title"
+          />
+        </label>
+        <button disabled={isSaving}>{isSaving ? "Saving…" : "Save reference"}</button>
+      </form>
 
       <section className="toolbar">
         <button>Upload reference</button>
