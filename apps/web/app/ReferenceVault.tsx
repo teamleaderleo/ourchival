@@ -1,29 +1,14 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
-
-type ReferenceAsset = {
-  _id: string;
-  originalUrl?: string;
-  storedUrl?: string | null;
-  storageProvider?: "google_drive" | "convex" | "linked";
-  driveFileId?: string;
-  driveWebViewLink?: string;
-  width?: number;
-  height?: number;
-};
-
-type SavedReference = {
-  _id: string;
-  kind: string;
-  title?: string;
-  notes?: string;
-  favorite?: boolean;
-  sourceUrl: string;
-  platform: string;
-  capturedAt: number;
-  assets: ReferenceAsset[];
-};
+import {
+  assetLabel,
+  filterReferences,
+  getSelectedReference,
+  referenceKindLabel,
+  type ReferenceLane,
+  type SavedReference,
+} from "./referenceVaultModel";
 
 type ReferencesResponse = {
   ok: boolean;
@@ -40,6 +25,12 @@ const projectShelves = [
   "CSP handoff",
 ];
 
+const lanes: Array<{ id: ReferenceLane; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "images", label: "Images" },
+  { id: "links", label: "Links" },
+];
+
 export function ReferenceVault() {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
   const [references, setReferences] = useState<SavedReference[]>([]);
@@ -52,6 +43,7 @@ export function ReferenceVault() {
   const [isSaving, setIsSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [lane, setLane] = useState<ReferenceLane>("all");
   const [activeShelf, setActiveShelf] = useState(projectShelves[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -60,28 +52,15 @@ export function ReferenceVault() {
     setStatusTone(tone);
   }
 
-  const filteredReferences = useMemo(() => {
-    let list = references;
+  const filteredReferences = useMemo(
+    () => filterReferences(references, { query, favoritesOnly, lane }),
+    [query, references, favoritesOnly, lane],
+  );
 
-    if (favoritesOnly) {
-      list = list.filter((reference) => reference.favorite);
-    }
-
-    const needle = query.trim().toLowerCase();
-    if (needle) {
-      list = list.filter((reference) =>
-        [reference.title, reference.notes, reference.sourceUrl, reference.platform, reference.kind]
-          .filter(Boolean)
-          .some((value) => value?.toLowerCase().includes(needle)),
-      );
-    }
-
-    return list;
-  }, [query, references, favoritesOnly]);
-
-  // Explicit selection wins; otherwise show the first visible card in the inspector.
-  const selectedReference =
-    filteredReferences.find((reference) => reference._id === selectedId) ?? filteredReferences[0];
+  const selectedReference = getSelectedReference(filteredReferences, selectedId);
+  const favoriteCount = references.filter((reference) => reference.favorite).length;
+  const imageCount = filterReferences(references, { lane: "images" }).length;
+  const linkCount = filterReferences(references, { lane: "links" }).length;
 
   useEffect(() => {
     if (!siteUrl) {
@@ -142,7 +121,7 @@ export function ReferenceVault() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          kind: assetUrl.trim() ? "image" : "page",
+          kind: assetUrl.trim() ? "image" : "link",
           sourceUrl,
           assetUrl,
           pageTitle,
@@ -241,8 +220,6 @@ export function ReferenceVault() {
     }
   }
 
-  const favoriteCount = references.filter((reference) => reference.favorite).length;
-
   return (
     <>
       <section className="endpoint-panel">
@@ -258,7 +235,7 @@ export function ReferenceVault() {
       <form className="manual-capture" onSubmit={saveManualReference}>
         <div>
           <p className="eyebrow">Manual save</p>
-          <h2>Add a reference</h2>
+          <h2>Add a reference or link</h2>
         </div>
         <label>
           Source URL
@@ -267,11 +244,11 @@ export function ReferenceVault() {
             type="url"
             value={sourceUrl}
             onChange={(event) => setSourceUrl(event.target.value)}
-            placeholder="https://example.com/post"
+            placeholder="https://example.com/post-or-article"
           />
         </label>
         <label>
-          Image URL
+          Image URL optional
           <input
             type="url"
             value={assetUrl}
@@ -315,15 +292,28 @@ export function ReferenceVault() {
         <section className="vault-main">
           <div className="vault-toolbar">
             <label>
-              Search references
+              Search Ourchival
               <input
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="artist, source, lighting, x.com…"
+                placeholder="artist, source, lighting, article, domain…"
               />
             </label>
             <div className="toolbar-actions">
+              <div className="segmented" aria-label="Reference lane">
+                {lanes.map((item) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={lane === item.id ? "active" : ""}
+                    aria-pressed={lane === item.id}
+                    onClick={() => setLane(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 className={`pill-toggle ${favoritesOnly ? "active" : ""}`}
@@ -346,18 +336,18 @@ export function ReferenceVault() {
           </div>
 
           <div className="result-summary">
-            <strong>{filteredReferences.length}</strong> references · {activeShelf}
+            <strong>{filteredReferences.length}</strong> shown · {references.length} total · {imageCount} images · {linkCount} links
             {favoritesOnly ? " · favorites only" : ""}
           </div>
 
           <section className="grid">
             {filteredReferences.length === 0 ? (
               <article className="empty-card">
-                <h2>{favoritesOnly || query ? "No matching references." : "Your Reliquary is waiting."}</h2>
+                <h2>{favoritesOnly || query ? "No matching saves." : "Your Ourchival is waiting."}</h2>
                 <p>
                   {favoritesOnly || query
-                    ? "Try clearing the search or the favorites filter."
-                    : "Right-click an image in Edge, save it to Ourchival, then watch it appear here."}
+                    ? "Try clearing search, favorites, or the active lane."
+                    : "Right-click an image, link, or page in Edge and save it to Ourchival."}
                 </p>
               </article>
             ) : (
@@ -382,7 +372,8 @@ export function ReferenceVault() {
                     }}
                   >
                     <div className="thumb-wrap">
-                      <ThumbImage imageUrl={imageUrl} title={reference.title} />
+                      <ThumbImage imageUrl={imageUrl} title={reference.title} kind={reference.kind} />
+                      <span className="kind-badge">{referenceKindLabel(reference.kind)}</span>
                       <button
                         type="button"
                         className={`favorite-toggle ${reference.favorite ? "active" : ""}`}
@@ -424,11 +415,11 @@ export function ReferenceVault() {
   );
 }
 
-function ThumbImage({ imageUrl, title }: { imageUrl?: string | null; title?: string }) {
+function ThumbImage({ imageUrl, title, kind }: { imageUrl?: string | null; title?: string; kind: string }) {
   const [failed, setFailed] = useState(false);
 
   if (!imageUrl || failed) {
-    return <div className="thumb placeholder" aria-hidden={!title} />;
+    return <div className={`thumb placeholder ${kind === "link" || kind === "article" || kind === "page" ? "link-placeholder" : ""}`} aria-hidden={!title} />;
   }
 
   return (
@@ -481,7 +472,7 @@ function SelectedReference({
           onError={() => setImageFailed(true)}
         />
       ) : (
-        <div className="selected-placeholder" />
+        <div className={`selected-placeholder ${reference.kind === "link" || reference.kind === "article" || reference.kind === "page" ? "link-placeholder" : ""}`} />
       )}
 
       <div className="inspector-heading">
@@ -499,6 +490,10 @@ function SelectedReference({
 
       <dl>
         <div>
+          <dt>Kind</dt>
+          <dd>{referenceKindLabel(reference.kind)}</dd>
+        </div>
+        <div>
           <dt>Platform</dt>
           <dd>{reference.platform}</dd>
         </div>
@@ -508,7 +503,7 @@ function SelectedReference({
         </div>
         <div>
           <dt>Asset</dt>
-          <dd>{asset ? assetLabel(asset) : "Page only"}</dd>
+          <dd>{assetLabel(asset, reference.kind)}</dd>
         </div>
         {asset?.driveFileId ? (
           <div>
@@ -532,7 +527,7 @@ function SelectedReference({
           <textarea
             value={notesDraft}
             onChange={(event) => setNotesDraft(event.target.value)}
-            placeholder="Lighting, palette, why you saved it…"
+            placeholder="Lighting, palette, why you saved it, why this tab survived…"
             rows={3}
           />
         </label>
@@ -564,15 +559,6 @@ function SelectedReference({
       </div>
     </div>
   );
-}
-
-function assetLabel(asset: ReferenceAsset) {
-  if (asset.storageProvider === "google_drive") return "Google Drive original";
-  if (asset.storageProvider === "convex") return "Convex fallback original";
-  if (asset.storageProvider === "linked") return "Linked source URL";
-  if (asset.storedUrl) return "Stored original";
-  if (asset.originalUrl) return "Linked URL";
-  return "Page only";
 }
 
 function resolveConvexSiteUrl() {
