@@ -8,35 +8,40 @@ Ourchival is the overall project. **Reliquary** is the vault experience inside i
 
 - `apps/web` — the vault web app
 - `apps/extension` — browser extension / clipper
-- `convex` — Convex backend
+- `convex` — Convex backend and HTTP capture endpoints
 - `packages/shared` — shared metadata types and helpers
 - `packages/parsers` — platform-specific source parsers
 
-## First milestone
+## Current milestone
 
-Right-click an image in the browser, save it to Ourchival, then view it in the Reliquary gallery with:
+Save a reference through either path:
 
-- original image
-- preview image
+- right-click an image in Edge with Ourchival Clipper
+- paste source/image URLs into the manual Reliquary form
+
+Saved references appear in the Reliquary gallery with:
+
+- image URL
 - source URL
-- page title
-- author/source metadata when available
-- boards
-- tags
-- notes
+- page title when available
+- platform detection
+- capture timestamp
+- source snapshot metadata
 
 ## Setup
 
 ```bash
 pnpm install
-pnpm dev
+pnpm convex:dev
 ```
 
 In another terminal:
 
 ```bash
-pnpm convex:dev
+pnpm dev
 ```
+
+For full local instructions, see [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md).
 
 Copy `.env.example` to `.env.local` and fill in your Convex values.
 
@@ -45,11 +50,21 @@ Copy `.env.example` to `.env.local` and fill in your Convex values.
 ```bash
 pnpm dev              # run web app
 pnpm extension:dev    # run extension dev build
+pnpm extension:build  # build Edge/Chrome extension
 pnpm build            # build all packages/apps
 pnpm lint             # lint
 pnpm typecheck        # typecheck
 pnpm convex:dev       # start Convex dev
 ```
+
+## HTTP endpoints
+
+```txt
+GET  /references
+POST /capture
+```
+
+The extension and manual web form both write through `/capture`.
 
 ## Storage principle
 
