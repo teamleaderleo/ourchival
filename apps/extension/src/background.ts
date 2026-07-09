@@ -100,7 +100,7 @@ function buildCapturePayload(
     return {
       kind: "link",
       sourceUrl: info.linkUrl,
-      pageTitle: info.linkText || tab?.title,
+      pageTitle: tab?.title,
       selectedText: info.selectionText,
       capturedAt: new Date().toISOString(),
     };
