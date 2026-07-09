@@ -1,0 +1,91 @@
+# Google Drive storage
+
+Ourchival uses Google Drive as the preferred home for original image files.
+
+Convex remains the catalog:
+
+- references
+- assets
+- source snapshots
+- tags
+- boards
+- projects
+- project reuse notes
+
+Drive stores the original file bytes. Reliquary renders private Drive files through the Convex `/drive-file?id=...` proxy, so the files do not need to be made public.
+
+## 1. Create Google OAuth credentials
+
+In Google Cloud Console:
+
+1. Create or select a project.
+2. Enable the Google Drive API.
+3. Configure the OAuth consent screen.
+4. Create an OAuth client.
+5. Add this redirect URI:
+
+```txt
+http://127.0.0.1:53682/oauth2callback
+```
+
+The app uses the `https://www.googleapis.com/auth/drive.file` scope. That scope lets Ourchival create and manage files that Ourchival creates or that the user opens with the app.
+
+## 2. Generate a refresh token
+
+Run:
+
+```bash
+pnpm google:drive-auth
+```
+
+Paste the OAuth client ID and secret when prompted. The script opens a browser, asks Google for Drive permission, then prints commands like:
+
+```bash
+npx convex env set GOOGLE_CLIENT_ID '...'
+npx convex env set GOOGLE_CLIENT_SECRET '...'
+npx convex env set GOOGLE_REFRESH_TOKEN '...'
+```
+
+Run those commands.
+
+## 3. Optional: choose a Drive folder
+
+Create a folder in Google Drive, such as:
+
+```txt
+Ourchival/originals
+```
+
+Copy the folder ID from the URL and set it:
+
+```bash
+npx convex env set GOOGLE_DRIVE_PARENT_FOLDER_ID 'your-folder-id'
+```
+
+If this is omitted, Ourchival uploads to the root of your Drive.
+
+## 4. Restart Convex
+
+```bash
+pnpm convex:dev
+```
+
+## 5. Test
+
+Use the manual form or Edge extension to save an image. The status should say:
+
+```txt
+stored original asset in Google Drive
+```
+
+The inspector should show:
+
+```txt
+Asset: Google Drive original
+```
+
+and expose an **Open in Drive** action.
+
+## Fallback behavior
+
+If Drive env vars are missing or upload fails, Ourchival falls back to Convex Storage when it can fetch the image bytes. If the image cannot be fetched server-side, it still records the source URL and metadata.
