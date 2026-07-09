@@ -3,6 +3,7 @@ import {
   assetLabel,
   filterReferences,
   getSelectedReference,
+  referenceKindLabel,
   referenceMode,
   type SavedReference,
 } from "./referenceVaultModel";
@@ -65,6 +66,21 @@ describe("filterReferences", () => {
       filterReferences(references, { favoritesOnly: true, query: "fabric" }).map((item) => item._id),
     ).toEqual([]);
   });
+
+  it("filters by all, images, and links lanes", () => {
+    expect(filterReferences(references, { lane: "all" }).map((item) => item._id)).toEqual([
+      "pose-study",
+      "color-article",
+      "fabric-ref",
+    ]);
+    expect(filterReferences(references, { lane: "images" }).map((item) => item._id)).toEqual([
+      "pose-study",
+      "fabric-ref",
+    ]);
+    expect(filterReferences(references, { lane: "links" }).map((item) => item._id)).toEqual([
+      "color-article",
+    ]);
+  });
 });
 
 describe("getSelectedReference", () => {
@@ -88,6 +104,7 @@ describe("assetLabel", () => {
     expect(assetLabel({ _id: "2", storageProvider: "convex" })).toBe("Convex fallback original");
     expect(assetLabel({ _id: "3", storageProvider: "linked" })).toBe("Linked source URL");
     expect(assetLabel(undefined)).toBe("Page only");
+    expect(assetLabel(undefined, "link")).toBe("Link only");
   });
 });
 
@@ -97,5 +114,14 @@ describe("referenceMode", () => {
     expect(referenceMode("article")).toBe("links");
     expect(referenceMode("page")).toBe("links");
     expect(referenceMode("image")).toBe("images");
+  });
+});
+
+describe("referenceKindLabel", () => {
+  it("labels the reference kind for compact UI badges", () => {
+    expect(referenceKindLabel("link")).toBe("Link");
+    expect(referenceKindLabel("article")).toBe("Article");
+    expect(referenceKindLabel("image")).toBe("Image");
+    expect(referenceKindLabel("something-else")).toBe("Reference");
   });
 });
