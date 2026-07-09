@@ -6,6 +6,9 @@ type ReferenceAsset = {
   _id: string;
   originalUrl?: string;
   storedUrl?: string | null;
+  storageProvider?: "google_drive" | "convex" | "linked";
+  driveFileId?: string;
+  driveWebViewLink?: string;
   width?: number;
   height?: number;
 };
@@ -305,14 +308,25 @@ function SelectedReference({ reference }: { reference: SavedReference }) {
         </div>
         <div>
           <dt>Asset</dt>
-          <dd>{asset?.storedUrl ? "Drive/Convex stored" : asset?.originalUrl ? "Linked URL" : "Page only"}</dd>
+          <dd>{asset ? assetLabel(asset) : "Page only"}</dd>
         </div>
+        {asset?.driveFileId ? (
+          <div>
+            <dt>Drive ID</dt>
+            <dd>{asset.driveFileId}</dd>
+          </div>
+        ) : null}
       </dl>
 
       <div className="inspector-actions">
         <a href={reference.sourceUrl} target="_blank" rel="noreferrer">
           Open source
         </a>
+        {asset?.driveWebViewLink ? (
+          <a href={asset.driveWebViewLink} target="_blank" rel="noreferrer">
+            Open in Drive
+          </a>
+        ) : null}
         {imageUrl ? (
           <a href={imageUrl} target="_blank" rel="noreferrer">
             Open image
@@ -322,6 +336,15 @@ function SelectedReference({ reference }: { reference: SavedReference }) {
       </div>
     </div>
   );
+}
+
+function assetLabel(asset: ReferenceAsset) {
+  if (asset.storageProvider === "google_drive") return "Google Drive original";
+  if (asset.storageProvider === "convex") return "Convex fallback original";
+  if (asset.storageProvider === "linked") return "Linked source URL";
+  if (asset.storedUrl) return "Stored original";
+  if (asset.originalUrl) return "Linked URL";
+  return "Page only";
 }
 
 function resolveConvexSiteUrl() {
