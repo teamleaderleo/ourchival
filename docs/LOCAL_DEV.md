@@ -7,7 +7,13 @@ git pull
 pnpm install
 ```
 
-## 2. Start Convex
+## 2. Optional: connect Google Drive storage
+
+Follow [`GOOGLE_DRIVE.md`](GOOGLE_DRIVE.md) when you want originals to land in Drive.
+
+Without Drive env vars, Ourchival falls back to Convex Storage when it can fetch image bytes.
+
+## 3. Start Convex
 
 ```bash
 pnpm convex:dev
@@ -24,7 +30,7 @@ NEXT_PUBLIC_CONVEX_SITE_URL=https://your-deployment.convex.site
 
 The web app derives `.convex.site` from `.convex.cloud` when possible, but the explicit value is clearer.
 
-## 3. Start the web app
+## 4. Start the web app
 
 In another terminal:
 
@@ -38,7 +44,15 @@ Open:
 http://localhost:3000
 ```
 
-## 4. Build the Edge extension
+## 5. Build the Edge extension
+
+For active extension work:
+
+```bash
+pnpm extension:dev
+```
+
+For a one-off build:
 
 ```bash
 pnpm extension:build
@@ -56,7 +70,7 @@ Turn on Developer mode, choose **Load unpacked**, and select:
 apps/extension/dist
 ```
 
-## 5. Connect the extension
+## 6. Connect the extension
 
 Open the Ourchival Clipper popup and paste the endpoint shown in the web app:
 
@@ -66,7 +80,7 @@ https://your-deployment.convex.site/capture
 
 Click **Save endpoint**.
 
-## 6. Test saving
+## 7. Test saving
 
 Right-click an image in Edge and choose:
 
@@ -74,9 +88,9 @@ Right-click an image in Edge and choose:
 Save image to Ourchival
 ```
 
-The extension badge will show a checkmark on success. The popup reports whether Convex stored the image file or only captured the source URL.
+The extension badge will show a checkmark on success. The popup reports whether the image landed in Google Drive, Convex Storage fallback, or linked-only mode.
 
-The Reliquary gallery refreshes every few seconds. It prefers stored Convex file URLs and falls back to the original image URL.
+The Reliquary gallery refreshes every few seconds. Drive-backed originals render through the `/drive-file?id=...` proxy.
 
 ## Manual test path
 
