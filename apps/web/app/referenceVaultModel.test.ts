@@ -17,6 +17,8 @@ const references: SavedReference[] = [
     sourceUrl: "https://x.com/artist/status/1",
     platform: "x",
     capturedAt: 1,
+    boardIds: ["board-anatomy"],
+    tagIds: ["tag-gesture"],
     assets: [{ _id: "asset-1", storageProvider: "google_drive" }],
   },
   {
@@ -55,6 +57,26 @@ describe("filterReferences", () => {
       "color-article",
       "fabric-ref",
     ]);
+  });
+
+  it("filters by board and tag membership", () => {
+    expect(
+      filterReferences(references, { boardId: "board-anatomy" }).map((item) => item._id),
+    ).toEqual(["pose-study"]);
+    expect(filterReferences(references, { tagId: "tag-gesture" }).map((item) => item._id)).toEqual([
+      "pose-study",
+    ]);
+    expect(filterReferences(references, { boardId: "board-missing" })).toEqual([]);
+  });
+
+  it("matches tag names in search when a resolver is provided", () => {
+    const tagNameFor = (tagId: string) =>
+      tagId === "tag-gesture" ? "figure drawing" : undefined;
+
+    expect(
+      filterReferences(references, { query: "figure drawing", tagNameFor }).map((item) => item._id),
+    ).toEqual(["pose-study"]);
+    expect(filterReferences(references, { query: "figure drawing" })).toEqual([]);
   });
 
   it("filters favorites without losing search behavior", () => {

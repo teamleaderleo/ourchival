@@ -6,9 +6,9 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@ourchival/convex/_generated/api";
 import type { Id } from "@ourchival/convex/_generated/dataModel";
 import { convexUrl } from "./providers";
+import { assetLabel, filterReferences, getSelectedReference } from "./referenceVaultModel";
 
 type ReferenceWithAssets = FunctionReturnType<typeof api.references.listWithAssets>[number];
-type ReferenceAsset = ReferenceWithAssets["assets"][number];
 type Board = FunctionReturnType<typeof api.boards.list>[number];
 type Tag = FunctionReturnType<typeof api.tags.list>[number];
 
@@ -78,41 +78,19 @@ function Vault() {
     setStatusTone(tone);
   }
 
-  const filteredReferences = useMemo(() => {
-    let list = allReferences;
+  const filteredReferences = useMemo(
+    () =>
+      filterReferences(allReferences, {
+        query,
+        favoritesOnly,
+        boardId: activeBoardId,
+        tagId: tagFilterId,
+        tagNameFor: (tagId) => tagsById.get(tagId as Id<"tags">)?.name,
+      }),
+    [allReferences, activeBoardId, tagFilterId, favoritesOnly, query, tagsById],
+  );
 
-    if (activeBoardId) {
-      list = list.filter((reference) => reference.boardIds.includes(activeBoardId));
-    }
-    if (tagFilterId) {
-      list = list.filter((reference) => reference.tagIds.includes(tagFilterId));
-    }
-    if (favoritesOnly) {
-      list = list.filter((reference) => reference.favorite);
-    }
-
-    const needle = query.trim().toLowerCase();
-    if (needle) {
-      list = list.filter((reference) => {
-        const tagNames = reference.tagIds.map((id) => tagsById.get(id)?.name).filter(Boolean);
-        return [
-          reference.title,
-          reference.notes,
-          reference.sourceUrl,
-          reference.platform,
-          reference.kind,
-          ...tagNames,
-        ]
-          .filter(Boolean)
-          .some((value) => value?.toLowerCase().includes(needle));
-      });
-    }
-
-    return list;
-  }, [allReferences, activeBoardId, tagFilterId, favoritesOnly, query, tagsById]);
-
-  const selectedReference =
-    filteredReferences.find((reference) => reference._id === selectedId) ?? filteredReferences[0];
+  const selectedReference = getSelectedReference(filteredReferences, selectedId);
 
   const activeBoardName = activeBoardId
     ? boards.find((board) => board._id === activeBoardId)?.name ?? "Board"
@@ -644,7 +622,7 @@ function SelectedReference({
         </div>
         <div>
           <dt>Asset</dt>
-          <dd>{asset ? assetLabel(asset) : "Page only"}</dd>
+          <dd>{assetLabel(asset)}</dd>
         </div>
       </dl>
 
@@ -745,15 +723,6 @@ function SelectedReference({
       </div>
     </div>
   );
-}
-
-function assetLabel(asset: ReferenceAsset) {
-  if (asset.storageProvider === "google_drive") return "Google Drive original";
-  if (asset.storageProvider === "convex") return "Convex fallback original";
-  if (asset.storageProvider === "linked") return "Linked source URL";
-  if (asset.storedUrl) return "Stored original";
-  if (asset.originalUrl) return "Linked URL";
-  return "Page only";
 }
 
 function resolveConvexSiteUrl() {

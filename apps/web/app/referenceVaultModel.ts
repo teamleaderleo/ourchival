@@ -16,19 +16,33 @@ export type SavedReference = {
   sourceUrl: string;
   platform: string;
   capturedAt: number;
+  boardIds?: string[];
+  tagIds?: string[];
   assets: ReferenceAsset[];
 };
 
 export type ReferenceFilterOptions = {
   query?: string;
   favoritesOnly?: boolean;
+  boardId?: string | null;
+  tagId?: string | null;
+  /** Resolves a tag id to its display name so search can match tag names. */
+  tagNameFor?: (tagId: string) => string | undefined;
 };
 
-export function filterReferences(
-  references: SavedReference[],
+export function filterReferences<T extends SavedReference>(
+  references: T[],
   options: ReferenceFilterOptions = {},
-) {
+): T[] {
   let list = references;
+
+  if (options.boardId) {
+    list = list.filter((reference) => reference.boardIds?.includes(options.boardId!));
+  }
+
+  if (options.tagId) {
+    list = list.filter((reference) => reference.tagIds?.includes(options.tagId!));
+  }
 
   if (options.favoritesOnly) {
     list = list.filter((reference) => reference.favorite);
@@ -37,17 +51,28 @@ export function filterReferences(
   const needle = options.query?.trim().toLowerCase();
   if (!needle) return list;
 
-  return list.filter((reference) =>
-    [reference.title, reference.notes, reference.sourceUrl, reference.platform, reference.kind]
+  return list.filter((reference) => {
+    const tagNames = options.tagNameFor
+      ? (reference.tagIds ?? []).map((tagId) => options.tagNameFor!(tagId))
+      : [];
+
+    return [
+      reference.title,
+      reference.notes,
+      reference.sourceUrl,
+      reference.platform,
+      reference.kind,
+      ...tagNames,
+    ]
       .filter(Boolean)
-      .some((value) => value?.toLowerCase().includes(needle)),
-  );
+      .some((value) => value?.toLowerCase().includes(needle));
+  });
 }
 
-export function getSelectedReference(
-  visibleReferences: SavedReference[],
+export function getSelectedReference<T extends SavedReference>(
+  visibleReferences: T[],
   selectedId: string | null,
-) {
+): T | undefined {
   if (!visibleReferences.length) return undefined;
 
   return visibleReferences.find((reference) => reference._id === selectedId) ?? visibleReferences[0];
