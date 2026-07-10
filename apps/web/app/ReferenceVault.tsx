@@ -1,59 +1,77 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
+import { api } from "@ourchival/convex/_generated/api";
+import type { Id } from "@ourchival/convex/_generated/dataModel";
+import { convexUrl } from "./providers";
 
-type ReferenceAsset = {
-  _id: string;
-  originalUrl?: string;
-  storedUrl?: string | null;
-  storageProvider?: "google_drive" | "convex" | "linked";
-  driveFileId?: string;
-  driveWebViewLink?: string;
-  width?: number;
-  height?: number;
-};
-
-type SavedReference = {
-  _id: string;
-  kind: string;
-  title?: string;
-  notes?: string;
-  favorite?: boolean;
-  sourceUrl: string;
-  platform: string;
-  capturedAt: number;
-  assets: ReferenceAsset[];
-};
-
-type ReferencesResponse = {
-  ok: boolean;
-  references?: SavedReference[];
-  error?: string;
-};
+type ReferenceWithAssets = FunctionReturnType<typeof api.references.listWithAssets>[number];
+type ReferenceAsset = ReferenceWithAssets["assets"][number];
+type Board = FunctionReturnType<typeof api.boards.list>[number];
+type Tag = FunctionReturnType<typeof api.tags.list>[number];
 
 type StatusTone = "info" | "success" | "error";
 
-const projectShelves = [
-  "Current study",
-  "Character ideas",
-  "Color language",
-  "CSP handoff",
-];
-
 export function ReferenceVault() {
+  if (!convexUrl) {
+    return (
+      <section className="endpoint-panel setup-notice">
+        <div>
+          <p className="eyebrow">Setup needed</p>
+          <code>NEXT_PUBLIC_CONVEX_URL is not set</code>
+        </div>
+        <p>
+          Add <code>NEXT_PUBLIC_CONVEX_URL</code> to <code>.env.local</code> and restart the dev
+          server to connect the vault to your Convex deployment.
+        </p>
+      </section>
+    );
+  }
+
+  return <Vault />;
+}
+
+function Vault() {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
-  const [references, setReferences] = useState<SavedReference[]>([]);
-  const [status, setStatus] = useState("Loading saved references…");
+
+  const references = useQuery(api.references.listWithAssets);
+  const boards = useQuery(api.boards.list) ?? [];
+  const tags = useQuery(api.tags.list) ?? [];
+
+  const updateReference = useMutation(api.references.update);
+  const removeReference = useMutation(api.references.remove);
+  const toggleBoard = useMutation(api.references.toggleBoard);
+  const toggleTag = useMutation(api.references.toggleTag);
+  const createBoard = useMutation(api.boards.create);
+  const createTag = useMutation(api.tags.create);
+  const generateUploadUrl = useMutation(api.references.generateUploadUrl);
+  const createFromUpload = useMutation(api.references.createFromUpload);
+
+  const [status, setStatus] = useState("Connecting to your vault…");
   const [statusTone, setStatusTone] = useState<StatusTone>("info");
-  const [refreshKey, setRefreshKey] = useState(0);
   const [sourceUrl, setSourceUrl] = useState("");
   const [assetUrl, setAssetUrl] = useState("");
   const [pageTitle, setPageTitle] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [activeShelf, setActiveShelf] = useState(projectShelves[0]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeBoardId, setActiveBoardId] = useState<Id<"boards"> | null>(null);
+  const [tagFilterId, setTagFilterId] = useState<Id<"tags"> | null>(null);
+  const [selectedId, setSelectedId] = useState<Id<"references"> | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isLoading = references === undefined;
+  const allReferences = references ?? [];
+
+  const tagsById = useMemo(() => {
+    const map = new Map<Id<"tags">, Tag>();
+    tags.forEach((tag) => map.set(tag._id, tag));
+    return map;
+  }, [tags]);
 
   function report(message: string, tone: StatusTone = "info") {
     setStatus(message);
@@ -61,68 +79,44 @@ export function ReferenceVault() {
   }
 
   const filteredReferences = useMemo(() => {
-    let list = references;
+    let list = allReferences;
 
+    if (activeBoardId) {
+      list = list.filter((reference) => reference.boardIds.includes(activeBoardId));
+    }
+    if (tagFilterId) {
+      list = list.filter((reference) => reference.tagIds.includes(tagFilterId));
+    }
     if (favoritesOnly) {
       list = list.filter((reference) => reference.favorite);
     }
 
     const needle = query.trim().toLowerCase();
     if (needle) {
-      list = list.filter((reference) =>
-        [reference.title, reference.notes, reference.sourceUrl, reference.platform, reference.kind]
+      list = list.filter((reference) => {
+        const tagNames = reference.tagIds.map((id) => tagsById.get(id)?.name).filter(Boolean);
+        return [
+          reference.title,
+          reference.notes,
+          reference.sourceUrl,
+          reference.platform,
+          reference.kind,
+          ...tagNames,
+        ]
           .filter(Boolean)
-          .some((value) => value?.toLowerCase().includes(needle)),
-      );
+          .some((value) => value?.toLowerCase().includes(needle));
+      });
     }
 
     return list;
-  }, [query, references, favoritesOnly]);
+  }, [allReferences, activeBoardId, tagFilterId, favoritesOnly, query, tagsById]);
 
-  // Explicit selection wins; otherwise show the first visible card in the inspector.
   const selectedReference =
     filteredReferences.find((reference) => reference._id === selectedId) ?? filteredReferences[0];
 
-  useEffect(() => {
-    if (!siteUrl) {
-      report(
-        "Add NEXT_PUBLIC_CONVEX_URL or NEXT_PUBLIC_CONVEX_SITE_URL to load saved references.",
-        "error",
-      );
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadReferences() {
-      try {
-        const response = await fetch(`${siteUrl}/references`);
-        const body = (await response.json()) as ReferencesResponse;
-
-        if (cancelled) return;
-
-        if (!response.ok || body.ok === false) {
-          report(body.error ?? response.statusText, "error");
-          return;
-        }
-
-        setReferences(body.references ?? []);
-        report(`Loaded ${body.references?.length ?? 0} saved references.`, "info");
-      } catch (error) {
-        if (cancelled) return;
-        report(error instanceof Error ? error.message : "Could not load saved references.", "error");
-      }
-    }
-
-    void loadReferences();
-
-    const timer = window.setInterval(loadReferences, 5000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [siteUrl, refreshKey]);
+  const activeBoardName = activeBoardId
+    ? boards.find((board) => board._id === activeBoardId)?.name ?? "Board"
+    : "All references";
 
   async function saveManualReference(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -138,9 +132,7 @@ export function ReferenceVault() {
     try {
       const response = await fetch(`${siteUrl}/capture`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: assetUrl.trim() ? "image" : "page",
           sourceUrl,
@@ -164,7 +156,6 @@ export function ReferenceVault() {
       setSourceUrl("");
       setAssetUrl("");
       setPageTitle("");
-      setRefreshKey((key) => key + 1);
       report(`Saved reference. ${body.storageStatus ?? ""}`.trim(), "success");
     } catch (error) {
       report(error instanceof Error ? error.message : "Could not save reference.", "error");
@@ -173,75 +164,151 @@ export function ReferenceVault() {
     }
   }
 
-  async function patchReference(referenceId: string, patch: Partial<SavedReference>) {
-    if (!siteUrl) {
-      report("Add a Convex site URL before editing.", "error");
-      return false;
-    }
+  async function handleUpload(event: FormEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    report(`Uploading ${file.name}…`, "info");
 
     try {
-      const response = await fetch(`${siteUrl}/reference?id=${encodeURIComponent(referenceId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
+      const uploadUrl = await generateUploadUrl();
+      const result = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
       });
-      const body = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
 
-      if (!response.ok || body.ok === false) {
-        report(body.error ?? response.statusText, "error");
-        return false;
-      }
-
-      setReferences((items) =>
-        items.map((item) => (item._id === referenceId ? { ...item, ...patch } : item)),
-      );
-      return true;
-    } catch (error) {
-      report(error instanceof Error ? error.message : "Could not update reference.", "error");
-      return false;
-    }
-  }
-
-  async function toggleFavorite(reference: SavedReference) {
-    const next = !reference.favorite;
-    const ok = await patchReference(reference._id, { favorite: next });
-    if (ok) {
-      report(next ? "Marked as favorite." : "Removed from favorites.", "success");
-    }
-  }
-
-  async function saveDetails(referenceId: string, patch: { title?: string; notes?: string }) {
-    const ok = await patchReference(referenceId, patch);
-    if (ok) report("Reference details saved.", "success");
-    return ok;
-  }
-
-  async function deleteReference(referenceId: string) {
-    if (!siteUrl) return;
-
-    const confirmed = window.confirm("Remove this reference from Reliquary? The original Drive file is kept.");
-    if (!confirmed) return;
-
-    try {
-      const response = await fetch(`${siteUrl}/reference?id=${encodeURIComponent(referenceId)}`, {
-        method: "DELETE",
-      });
-      const body = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-
-      if (!response.ok || body.ok === false) {
-        report(body.error ?? response.statusText, "error");
+      if (!result.ok) {
+        report(`Upload failed: ${result.status}`, "error");
         return;
       }
 
-      setReferences((items) => items.filter((item) => item._id !== referenceId));
+      const { storageId } = (await result.json()) as { storageId: Id<"_storage"> };
+      await createFromUpload({ storageId, fileName: file.name, mimeType: file.type || undefined });
+      report(`Uploaded ${file.name}.`, "success");
+    } catch (error) {
+      report(error instanceof Error ? error.message : "Could not upload file.", "error");
+    } finally {
+      setIsUploading(false);
+      input.value = "";
+    }
+  }
+
+  async function handleFavorite(reference: ReferenceWithAssets) {
+    const next = !reference.favorite;
+    try {
+      await updateReference({ id: reference._id, favorite: next });
+      report(next ? "Marked as favorite." : "Removed from favorites.", "success");
+    } catch (error) {
+      report(error instanceof Error ? error.message : "Could not update favorite.", "error");
+    }
+  }
+
+  async function handleSaveDetails(referenceId: Id<"references">, patch: { title: string; notes: string }) {
+    try {
+      await updateReference({ id: referenceId, ...patch });
+      report("Reference details saved.", "success");
+      return true;
+    } catch (error) {
+      report(error instanceof Error ? error.message : "Could not save details.", "error");
+      return false;
+    }
+  }
+
+  async function handleDelete(referenceId: Id<"references">) {
+    const confirmed = window.confirm("Remove this reference from Reliquary? The original file is kept.");
+    if (!confirmed) return;
+
+    try {
+      await removeReference({ id: referenceId });
       setSelectedId(null);
-      report("Reference removed from Reliquary. Original file kept.", "success");
+      report("Reference removed from Reliquary.", "success");
     } catch (error) {
       report(error instanceof Error ? error.message : "Could not delete reference.", "error");
     }
   }
 
-  const favoriteCount = references.filter((reference) => reference.favorite).length;
+  async function handleNewBoard() {
+    const name = window.prompt("Name this board")?.trim();
+    if (!name) return;
+
+    try {
+      const existing = boards.find((board) => board.name.toLowerCase() === name.toLowerCase());
+      const boardId = existing?._id ?? (await createBoard({ name }));
+      setActiveBoardId(boardId);
+      report(existing ? `Switched to “${name}”.` : `Created board “${name}”.`, "success");
+    } catch (error) {
+      report(error instanceof Error ? error.message : "Could not create board.", "error");
+    }
+  }
+
+  async function handleToggleBoard(referenceId: Id<"references">, boardId: Id<"boards">) {
+    try {
+      await toggleBoard({ id: referenceId, boardId });
+    } catch (error) {
+      report(error instanceof Error ? error.message : "Could not update board.", "error");
+    }
+  }
+
+  async function handleToggleTag(referenceId: Id<"references">, tagId: Id<"tags">) {
+    try {
+      await toggleTag({ id: referenceId, tagId });
+    } catch (error) {
+      report(error instanceof Error ? error.message : "Could not update tag.", "error");
+    }
+  }
+
+  async function handleCreateTag(referenceId: Id<"references">, name: string) {
+    const clean = name.trim();
+    if (!clean) return;
+
+    try {
+      const existing = tags.find((tag) => tag.name.toLowerCase() === clean.toLowerCase());
+      const tagId = existing?._id ?? (await createTag({ name: clean }));
+      await toggleTag({ id: referenceId, tagId });
+    } catch (error) {
+      report(error instanceof Error ? error.message : "Could not add tag.", "error");
+    }
+  }
+
+  function handleExport() {
+    if (filteredReferences.length === 0) {
+      report("Nothing to export in the current view.", "error");
+      return;
+    }
+
+    const payload = filteredReferences.map((reference) => {
+      const asset = reference.assets[0];
+      return {
+        title: reference.title ?? null,
+        sourceUrl: reference.sourceUrl,
+        platform: reference.platform,
+        kind: reference.kind,
+        capturedAt: new Date(reference.capturedAt).toISOString(),
+        favorite: Boolean(reference.favorite),
+        notes: reference.notes ?? null,
+        tags: reference.tagIds.map((id) => tagsById.get(id)?.name).filter(Boolean),
+        boards: reference.boardIds.map((id) => boards.find((b) => b._id === id)?.name).filter(Boolean),
+        image: asset?.storedUrl ?? asset?.originalUrl ?? null,
+        driveLink: asset?.driveWebViewLink ?? null,
+      };
+    });
+
+    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), references: payload }, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `ourchival-export-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    report(`Exported ${payload.length} references.`, "success");
+  }
+
+  const favoriteCount = allReferences.filter((reference) => reference.favorite).length;
 
   return (
     <>
@@ -251,7 +318,8 @@ export function ReferenceVault() {
           <code>{siteUrl ? `${siteUrl}/capture` : "Missing Convex site URL"}</code>
         </div>
         <p>
-          Paste this into the Edge extension popup. The gallery refreshes every few seconds while your dev server is open.
+          Paste this into the Edge extension popup. The gallery updates live as references are saved —
+          no refresh needed.
         </p>
       </section>
 
@@ -292,18 +360,28 @@ export function ReferenceVault() {
 
       <section className="vault-workspace">
         <aside className="vault-sidebar">
-          <p className="eyebrow">Projects</p>
+          <p className="eyebrow">Boards</p>
           <div className="shelf-list">
-            {projectShelves.map((shelf) => (
+            <button
+              type="button"
+              className={activeBoardId === null ? "active" : ""}
+              onClick={() => setActiveBoardId(null)}
+            >
+              All references
+            </button>
+            {boards.map((board) => (
               <button
                 type="button"
-                className={shelf === activeShelf ? "active" : ""}
-                key={shelf}
-                onClick={() => setActiveShelf(shelf)}
+                className={board._id === activeBoardId ? "active" : ""}
+                key={board._id}
+                onClick={() => setActiveBoardId(board._id)}
               >
-                {shelf}
+                {board.name}
               </button>
             ))}
+            <button type="button" className="shelf-add" onClick={handleNewBoard}>
+              + New board
+            </button>
           </div>
 
           <div className="sidebar-block">
@@ -320,7 +398,7 @@ export function ReferenceVault() {
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="artist, source, lighting, x.com…"
+                placeholder="artist, source, tag, lighting, x.com…"
               />
             </label>
             <div className="toolbar-actions">
@@ -333,30 +411,52 @@ export function ReferenceVault() {
                 {favoritesOnly ? "★ Favorites" : "☆ Favorites"}
                 {favoriteCount > 0 ? ` (${favoriteCount})` : ""}
               </button>
-              <button type="button" disabled title="Not wired up yet">
-                Upload
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={handleUpload}
+              />
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                {isUploading ? "Uploading…" : "Upload"}
               </button>
-              <button type="button" disabled title="Not wired up yet">
+              <button type="button" onClick={handleNewBoard}>
                 New board
               </button>
-              <button type="button" disabled title="Not wired up yet">
+              <button type="button" onClick={handleExport}>
                 Export pack
               </button>
             </div>
           </div>
 
+          {tagFilterId ? (
+            <button type="button" className="filter-chip" onClick={() => setTagFilterId(null)}>
+              Tag: {tagsById.get(tagFilterId)?.name ?? "unknown"} ✕
+            </button>
+          ) : null}
+
           <div className="result-summary">
-            <strong>{filteredReferences.length}</strong> references · {activeShelf}
+            <strong>{filteredReferences.length}</strong> references · {activeBoardName}
             {favoritesOnly ? " · favorites only" : ""}
           </div>
 
           <section className="grid">
-            {filteredReferences.length === 0 ? (
+            {isLoading ? (
               <article className="empty-card">
-                <h2>{favoritesOnly || query ? "No matching references." : "Your Reliquary is waiting."}</h2>
+                <h2>Loading your Reliquary…</h2>
+                <p>Fetching saved references from Convex.</p>
+              </article>
+            ) : filteredReferences.length === 0 ? (
+              <article className="empty-card">
+                <h2>
+                  {favoritesOnly || query || activeBoardId || tagFilterId
+                    ? "No matching references."
+                    : "Your Reliquary is waiting."}
+                </h2>
                 <p>
-                  {favoritesOnly || query
-                    ? "Try clearing the search or the favorites filter."
+                  {favoritesOnly || query || activeBoardId || tagFilterId
+                    ? "Try clearing the filters or the search."
                     : "Right-click an image in Edge, save it to Ourchival, then watch it appear here."}
                 </p>
               </article>
@@ -365,6 +465,9 @@ export function ReferenceVault() {
                 const asset = reference.assets[0];
                 const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
                 const isSelected = reference._id === selectedId;
+                const referenceTags = reference.tagIds
+                  .map((id) => tagsById.get(id))
+                  .filter((tag): tag is Tag => Boolean(tag));
 
                 return (
                   <article
@@ -390,14 +493,26 @@ export function ReferenceVault() {
                         aria-pressed={Boolean(reference.favorite)}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void toggleFavorite(reference);
+                          void handleFavorite(reference);
                         }}
                       >
                         {reference.favorite ? "★" : "☆"}
                       </button>
                     </div>
                     <h2>{reference.title || reference.sourceUrl}</h2>
-                    <p>{reference.platform} · {new Date(reference.capturedAt).toLocaleString()}</p>
+                    <p>{reference.platform} · {new Date(reference.capturedAt).toLocaleDateString()}</p>
+                    {referenceTags.length > 0 ? (
+                      <div className="card-tags">
+                        {referenceTags.slice(0, 3).map((tag) => (
+                          <span className="tag-chip" key={tag._id}>
+                            {tag.name}
+                          </span>
+                        ))}
+                        {referenceTags.length > 3 ? (
+                          <span className="tag-chip muted">+{referenceTags.length - 3}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </article>
                 );
               })
@@ -411,12 +526,18 @@ export function ReferenceVault() {
             <SelectedReference
               key={selectedReference._id}
               reference={selectedReference}
-              onDelete={deleteReference}
-              onToggleFavorite={toggleFavorite}
-              onSaveDetails={saveDetails}
+              boards={boards}
+              tags={tags}
+              onDelete={handleDelete}
+              onToggleFavorite={handleFavorite}
+              onSaveDetails={handleSaveDetails}
+              onToggleBoard={handleToggleBoard}
+              onToggleTag={handleToggleTag}
+              onCreateTag={handleCreateTag}
+              onFilterTag={setTagFilterId}
             />
           ) : (
-            <p>Select a reference to view source, project use, and actions.</p>
+            <p>Select a reference to view source, boards, tags, and actions.</p>
           )}
         </aside>
       </section>
@@ -445,20 +566,33 @@ function ThumbImage({ imageUrl, title }: { imageUrl?: string | null; title?: str
 
 function SelectedReference({
   reference,
+  boards,
+  tags,
   onDelete,
   onToggleFavorite,
   onSaveDetails,
+  onToggleBoard,
+  onToggleTag,
+  onCreateTag,
+  onFilterTag,
 }: {
-  reference: SavedReference;
-  onDelete: (referenceId: string) => void;
-  onToggleFavorite: (reference: SavedReference) => void;
-  onSaveDetails: (referenceId: string, patch: { title?: string; notes?: string }) => Promise<boolean>;
+  reference: ReferenceWithAssets;
+  boards: Board[];
+  tags: Tag[];
+  onDelete: (referenceId: Id<"references">) => void;
+  onToggleFavorite: (reference: ReferenceWithAssets) => void;
+  onSaveDetails: (referenceId: Id<"references">, patch: { title: string; notes: string }) => Promise<boolean>;
+  onToggleBoard: (referenceId: Id<"references">, boardId: Id<"boards">) => void;
+  onToggleTag: (referenceId: Id<"references">, tagId: Id<"tags">) => void;
+  onCreateTag: (referenceId: Id<"references">, name: string) => void;
+  onFilterTag: (tagId: Id<"tags">) => void;
 }) {
   const asset = reference.assets[0];
   const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
 
   const [titleDraft, setTitleDraft] = useState(reference.title ?? "");
   const [notesDraft, setNotesDraft] = useState(reference.notes ?? "");
+  const [newTag, setNewTag] = useState("");
   const [savingDetails, setSavingDetails] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
 
@@ -471,15 +605,17 @@ function SelectedReference({
     setSavingDetails(false);
   }
 
+  function submitTag(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onCreateTag(reference._id, newTag);
+    setNewTag("");
+  }
+
   return (
     <div className="selected-reference">
       {imageUrl && !imageFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={imageUrl}
-          alt={reference.title ?? "Selected reference"}
-          onError={() => setImageFailed(true)}
-        />
+        <img src={imageUrl} alt={reference.title ?? "Selected reference"} onError={() => setImageFailed(true)} />
       ) : (
         <div className="selected-placeholder" />
       )}
@@ -510,13 +646,61 @@ function SelectedReference({
           <dt>Asset</dt>
           <dd>{asset ? assetLabel(asset) : "Page only"}</dd>
         </div>
-        {asset?.driveFileId ? (
-          <div>
-            <dt>Drive ID</dt>
-            <dd>{asset.driveFileId}</dd>
-          </div>
-        ) : null}
       </dl>
+
+      <div className="inspector-section">
+        <p className="eyebrow">Tags</p>
+        <div className="chip-row">
+          {tags.length === 0 ? <span className="chip-empty">No tags yet</span> : null}
+          {tags.map((tag) => {
+            const active = reference.tagIds.includes(tag._id);
+            return (
+              <button
+                type="button"
+                key={tag._id}
+                className={`tag-chip toggle ${active ? "active" : ""}`}
+                onClick={() => onToggleTag(reference._id, tag._id)}
+                onDoubleClick={() => onFilterTag(tag._id)}
+                title={active ? "Click to remove · double-click to filter" : "Click to add"}
+              >
+                {active ? "✓ " : ""}
+                {tag.name}
+              </button>
+            );
+          })}
+        </div>
+        <form className="chip-add" onSubmit={submitTag}>
+          <input
+            value={newTag}
+            onChange={(event) => setNewTag(event.target.value)}
+            placeholder="Add a tag…"
+          />
+          <button type="submit" disabled={!newTag.trim()}>
+            Add
+          </button>
+        </form>
+      </div>
+
+      <div className="inspector-section">
+        <p className="eyebrow">Boards</p>
+        <div className="chip-row">
+          {boards.length === 0 ? <span className="chip-empty">No boards yet</span> : null}
+          {boards.map((board) => {
+            const active = reference.boardIds.includes(board._id);
+            return (
+              <button
+                type="button"
+                key={board._id}
+                className={`tag-chip toggle ${active ? "active" : ""}`}
+                onClick={() => onToggleBoard(reference._id, board._id)}
+              >
+                {active ? "✓ " : ""}
+                {board.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="inspector-fields">
         <label>
@@ -555,9 +739,6 @@ function SelectedReference({
             Open image
           </a>
         ) : null}
-        <button type="button" disabled title="Not wired up yet">
-          Add to project
-        </button>
         <button type="button" className="danger" onClick={() => onDelete(reference._id)}>
           Remove reference
         </button>
@@ -579,8 +760,8 @@ function resolveConvexSiteUrl() {
   const explicit = process.env.NEXT_PUBLIC_CONVEX_SITE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
 
-  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL?.trim();
-  if (!convexUrl) return undefined;
+  const url = process.env.NEXT_PUBLIC_CONVEX_URL?.trim();
+  if (!url) return undefined;
 
-  return convexUrl.replace(/\.convex\.cloud\/?$/, ".convex.site");
+  return url.replace(/\.convex\.cloud\/?$/, ".convex.site");
 }

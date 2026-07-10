@@ -64,12 +64,13 @@ pnpm convex:dev         # start Convex dev
 ## HTTP endpoints
 
 ```txt
-GET  /references
 GET  /drive-file?id=...
 POST /capture
 ```
 
 The extension and manual web form both write through `/capture`. Drive-backed images render through `/drive-file` so originals can stay private.
+
+The web app reads and edits references over Convex's reactive client (`api.references.*`, `api.boards.*`, `api.tags.*`), so the gallery updates live without polling.
 
 ## Storage principle
 

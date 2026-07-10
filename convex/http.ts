@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
 import { detectPlatform } from "./lib/platform";
 
@@ -9,7 +10,7 @@ const maxRemoteAssetBytes = 25 * 1024 * 1024;
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 type CaptureBody = {
@@ -19,13 +20,6 @@ type CaptureBody = {
   pageTitle?: string;
   selectedText?: string;
   capturedAt?: string;
-};
-
-type UpdateReferenceBody = {
-  title?: string;
-  notes?: string;
-  favorite?: boolean;
-  archived?: boolean;
 };
 
 type StoredRemoteAsset = {
@@ -44,28 +38,6 @@ type StoredRemoteAsset = {
 
 http.route({
   path: "/capture",
-  method: "OPTIONS",
-  handler: httpAction(async () => {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }),
-});
-
-http.route({
-  path: "/references",
-  method: "OPTIONS",
-  handler: httpAction(async () => {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }),
-});
-
-http.route({
-  path: "/reference",
   method: "OPTIONS",
   handler: httpAction(async () => {
     return new Response(null, {
@@ -115,97 +87,6 @@ http.route({
 });
 
 http.route({
-  path: "/references",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    const origin = new URL(request.url).origin;
-    const references = await ctx.db
-      .query("references")
-      .withIndex("by_captured_at")
-      .order("desc")
-      .take(120);
-
-    const visibleReferences = references.filter((reference) => !reference.deleted);
-
-    const items = await Promise.all(
-      visibleReferences.map(async (reference) => {
-        const assets = await ctx.db
-          .query("assets")
-          .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
-          .collect();
-
-        const assetsWithUrls = await Promise.all(
-          assets.map(async (asset) => ({
-            ...asset,
-            storedUrl: asset.driveFileId
-              ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
-              : asset.originalStorageId
-                ? await ctx.storage.getUrl(asset.originalStorageId)
-                : null,
-          })),
-        );
-
-        return { ...reference, assets: assetsWithUrls };
-      }),
-    );
-
-    return jsonResponse({ ok: true, references: items });
-  }),
-});
-
-http.route({
-  path: "/reference",
-  method: "PATCH",
-  handler: httpAction(async (ctx, request) => {
-    const url = new URL(request.url);
-    const referenceId = url.searchParams.get("id");
-
-    if (!referenceId) {
-      return jsonResponse({ ok: false, error: "id is required" }, 400);
-    }
-
-    let body: UpdateReferenceBody;
-
-    try {
-      body = (await request.json()) as UpdateReferenceBody;
-    } catch {
-      return jsonResponse({ ok: false, error: "Invalid JSON" }, 400);
-    }
-
-    const patch = {
-      ...(typeof body.title === "string" ? { title: body.title.trim() || undefined } : {}),
-      ...(typeof body.notes === "string" ? { notes: body.notes.trim() || undefined } : {}),
-      ...(typeof body.favorite === "boolean" ? { favorite: body.favorite } : {}),
-      ...(typeof body.archived === "boolean" ? { archived: body.archived } : {}),
-    };
-
-    await ctx.db.patch(referenceId as any, patch);
-
-    return jsonResponse({ ok: true });
-  }),
-});
-
-http.route({
-  path: "/reference",
-  method: "DELETE",
-  handler: httpAction(async (ctx, request) => {
-    const url = new URL(request.url);
-    const referenceId = url.searchParams.get("id");
-
-    if (!referenceId) {
-      return jsonResponse({ ok: false, error: "id is required" }, 400);
-    }
-
-    await ctx.db.patch(referenceId as any, {
-      deleted: true,
-      archived: true,
-    });
-
-    return jsonResponse({ ok: true });
-  }),
-});
-
-http.route({
   path: "/capture",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
@@ -230,53 +111,44 @@ http.route({
     const kind = body.kind ?? (assetUrl ? "image" : "page");
     const platform = detectPlatform(sourceUrl);
 
-    const referenceId = await ctx.db.insert("references", {
-      kind,
-      ...(pageTitle ? { title: pageTitle } : {}),
-      sourceUrl,
-      platform,
-      capturedAt,
-      boardIds: [],
-      tagIds: [],
-      favorite: false,
-      archived: false,
-      deleted: false,
-    });
-
-    let assetId = null;
+    let storedAsset: StoredRemoteAsset | undefined;
     let storageStatus = "no asset url";
 
     if (assetUrl) {
-      const storedAsset = await fetchAndStoreRemoteAsset(ctx, {
+      storedAsset = await fetchAndStoreRemoteAsset(ctx, {
         assetUrl,
         sourceUrl,
         title: pageTitle,
       });
       storageStatus = storedAsset.status;
-
-      assetId = await ctx.db.insert("assets", {
-        referenceId,
-        storageProvider: storedAsset.storageProvider,
-        originalUrl: assetUrl,
-        ...(storedAsset.storageId ? { originalStorageId: storedAsset.storageId } : {}),
-        ...(storedAsset.mimeType ? { mimeType: storedAsset.mimeType } : {}),
-        ...(storedAsset.fileSize ? { fileSize: storedAsset.fileSize } : {}),
-        ...(storedAsset.driveFileId ? { driveFileId: storedAsset.driveFileId } : {}),
-        ...(storedAsset.driveFolderId ? { driveFolderId: storedAsset.driveFolderId } : {}),
-        ...(storedAsset.driveWebViewLink ? { driveWebViewLink: storedAsset.driveWebViewLink } : {}),
-        ...(storedAsset.driveWebContentLink ? { driveWebContentLink: storedAsset.driveWebContentLink } : {}),
-        ...(storedAsset.driveThumbnailLink ? { driveThumbnailLink: storedAsset.driveThumbnailLink } : {}),
-        ...(storedAsset.driveMimeType ? { driveMimeType: storedAsset.driveMimeType } : {}),
-        dominantColors: [],
-      });
     }
 
-    await ctx.db.insert("sourceSnapshots", {
-      referenceId,
+    const { referenceId, assetId } = await ctx.runMutation(internal.references.saveCapture, {
+      kind,
+      sourceUrl,
+      ...(pageTitle ? { title: pageTitle } : {}),
+      platform,
+      capturedAt,
       ...(pageTitle ? { pageTitle } : {}),
       ...(selectedText ? { selectedText } : {}),
       jsonMetadata: JSON.stringify({ ...body, storageStatus }),
-      createdAt: Date.now(),
+      ...(assetUrl && storedAsset
+        ? {
+            asset: {
+              storageProvider: storedAsset.storageProvider,
+              originalUrl: assetUrl,
+              ...(storedAsset.storageId ? { originalStorageId: storedAsset.storageId } : {}),
+              ...(storedAsset.mimeType ? { mimeType: storedAsset.mimeType } : {}),
+              ...(storedAsset.fileSize ? { fileSize: storedAsset.fileSize } : {}),
+              ...(storedAsset.driveFileId ? { driveFileId: storedAsset.driveFileId } : {}),
+              ...(storedAsset.driveFolderId ? { driveFolderId: storedAsset.driveFolderId } : {}),
+              ...(storedAsset.driveWebViewLink ? { driveWebViewLink: storedAsset.driveWebViewLink } : {}),
+              ...(storedAsset.driveWebContentLink ? { driveWebContentLink: storedAsset.driveWebContentLink } : {}),
+              ...(storedAsset.driveThumbnailLink ? { driveThumbnailLink: storedAsset.driveThumbnailLink } : {}),
+              ...(storedAsset.driveMimeType ? { driveMimeType: storedAsset.driveMimeType } : {}),
+            },
+          }
+        : {}),
     });
 
     return jsonResponse({ ok: true, referenceId, assetId, storageStatus }, 201);

@@ -461,6 +461,113 @@ button:disabled {
   border: 1px solid color-mix(in srgb, #f0b8a8, transparent 58%);
 }
 
+.setup-notice code {
+  color: var(--accent);
+}
+
+.shelf-add {
+  border-style: dashed !important;
+  color: var(--muted) !important;
+}
+
+.shelf-add:hover {
+  color: var(--text) !important;
+  border-color: color-mix(in srgb, var(--accent), transparent 48%) !important;
+}
+
+.filter-chip {
+  background: color-mix(in srgb, var(--accent), transparent 84%);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 48%);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--panel-2), transparent 10%);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.tag-chip.muted {
+  opacity: 0.7;
+}
+
+.tag-chip.toggle {
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 5px 11px;
+}
+
+.tag-chip.toggle:hover {
+  border-color: color-mix(in srgb, var(--accent), transparent 48%);
+  color: var(--text);
+}
+
+.tag-chip.toggle.active {
+  background: color-mix(in srgb, var(--accent), transparent 82%);
+  border-color: color-mix(in srgb, var(--accent), transparent 42%);
+  color: var(--accent);
+}
+
+.inspector-section {
+  margin: 0 0 16px;
+}
+
+.inspector-section .eyebrow {
+  margin: 0 0 8px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-empty {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.chip-add {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chip-add input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.chip-add button {
+  padding: 7px 14px;
+  font-size: 0.82rem;
+}
+
 @media (max-width: 1180px) {
   .vault-workspace {
     grid-template-columns: 190px minmax(0, 1fr);
