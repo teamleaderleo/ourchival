@@ -25,18 +25,21 @@ export type BatchCaptureSource =
   | "window"
   | "url_list"
   | "bookmarks"
-  | "retry";
+  | "retry"
+  | "x_post";
 
 export type BatchCaptureItem = {
   url?: string;
   title?: string;
   tabId?: number;
+  payload?: CapturePayload;
 };
 
 export type BatchCaptureFailure = {
   url: string;
   title?: string;
   message: string;
+  payload?: CapturePayload;
 };
 
 export type BatchCaptureState = {

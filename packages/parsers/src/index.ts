@@ -1,5 +1,8 @@
 import type { ParsedSource, SourcePlatform } from "@ourchival/shared";
 
+export { normalizeXMediaUrl, parseXSnapshot } from "./x";
+export type { ParsedXSource, XDomSnapshot } from "./x";
+
 export function detectPlatform(url: string): SourcePlatform {
   const host = safeHost(url);
 

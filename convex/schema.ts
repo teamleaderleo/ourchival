@@ -30,6 +30,7 @@ export default defineSchema({
     postId: v.optional(v.string()),
     capturedAt: v.number(),
     publishedAt: v.optional(v.number()),
+    captureSessionId: v.optional(v.string()),
     triageState: v.optional(
       v.union(v.literal("inbox"), v.literal("kept"), v.literal("later")),
     ),
@@ -43,6 +44,7 @@ export default defineSchema({
   })
     .index("by_source_url", ["sourceUrl"])
     .index("by_canonical_url", ["canonicalUrl"])
+    .index("by_capture_session", ["captureSessionId"])
     .index("by_triage_state", ["triageState"])
     .index("by_captured_at", ["capturedAt"])
     .searchIndex("search_references", {

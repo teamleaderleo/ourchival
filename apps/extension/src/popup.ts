@@ -178,7 +178,21 @@ async function render() {
 
   document.getElementById("retry-failures")?.addEventListener("click", () => {
     if (!batch?.failures.length) return;
-    transientMessage = `Retrying ${batch.failures.length} failed ${batch.failures.length === 1 ? "link" : "links"}…`;
+    transientMessage = `Retrying ${batch.failures.length} failed ${batch.failures.length === 1 ? "capture" : "captures"}…`;
+
+    const richPayloads = batch.failures
+      .map((failure) => failure.payload)
+      .filter((payload): payload is CapturePayload => Boolean(payload));
+
+    if (richPayloads.length === batch.failures.length) {
+      void sendRuntimeMessage({
+        type: "OURCHIVAL_CAPTURE_PAYLOADS",
+        source: "retry",
+        payloads: richPayloads,
+      });
+      return;
+    }
+
     void sendRuntimeMessage({
       type: "OURCHIVAL_CAPTURE_URLS",
       source: "retry",
@@ -215,7 +229,7 @@ function renderBatch(batch: BatchCaptureState | undefined) {
       : "";
   const retryButton =
     !batch.running && batch.failures.length > 0
-      ? `<button id="retry-failures" type="button" class="secondary full-width">Retry ${batch.failures.length} failed ${batch.failures.length === 1 ? "link" : "links"}</button>`
+      ? `<button id="retry-failures" type="button" class="secondary full-width">Retry ${batch.failures.length} failed ${batch.failures.length === 1 ? "capture" : "captures"}</button>`
       : "";
   const visibleFailures = batch.failures.slice(0, 25);
   const failures = batch.failures.length
@@ -275,6 +289,7 @@ function batchSourceLabel(source: BatchCaptureSource) {
   if (source === "selected_tabs") return "Selected tabs";
   if (source === "window") return "Entire window";
   if (source === "bookmarks") return "Bookmarks HTML";
+  if (source === "x_post") return "X post images";
   if (source === "retry") return "Failed-item retry";
   return "Pasted links";
 }

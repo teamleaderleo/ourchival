@@ -13,6 +13,14 @@ export type CapturePayload = {
   assetUrl?: string;
   pageTitle?: string;
   selectedText?: string;
+  authorName?: string;
+  authorHandle?: string;
+  authorUrl?: string;
+  postId?: string;
+  postText?: string;
+  publishedAt?: string;
+  altText?: string;
+  rawMetadata?: string;
   captureSessionId?: string;
   capturedAt: string;
 };
@@ -47,5 +55,7 @@ export type ParsedSource = {
   authorUrl?: string;
   postId?: string;
   postText?: string;
+  publishedAt?: string;
   mediaUrls: string[];
+  altTexts?: Record<string, string>;
 };

@@ -18,7 +18,13 @@ export type SavedReference = {
   favorite?: boolean;
   sourceUrl: string;
   platform: string;
+  authorName?: string;
+  authorHandle?: string;
+  authorUrl?: string;
+  postId?: string;
   capturedAt: number;
+  publishedAt?: number;
+  captureSessionId?: string;
   triageState?: TriageState;
   reviewedAt?: number;
   lastOpenedAt?: number;
@@ -60,7 +66,16 @@ export function filterReferences(
   if (!needle) return list;
 
   return list.filter((reference) =>
-    [reference.title, reference.notes, reference.sourceUrl, reference.platform, reference.kind]
+    [
+      reference.title,
+      reference.notes,
+      reference.sourceUrl,
+      reference.platform,
+      reference.kind,
+      reference.authorName,
+      reference.authorHandle,
+      reference.postId,
+    ]
       .filter(Boolean)
       .some((value) => value?.toLowerCase().includes(needle)),
   );
