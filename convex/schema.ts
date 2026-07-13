@@ -30,6 +30,11 @@ export default defineSchema({
     postId: v.optional(v.string()),
     capturedAt: v.number(),
     publishedAt: v.optional(v.number()),
+    triageState: v.optional(
+      v.union(v.literal("inbox"), v.literal("kept"), v.literal("later")),
+    ),
+    reviewedAt: v.optional(v.number()),
+    lastOpenedAt: v.optional(v.number()),
     boardIds: v.array(v.id("boards")),
     tagIds: v.array(v.id("tags")),
     favorite: v.boolean(),
@@ -38,10 +43,11 @@ export default defineSchema({
   })
     .index("by_source_url", ["sourceUrl"])
     .index("by_canonical_url", ["canonicalUrl"])
+    .index("by_triage_state", ["triageState"])
     .index("by_captured_at", ["capturedAt"])
     .searchIndex("search_references", {
       searchField: "title",
-      filterFields: ["platform", "favorite", "archived", "deleted"],
+      filterFields: ["platform", "favorite", "triageState", "archived", "deleted"],
     }),
 
   assets: defineTable({
