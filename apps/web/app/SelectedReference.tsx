@@ -6,6 +6,7 @@ import {
   referenceCollection,
   referenceCollectionLabel,
   referenceMode,
+  type ReferenceSourceSnapshot,
   type SavedReference,
 } from "./referenceVaultModel";
 import { getDomain, getInitial } from "./ReferenceCards";
@@ -68,7 +69,9 @@ export function SelectedReference({
       )}
       <div className="inspector-heading">
         <div>
-          <p className="inspector-domain">{getDomain(reference.sourceUrl)}</p>
+          <p className="inspector-domain">
+            {reference.authorHandle || reference.authorName || getDomain(reference.sourceUrl)}
+          </p>
           <h2>{reference.title || "Untitled reference"}</h2>
         </div>
         <button
@@ -88,10 +91,26 @@ export function SelectedReference({
           <dt>Location</dt>
           <dd>{referenceCollectionLabel(reference)}</dd>
         </div>
+        {reference.authorName || reference.authorHandle ? (
+          <div>
+            <dt>Creator</dt>
+            <dd>
+              {reference.authorName}
+              {reference.authorName && reference.authorHandle ? " · " : ""}
+              {reference.authorHandle}
+            </dd>
+          </div>
+        ) : null}
         <div>
           <dt>Platform</dt>
           <dd>{reference.platform}</dd>
         </div>
+        {reference.publishedAt ? (
+          <div>
+            <dt>Published</dt>
+            <dd>{new Date(reference.publishedAt).toLocaleString()}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Captured</dt>
           <dd>{new Date(reference.capturedAt).toLocaleString()}</dd>
@@ -107,6 +126,10 @@ export function SelectedReference({
           <dd>{assetLabel(asset, reference.kind)}</dd>
         </div>
       </dl>
+
+      {reference.sourceSnapshot ? (
+        <SourceContext snapshot={reference.sourceSnapshot} />
+      ) : null}
 
       <div className="triage-actions" aria-label="Reference workflow actions">
         {collection === "trash" || collection === "archive" ? (
@@ -186,6 +209,16 @@ export function SelectedReference({
           Open source ↗
         </a>
         <div className="action-row">
+          {reference.authorUrl ? (
+            <a
+              className="button ghost"
+              href={reference.authorUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Creator
+            </a>
+          ) : null}
           {asset?.driveWebViewLink ? (
             <a
               className="button ghost"
@@ -218,5 +251,33 @@ export function SelectedReference({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function SourceContext({ snapshot }: { snapshot: ReferenceSourceSnapshot }) {
+  const entries = [
+    snapshot.postText ? { label: "Post text", value: snapshot.postText } : undefined,
+    snapshot.altText ? { label: "Image description", value: snapshot.altText } : undefined,
+    snapshot.selectedText
+      ? { label: "Selected quotation", value: snapshot.selectedText }
+      : undefined,
+  ].filter((entry): entry is { label: string; value: string } => Boolean(entry));
+
+  if (entries.length === 0) return null;
+
+  return (
+    <section className="source-context" aria-label="Captured source context">
+      <p className="eyebrow">Source context</p>
+      {entries.map((entry) => (
+        <details key={entry.label} open={entries.length === 1}>
+          <summary>{entry.label}</summary>
+          {entry.label === "Selected quotation" ? (
+            <blockquote>{entry.value}</blockquote>
+          ) : (
+            <p>{entry.value}</p>
+          )}
+        </details>
+      ))}
+    </section>
   );
 }
