@@ -14,6 +14,22 @@ type ReferencesResponse = {
   references?: SavedReference[];
   error?: string;
 };
+
+type CaptureResponse = {
+  ok?: boolean;
+  error?: string;
+  storageStatus?: string;
+  alreadySaved?: boolean;
+  referenceId?: string;
+  existingReference?: {
+    title?: string;
+    sourceUrl: string;
+    capturedAt: number;
+    favorite: boolean;
+    boardCount: number;
+  };
+};
+
 type StatusTone = "info" | "success" | "error";
 
 export function useReferenceVault() {
@@ -36,6 +52,7 @@ export function useReferenceVault() {
     setStatus(message);
     setStatusTone(tone);
   }
+
   const lane: ReferenceLane =
     activeView === "images" || activeView === "links" ? activeView : "all";
   const favoritesOnly = activeView === "favorites";
@@ -110,18 +127,23 @@ export function useReferenceVault() {
           capturedAt: new Date().toISOString(),
         }),
       });
-      const body = (await response.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        storageStatus?: string;
-      };
+      const body = (await response.json().catch(() => ({}))) as CaptureResponse;
       if (!response.ok || body.ok === false)
         return report(body.error ?? response.statusText, "error");
+
       setSourceUrl("");
       setAssetUrl("");
       setPageTitle("");
       setCaptureOpen(false);
       setRefreshKey((key) => key + 1);
+
+      if (body.alreadySaved) {
+        setActiveView("all");
+        setSelectedId(body.referenceId ?? null);
+        report(formatDuplicateStatus(body.existingReference), "success");
+        return;
+      }
+
       report(`Saved reference. ${body.storageStatus ?? ""}`.trim(), "success");
     } catch (error) {
       report(
@@ -279,6 +301,18 @@ export function useReferenceVault() {
     copyEndpoint,
     changeView,
   };
+}
+
+function formatDuplicateStatus(existingReference: CaptureResponse["existingReference"]) {
+  const title = existingReference?.title?.trim();
+  const savedDate = existingReference?.capturedAt
+    ? new Date(existingReference.capturedAt).toLocaleDateString()
+    : undefined;
+  const boardNote = existingReference?.boardCount
+    ? ` It is already in ${existingReference.boardCount} ${existingReference.boardCount === 1 ? "board" : "boards"}.`
+    : "";
+
+  return `Already saved${title ? ` as “${title}”` : ""}${savedDate ? ` on ${savedDate}` : ""}.${boardNote}`;
 }
 
 function resolveConvexSiteUrl() {
