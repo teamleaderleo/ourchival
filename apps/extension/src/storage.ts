@@ -23,10 +23,19 @@ export type BatchCaptureSource =
   | "current_tab"
   | "selected_tabs"
   | "window"
-  | "url_list";
+  | "url_list"
+  | "bookmarks"
+  | "retry";
+
+export type BatchCaptureItem = {
+  url?: string;
+  title?: string;
+  tabId?: number;
+};
 
 export type BatchCaptureFailure = {
   url: string;
+  title?: string;
   message: string;
 };
 
@@ -38,11 +47,13 @@ export type BatchCaptureState = {
   completedAt?: string;
   total: number;
   completed: number;
+  nextIndex: number;
   saved: number;
   duplicates: number;
   failed: number;
   skipped: number;
   currentLabel?: string;
+  items: BatchCaptureItem[];
   successfulTabIds: number[];
   failures: BatchCaptureFailure[];
 };
