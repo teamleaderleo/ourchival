@@ -109,10 +109,16 @@ http.route({
 
     const items = await Promise.all(
       references.map(async (reference) => {
-        const assets = await ctx.db
-          .query("assets")
-          .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
-          .collect();
+        const [assets, snapshots] = await Promise.all([
+          ctx.db
+            .query("assets")
+            .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
+            .collect(),
+          ctx.db
+            .query("sourceSnapshots")
+            .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
+            .collect(),
+        ]);
         const assetsWithUrls = await Promise.all(
           assets.map(async (asset) => ({
             ...asset,
@@ -123,7 +129,24 @@ http.route({
                 : null,
           })),
         );
-        return { ...reference, assets: assetsWithUrls };
+        const sourceSnapshot = snapshots.sort(
+          (left, right) => right.createdAt - left.createdAt,
+        )[0];
+        return {
+          ...reference,
+          assets: assetsWithUrls,
+          ...(sourceSnapshot
+            ? {
+                sourceSnapshot: {
+                  pageTitle: sourceSnapshot.pageTitle,
+                  postText: sourceSnapshot.postText,
+                  altText: sourceSnapshot.altText,
+                  selectedText: sourceSnapshot.selectedText,
+                  createdAt: sourceSnapshot.createdAt,
+                },
+              }
+            : {}),
+        };
       }),
     );
 
