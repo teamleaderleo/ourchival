@@ -52,6 +52,19 @@ export default defineSchema({
       filterFields: ["platform", "favorite", "triageState", "archived", "deleted"],
     }),
 
+  referenceStats: defineTable({
+    key: v.string(),
+    inbox: v.number(),
+    library: v.number(),
+    later: v.number(),
+    archive: v.number(),
+    trash: v.number(),
+    images: v.number(),
+    links: v.number(),
+    favorites: v.number(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
   assets: defineTable({
     referenceId: v.id("references"),
     storageProvider: v.optional(
