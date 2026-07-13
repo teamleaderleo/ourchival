@@ -18,7 +18,15 @@ const references: SavedReference[] = [
     favorite: true,
     sourceUrl: "https://x.com/artist/status/1",
     platform: "x",
+    authorName: "Moon Painter",
+    authorHandle: "@moon_painter",
     capturedAt: 1,
+    sourceSnapshot: {
+      postText: "A blue-hour lighting study",
+      altText: "Character with a rim-lit silhouette",
+      selectedText: "Keep this palette relationship",
+      createdAt: 1,
+    },
     assets: [{ _id: "asset-1", storageProvider: "google_drive" }],
   },
   {
@@ -55,7 +63,7 @@ const triageReferences: SavedReference[] = [
 ];
 
 describe("filterReferences", () => {
-  it("searches title, notes, URL, platform, and kind", () => {
+  it("searches title, notes, URL, platform, kind, and source attribution", () => {
     expect(filterReferences(references, { query: "hands" }).map((item) => item._id)).toEqual([
       "pose-study",
     ]);
@@ -65,6 +73,21 @@ describe("filterReferences", () => {
     expect(filterReferences(references, { query: "generic" }).map((item) => item._id)).toEqual([
       "color-article",
       "fabric-ref",
+    ]);
+    expect(filterReferences(references, { query: "moon_painter" }).map((item) => item._id)).toEqual([
+      "pose-study",
+    ]);
+  });
+
+  it("searches post text, alt text, and selected quotations", () => {
+    expect(filterReferences(references, { query: "blue-hour" }).map((item) => item._id)).toEqual([
+      "pose-study",
+    ]);
+    expect(filterReferences(references, { query: "rim-lit" }).map((item) => item._id)).toEqual([
+      "pose-study",
+    ]);
+    expect(filterReferences(references, { query: "palette relationship" }).map((item) => item._id)).toEqual([
+      "pose-study",
     ]);
   });
 
