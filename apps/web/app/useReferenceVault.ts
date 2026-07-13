@@ -4,8 +4,11 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   filterReferences,
   getSelectedReference,
+  referenceCollection,
+  type ReferenceCollection,
   type ReferenceLane,
   type SavedReference,
+  type TriageState,
 } from "./referenceVaultModel";
 import { type VaultView } from "./VaultNavigation";
 
@@ -31,6 +34,13 @@ type CaptureResponse = {
 };
 
 type StatusTone = "info" | "success" | "error";
+export type TriageDestination = "keep" | "later" | "archive" | "trash" | "restore";
+
+type UndoMove = {
+  referenceId: string;
+  title: string;
+  previous: Pick<SavedReference, "triageState" | "archived" | "deleted">;
+};
 
 export function useReferenceVault() {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
@@ -43,32 +53,47 @@ export function useReferenceVault() {
   const [pageTitle, setPageTitle] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [query, setQuery] = useState("");
-  const [activeView, setActiveView] = useState<VaultView>("all");
+  const [activeView, setActiveView] = useState<VaultView>("inbox");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [undoMove, setUndoMove] = useState<UndoMove | null>(null);
 
   function report(message: string, tone: StatusTone = "info") {
     setStatus(message);
     setStatusTone(tone);
   }
 
+  const collection = collectionForView(activeView);
   const lane: ReferenceLane =
     activeView === "images" || activeView === "links" ? activeView : "all";
   const favoritesOnly = activeView === "favorites";
   const filteredReferences = useMemo(
-    () => filterReferences(references, { query, favoritesOnly, lane }),
-    [query, references, favoritesOnly, lane],
+    () =>
+      filterReferences(references, {
+        query,
+        favoritesOnly,
+        lane,
+        collection,
+      }),
+    [query, references, favoritesOnly, lane, collection],
   );
   const selectedReference = getSelectedReference(
     filteredReferences,
     selectedId,
   );
-  const favoriteCount = references.filter(
-    (reference) => reference.favorite,
-  ).length;
-  const imageCount = filterReferences(references, { lane: "images" }).length;
-  const linkCount = filterReferences(references, { lane: "links" }).length;
+
+  const libraryReferences = useMemo(
+    () => filterReferences(references, { collection: "library" }),
+    [references],
+  );
+  const inboxCount = filterReferences(references, { collection: "inbox" }).length;
+  const laterCount = filterReferences(references, { collection: "later" }).length;
+  const archiveCount = filterReferences(references, { collection: "archive" }).length;
+  const trashCount = filterReferences(references, { collection: "trash" }).length;
+  const favoriteCount = filterReferences(libraryReferences, { favoritesOnly: true }).length;
+  const imageCount = filterReferences(libraryReferences, { lane: "images" }).length;
+  const linkCount = filterReferences(libraryReferences, { lane: "links" }).length;
 
   useEffect(() => {
     if (!siteUrl) {
@@ -105,6 +130,52 @@ export function useReferenceVault() {
       window.clearInterval(timer);
     };
   }, [siteUrl, refreshKey]);
+
+  useEffect(() => {
+    if (activeView !== "inbox" && activeView !== "later") return;
+
+    function handleReviewKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (!selectedReference) return;
+      const key = event.key.toLowerCase();
+
+      if (key === "arrowright" || key === "arrowdown") {
+        event.preventDefault();
+        selectRelative(1);
+      } else if (key === "arrowleft" || key === "arrowup") {
+        event.preventDefault();
+        selectRelative(-1);
+      } else if (key === "k") {
+        event.preventDefault();
+        void moveReference(selectedReference._id, "keep");
+      } else if (key === "l") {
+        event.preventDefault();
+        void moveReference(selectedReference._id, "later");
+      } else if (key === "a") {
+        event.preventDefault();
+        void moveReference(selectedReference._id, "archive");
+      } else if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        void moveReference(selectedReference._id, "trash");
+      } else if (key === "o") {
+        event.preventDefault();
+        window.open(selectedReference.sourceUrl, "_blank", "noopener,noreferrer");
+        void markReferenceOpened(selectedReference);
+      }
+    }
+
+    window.addEventListener("keydown", handleReviewKey);
+    return () => window.removeEventListener("keydown", handleReviewKey);
+  }, [activeView, filteredReferences, selectedReference]);
 
   async function saveManualReference(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -144,7 +215,9 @@ export function useReferenceVault() {
         return;
       }
 
-      report(`Saved reference. ${body.storageStatus ?? ""}`.trim(), "success");
+      setActiveView("inbox");
+      setSelectedId(body.referenceId ?? null);
+      report(`Saved to Inbox. ${body.storageStatus ?? ""}`.trim(), "success");
     } catch (error) {
       report(
         error instanceof Error ? error.message : "Could not save reference.",
@@ -214,36 +287,58 @@ export function useReferenceVault() {
     return ok;
   }
 
-  async function deleteReference(referenceId: string) {
-    if (
-      !siteUrl ||
-      !window.confirm(
-        "Remove this reference from Reliquary? The original Drive file will stay in place.",
-      )
-    )
-      return;
-    try {
-      const response = await fetch(
-        `${siteUrl}/reference?id=${encodeURIComponent(referenceId)}`,
-        { method: "DELETE" },
-      );
-      const body = (await response.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-      };
-      if (!response.ok || body.ok === false)
-        return report(body.error ?? response.statusText, "error");
-      setReferences((items) =>
-        items.filter((item) => item._id !== referenceId),
-      );
-      setSelectedId(null);
-      report("Reference removed. Original file kept.", "success");
-    } catch (error) {
-      report(
-        error instanceof Error ? error.message : "Could not delete reference.",
-        "error",
-      );
+  async function moveReference(referenceId: string, destination: TriageDestination) {
+    const reference = references.find((item) => item._id === referenceId);
+    if (!reference) return false;
+
+    const nextId = nextVisibleReferenceId(referenceId);
+    const reviewedAt = Date.now();
+    const patch = triagePatch(reference, destination, reviewedAt);
+    const previous: UndoMove["previous"] = {
+      triageState: reference.triageState,
+      archived: reference.archived,
+      deleted: reference.deleted,
+    };
+
+    if (!(await patchReference(referenceId, patch))) return false;
+
+    setSelectedId(nextId);
+    setUndoMove({
+      referenceId,
+      title: reference.title || reference.sourceUrl,
+      previous,
+    });
+    report(triageStatus(destination), "success");
+    return true;
+  }
+
+  async function undoLastMove() {
+    if (!undoMove) return;
+    const patch = {
+      triageState: undoMove.previous.triageState ?? "kept",
+      archived: Boolean(undoMove.previous.archived),
+      deleted: Boolean(undoMove.previous.deleted),
+    } satisfies Partial<SavedReference>;
+
+    if (await patchReference(undoMove.referenceId, patch)) {
+      setActiveView(viewForCollection(referenceCollection({
+        ...references.find((item) => item._id === undoMove.referenceId),
+        ...patch,
+        _id: undoMove.referenceId,
+        kind: references.find((item) => item._id === undoMove.referenceId)?.kind ?? "link",
+        sourceUrl: references.find((item) => item._id === undoMove.referenceId)?.sourceUrl ?? "",
+        platform: references.find((item) => item._id === undoMove.referenceId)?.platform ?? "generic",
+        capturedAt: references.find((item) => item._id === undoMove.referenceId)?.capturedAt ?? Date.now(),
+        assets: references.find((item) => item._id === undoMove.referenceId)?.assets ?? [],
+      })));
+      setSelectedId(undoMove.referenceId);
+      report(`Restored “${undoMove.title}”.`, "success");
+      setUndoMove(null);
     }
+  }
+
+  async function markReferenceOpened(reference: SavedReference) {
+    await patchReference(reference._id, { lastOpenedAt: Date.now() });
   }
 
   async function copyEndpoint() {
@@ -261,6 +356,27 @@ export function useReferenceVault() {
         "error",
       );
     }
+  }
+
+  function selectRelative(offset: number) {
+    if (!filteredReferences.length) return;
+    const currentIndex = selectedReference
+      ? filteredReferences.findIndex((item) => item._id === selectedReference._id)
+      : 0;
+    const nextIndex = Math.min(
+      filteredReferences.length - 1,
+      Math.max(0, currentIndex + offset),
+    );
+    setSelectedId(filteredReferences[nextIndex]?._id ?? null);
+  }
+
+  function nextVisibleReferenceId(referenceId: string) {
+    const index = filteredReferences.findIndex((item) => item._id === referenceId);
+    return (
+      filteredReferences[index + 1]?._id ??
+      filteredReferences[index - 1]?._id ??
+      null
+    );
   }
 
   function changeView(view: VaultView) {
@@ -285,6 +401,11 @@ export function useReferenceVault() {
     activeView,
     selectedReference,
     filteredReferences,
+    libraryCount: libraryReferences.length,
+    inboxCount,
+    laterCount,
+    archiveCount,
+    trashCount,
     favoriteCount,
     imageCount,
     linkCount,
@@ -294,13 +415,82 @@ export function useReferenceVault() {
     setCaptureOpen,
     setupOpen,
     setSetupOpen,
+    undoMove,
     saveManualReference,
     toggleFavorite,
     saveDetails,
-    deleteReference,
+    moveReference,
+    undoLastMove,
+    markReferenceOpened,
     copyEndpoint,
     changeView,
   };
+}
+
+function collectionForView(view: VaultView): ReferenceCollection {
+  if (view === "inbox") return "inbox";
+  if (view === "later") return "later";
+  if (view === "archive") return "archive";
+  if (view === "trash") return "trash";
+  return "library";
+}
+
+function viewForCollection(collection: ReferenceCollection): VaultView {
+  if (collection === "inbox") return "inbox";
+  if (collection === "later") return "later";
+  if (collection === "archive") return "archive";
+  if (collection === "trash") return "trash";
+  return "all";
+}
+
+function triagePatch(
+  reference: SavedReference,
+  destination: TriageDestination,
+  reviewedAt: number,
+): Partial<SavedReference> {
+  if (destination === "keep") {
+    return {
+      triageState: "kept" satisfies TriageState,
+      reviewedAt,
+      archived: false,
+      deleted: false,
+    };
+  }
+  if (destination === "later") {
+    return {
+      triageState: "later" satisfies TriageState,
+      reviewedAt,
+      archived: false,
+      deleted: false,
+    };
+  }
+  if (destination === "archive") {
+    return { reviewedAt, archived: true, deleted: false };
+  }
+  if (destination === "trash") {
+    return { reviewedAt, archived: true, deleted: true };
+  }
+  return reference.deleted
+    ? {
+        triageState: "inbox" satisfies TriageState,
+        reviewedAt,
+        archived: false,
+        deleted: false,
+      }
+    : {
+        triageState: "kept" satisfies TriageState,
+        reviewedAt,
+        archived: false,
+        deleted: false,
+      };
+}
+
+function triageStatus(destination: TriageDestination) {
+  if (destination === "keep") return "Kept in Library. Undo is available.";
+  if (destination === "later") return "Moved to Later. Undo is available.";
+  if (destination === "archive") return "Archived. Undo is available.";
+  if (destination === "trash") return "Moved to Trash. Undo is available.";
+  return "Reference restored.";
 }
 
 function formatDuplicateStatus(existingReference: CaptureResponse["existingReference"]) {
