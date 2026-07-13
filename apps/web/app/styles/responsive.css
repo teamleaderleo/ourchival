@@ -1,0 +1,56 @@
+@media (max-width: 1280px) {
+  .vault-workspace { grid-template-columns: 168px minmax(0, 1fr) 300px; }
+  .capture-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .capture-heading { grid-column: 1 / -1; }
+  .capture-heading p:last-child { max-width: 620px; }
+  .capture-submit { min-height: 41px; }
+}
+
+@media (max-width: 980px) {
+  .app-frame { padding-inline: 14px; }
+  .sync-status { display: none; }
+  .vault-workspace { grid-template-columns: 150px minmax(0, 1fr); }
+  .inspector { position: static; grid-column: 1 / -1; max-height: none; }
+  .selected-reference { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr); gap: 18px; }
+  .selected-image, .selected-placeholder { grid-row: 1 / span 5; max-height: 520px; }
+  .inspector-heading, .reference-facts, .inspector-fields, .inspector-actions { grid-column: 2; }
+  .setup-panel { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .app-header { align-items: flex-start; }
+  .brand-subtitle { display: none; }
+  .header-actions { flex-wrap: wrap; }
+  .button { min-height: 36px; padding: 8px 11px; font-size: 0.78rem; }
+  .capture-panel { grid-template-columns: 1fr; }
+  .capture-heading { grid-column: auto; }
+  .endpoint-row { grid-template-columns: 1fr; }
+  .vault-workspace { display: block; }
+  .vault-sidebar, .inspector { position: static; max-height: none; }
+  .vault-sidebar { margin-bottom: 12px; }
+  .vault-sidebar nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .vault-sidebar .nav-label, .planned-nav, .sidebar-note { display: none; }
+  .nav-button { display: grid; justify-items: center; gap: 3px; padding: 7px 4px; text-align: center; }
+  .nav-button-label { display: grid; justify-items: center; gap: 1px; font-size: 0.69rem; }
+  .nav-icon { display: none; }
+  .nav-count { font-size: 0.63rem; }
+  .vault-main { min-height: 0; padding: 14px; }
+  .reference-grid, .reference-grid.link-grid { columns: 2 150px; }
+  .inspector { margin-top: 12px; }
+  .selected-reference { display: block; }
+  .selected-image, .selected-placeholder { max-height: 560px; }
+}
+
+@media (max-width: 460px) {
+  .app-frame { padding-inline: 9px; }
+  .app-header { min-height: 64px; }
+  .brand-mark { width: 34px; height: 34px; }
+  .brand-name { font-size: 0.86rem; }
+  .header-actions .button.ghost { display: none; }
+  .vault-heading { align-items: flex-start; }
+  .vault-heading h1 { font-size: 1.75rem; }
+  .vault-count { display: grid; justify-items: end; gap: 0; }
+  .search-field input { padding-right: 58px; font-size: 0.8rem; }
+  .result-summary span:nth-child(2), .result-summary span:nth-child(3) { display: none; }
+  .reference-grid, .reference-grid.link-grid { columns: 1; }
+}
