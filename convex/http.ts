@@ -1,6 +1,10 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
+import {
+  applyReferenceStatsDelta,
+  listReferencePage,
+} from "./lib/referenceCatalog";
 import { detectPlatform } from "./lib/platform";
 import { normalizeSourceUrl } from "./lib/urls";
 
@@ -66,7 +70,9 @@ for (const path of ["/capture", "/references", "/reference", "/drive-file"]) {
   http.route({
     path,
     method: "OPTIONS",
-    handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
+    handler: httpAction(async () =>
+      new Response(null, { status: 204, headers: corsHeaders }),
+    ),
   });
 }
 
@@ -89,7 +95,8 @@ http.route({
       status: driveResponse.status,
       headers: {
         ...corsHeaders,
-        "Content-Type": driveResponse.headers.get("Content-Type") ?? "application/octet-stream",
+        "Content-Type":
+          driveResponse.headers.get("Content-Type") ?? "application/octet-stream",
         "Cache-Control": "private, max-age=3600",
       },
     });
@@ -100,57 +107,21 @@ http.route({
   path: "/references",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const origin = new URL(request.url).origin;
-    const references = await ctx.db
-      .query("references")
-      .withIndex("by_captured_at")
-      .order("desc")
-      .take(300);
-
-    const items = await Promise.all(
-      references.map(async (reference) => {
-        const [assets, snapshots] = await Promise.all([
-          ctx.db
-            .query("assets")
-            .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
-            .collect(),
-          ctx.db
-            .query("sourceSnapshots")
-            .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
-            .collect(),
-        ]);
-        const assetsWithUrls = await Promise.all(
-          assets.map(async (asset) => ({
-            ...asset,
-            storedUrl: asset.driveFileId
-              ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
-              : asset.originalStorageId
-                ? await ctx.storage.getUrl(asset.originalStorageId)
-                : null,
-          })),
-        );
-        const sourceSnapshot = snapshots.sort(
-          (left, right) => right.createdAt - left.createdAt,
-        )[0];
-        return {
-          ...reference,
-          assets: assetsWithUrls,
-          ...(sourceSnapshot
-            ? {
-                sourceSnapshot: {
-                  pageTitle: sourceSnapshot.pageTitle,
-                  postText: sourceSnapshot.postText,
-                  altText: sourceSnapshot.altText,
-                  selectedText: sourceSnapshot.selectedText,
-                  createdAt: sourceSnapshot.createdAt,
-                },
-              }
-            : {}),
-        };
-      }),
-    );
-
-    return jsonResponse({ ok: true, references: items });
+    try {
+      const page = await listReferencePage(ctx, request);
+      return jsonResponse({ ok: true, ...page });
+    } catch (error) {
+      return jsonResponse(
+        {
+          ok: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not load reference page.",
+        },
+        500,
+      );
+    }
   }),
 });
 
@@ -168,20 +139,28 @@ http.route({
       return jsonResponse({ ok: false, error: "Invalid JSON" }, 400);
     }
 
+    const before = await ctx.db.get(referenceId as any);
+    if (!before) return jsonResponse({ ok: false, error: "Reference not found" }, 404);
+
     const patch = {
       ...(typeof body.title === "string" ? { title: body.title.trim() } : {}),
       ...(typeof body.notes === "string" ? { notes: body.notes.trim() } : {}),
       ...(typeof body.favorite === "boolean" ? { favorite: body.favorite } : {}),
-      ...(body.triageState === "inbox" || body.triageState === "kept" || body.triageState === "later"
+      ...(body.triageState === "inbox" ||
+      body.triageState === "kept" ||
+      body.triageState === "later"
         ? { triageState: body.triageState }
         : {}),
       ...(typeof body.reviewedAt === "number" ? { reviewedAt: body.reviewedAt } : {}),
-      ...(typeof body.lastOpenedAt === "number" ? { lastOpenedAt: body.lastOpenedAt } : {}),
+      ...(typeof body.lastOpenedAt === "number"
+        ? { lastOpenedAt: body.lastOpenedAt }
+        : {}),
       ...(typeof body.archived === "boolean" ? { archived: body.archived } : {}),
       ...(typeof body.deleted === "boolean" ? { deleted: body.deleted } : {}),
     };
 
     await ctx.db.patch(referenceId as any, patch);
+    await applyReferenceStatsDelta(ctx, before, { ...before, ...patch });
     return jsonResponse({ ok: true });
   }),
 });
@@ -192,11 +171,17 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const referenceId = new URL(request.url).searchParams.get("id");
     if (!referenceId) return jsonResponse({ ok: false, error: "id is required" }, 400);
-    await ctx.db.patch(referenceId as any, {
+
+    const before = await ctx.db.get(referenceId as any);
+    if (!before) return jsonResponse({ ok: false, error: "Reference not found" }, 404);
+
+    const patch = {
       deleted: true,
       archived: true,
       reviewedAt: Date.now(),
-    });
+    };
+    await ctx.db.patch(referenceId as any, patch);
+    await applyReferenceStatsDelta(ctx, before, { ...before, ...patch });
     return jsonResponse({ ok: true });
   }),
 });
@@ -226,22 +211,36 @@ http.route({
     const captureSessionId = cleanString(body.captureSessionId);
     const publishedAt = parseOptionalDate(body.publishedAt);
 
-    if (!sourceUrl) return jsonResponse({ ok: false, error: "sourceUrl is required" }, 400);
+    if (!sourceUrl) {
+      return jsonResponse({ ok: false, error: "sourceUrl is required" }, 400);
+    }
 
     const canonicalUrl = normalizeSourceUrl(sourceUrl);
-    const duplicate = await findDuplicateCapture(ctx, { sourceUrl, canonicalUrl, assetUrl });
+    const duplicate = await findDuplicateCapture(ctx, {
+      sourceUrl,
+      canonicalUrl,
+      assetUrl,
+    });
 
     if (duplicate) {
       const patch = {
         ...(!duplicate.reference.canonicalUrl ? { canonicalUrl } : {}),
         ...(!duplicate.reference.authorName && authorName ? { authorName } : {}),
-        ...(!duplicate.reference.authorHandle && authorHandle ? { authorHandle } : {}),
+        ...(!duplicate.reference.authorHandle && authorHandle
+          ? { authorHandle }
+          : {}),
         ...(!duplicate.reference.authorUrl && authorUrl ? { authorUrl } : {}),
         ...(!duplicate.reference.postId && postId ? { postId } : {}),
-        ...(!duplicate.reference.publishedAt && publishedAt ? { publishedAt } : {}),
-        ...(!duplicate.reference.captureSessionId && captureSessionId ? { captureSessionId } : {}),
+        ...(!duplicate.reference.publishedAt && publishedAt
+          ? { publishedAt }
+          : {}),
+        ...(!duplicate.reference.captureSessionId && captureSessionId
+          ? { captureSessionId }
+          : {}),
       };
-      if (Object.keys(patch).length > 0) await ctx.db.patch(duplicate.reference._id, patch);
+      if (Object.keys(patch).length > 0) {
+        await ctx.db.patch(duplicate.reference._id, patch);
+      }
       if (postText || altText || selectedText || rawMetadata) {
         await ctx.db.insert("sourceSnapshots", {
           referenceId: duplicate.reference._id,
@@ -249,7 +248,11 @@ http.route({
           ...(postText ? { postText } : {}),
           ...(altText ? { altText } : {}),
           ...(selectedText ? { selectedText } : {}),
-          jsonMetadata: JSON.stringify({ ...body, canonicalUrl, duplicateReason: duplicate.reason }),
+          jsonMetadata: JSON.stringify({
+            ...body,
+            canonicalUrl,
+            duplicateReason: duplicate.reason,
+          }),
           createdAt: Date.now(),
         });
       }
@@ -296,6 +299,9 @@ http.route({
       deleted: false,
     });
 
+    const insertedReference = await ctx.db.get(referenceId);
+    await applyReferenceStatsDelta(ctx, null, insertedReference);
+
     let assetId = null;
     let storageStatus = assetUrl ? "asset pending" : "link only";
 
@@ -310,15 +316,29 @@ http.route({
         referenceId,
         storageProvider: storedAsset.storageProvider,
         originalUrl: assetUrl,
-        ...(storedAsset.storageId ? { originalStorageId: storedAsset.storageId } : {}),
+        ...(storedAsset.storageId
+          ? { originalStorageId: storedAsset.storageId }
+          : {}),
         ...(storedAsset.mimeType ? { mimeType: storedAsset.mimeType } : {}),
         ...(storedAsset.fileSize ? { fileSize: storedAsset.fileSize } : {}),
-        ...(storedAsset.driveFileId ? { driveFileId: storedAsset.driveFileId } : {}),
-        ...(storedAsset.driveFolderId ? { driveFolderId: storedAsset.driveFolderId } : {}),
-        ...(storedAsset.driveWebViewLink ? { driveWebViewLink: storedAsset.driveWebViewLink } : {}),
-        ...(storedAsset.driveWebContentLink ? { driveWebContentLink: storedAsset.driveWebContentLink } : {}),
-        ...(storedAsset.driveThumbnailLink ? { driveThumbnailLink: storedAsset.driveThumbnailLink } : {}),
-        ...(storedAsset.driveMimeType ? { driveMimeType: storedAsset.driveMimeType } : {}),
+        ...(storedAsset.driveFileId
+          ? { driveFileId: storedAsset.driveFileId }
+          : {}),
+        ...(storedAsset.driveFolderId
+          ? { driveFolderId: storedAsset.driveFolderId }
+          : {}),
+        ...(storedAsset.driveWebViewLink
+          ? { driveWebViewLink: storedAsset.driveWebViewLink }
+          : {}),
+        ...(storedAsset.driveWebContentLink
+          ? { driveWebContentLink: storedAsset.driveWebContentLink }
+          : {}),
+        ...(storedAsset.driveThumbnailLink
+          ? { driveThumbnailLink: storedAsset.driveThumbnailLink }
+          : {}),
+        ...(storedAsset.driveMimeType
+          ? { driveMimeType: storedAsset.driveMimeType }
+          : {}),
         dominantColors: [],
       });
     }
@@ -338,7 +358,16 @@ http.route({
       createdAt: Date.now(),
     });
 
-    return jsonResponse({ ok: true, alreadySaved: false, referenceId, assetId, storageStatus }, 201);
+    return jsonResponse(
+      {
+        ok: true,
+        alreadySaved: false,
+        referenceId,
+        assetId,
+        storageStatus,
+      },
+      201,
+    );
   }),
 });
 
@@ -349,28 +378,46 @@ async function findDuplicateCapture(
   if (args.assetUrl) {
     const matchingAssets = await ctx.db
       .query("assets")
-      .withIndex("by_original_url", (q: any) => q.eq("originalUrl", args.assetUrl))
+      .withIndex("by_original_url", (q: any) =>
+        q.eq("originalUrl", args.assetUrl),
+      )
       .collect();
     for (const asset of matchingAssets) {
       const reference = await ctx.db.get(asset.referenceId);
-      if (reference && !reference.deleted) return { reference, assetId: asset._id, reason: "asset_url" };
+      if (reference && !reference.deleted) {
+        return { reference, assetId: asset._id, reason: "asset_url" };
+      }
     }
     return undefined;
   }
 
   const canonicalMatches = await ctx.db
     .query("references")
-    .withIndex("by_canonical_url", (q: any) => q.eq("canonicalUrl", args.canonicalUrl))
+    .withIndex("by_canonical_url", (q: any) =>
+      q.eq("canonicalUrl", args.canonicalUrl),
+    )
     .collect();
-  const canonicalReference = canonicalMatches.find((reference: any) => !reference.deleted);
-  if (canonicalReference) return { reference: canonicalReference, assetId: null, reason: "canonical_url" };
+  const canonicalReference = canonicalMatches.find(
+    (reference: any) => !reference.deleted,
+  );
+  if (canonicalReference) {
+    return {
+      reference: canonicalReference,
+      assetId: null,
+      reason: "canonical_url",
+    };
+  }
 
   const sourceMatches = await ctx.db
     .query("references")
     .withIndex("by_source_url", (q: any) => q.eq("sourceUrl", args.sourceUrl))
     .collect();
-  const sourceReference = sourceMatches.find((reference: any) => !reference.deleted);
-  return sourceReference ? { reference: sourceReference, assetId: null, reason: "source_url" } : undefined;
+  const sourceReference = sourceMatches.find(
+    (reference: any) => !reference.deleted,
+  );
+  return sourceReference
+    ? { reference: sourceReference, assetId: null, reason: "source_url" }
+    : undefined;
 }
 
 async function fetchAndStoreRemoteAsset(
@@ -379,19 +426,34 @@ async function fetchAndStoreRemoteAsset(
 ): Promise<StoredRemoteAsset> {
   try {
     const response = await fetch(args.assetUrl, {
-      headers: { Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" },
+      headers: {
+        Accept:
+          "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      },
     });
-    if (!response.ok) return { status: `fetch failed: ${response.status}`, storageProvider: "linked" };
+    if (!response.ok) {
+      return {
+        status: `fetch failed: ${response.status}`,
+        storageProvider: "linked",
+      };
+    }
 
     const mimeType = response.headers.get("Content-Type") ?? undefined;
     const contentLength = Number(response.headers.get("Content-Length") ?? 0);
-    if (contentLength > maxRemoteAssetBytes) return { status: "remote asset too large", storageProvider: "linked" };
+    if (contentLength > maxRemoteAssetBytes) {
+      return { status: "remote asset too large", storageProvider: "linked" };
+    }
     if (mimeType && !mimeType.toLowerCase().startsWith("image/")) {
-      return { status: `remote asset is ${mimeType}`, storageProvider: "linked" };
+      return {
+        status: `remote asset is ${mimeType}`,
+        storageProvider: "linked",
+      };
     }
 
     const blob = await response.blob();
-    if (blob.size > maxRemoteAssetBytes) return { status: "remote asset too large", storageProvider: "linked" };
+    if (blob.size > maxRemoteAssetBytes) {
+      return { status: "remote asset too large", storageProvider: "linked" };
+    }
 
     const driveUpload = await uploadBlobToDrive({
       blob,
@@ -424,7 +486,8 @@ async function fetchAndStoreRemoteAsset(
     };
   } catch (error) {
     return {
-      status: error instanceof Error ? error.message : "remote asset fetch failed",
+      status:
+        error instanceof Error ? error.message : "remote asset fetch failed",
       storageProvider: "linked",
     };
   }
