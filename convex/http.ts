@@ -26,7 +26,11 @@ type UpdateReferenceBody = {
   title?: string;
   notes?: string;
   favorite?: boolean;
+  triageState?: "inbox" | "kept" | "later";
+  reviewedAt?: number;
+  lastOpenedAt?: number;
   archived?: boolean;
+  deleted?: boolean;
 };
 
 type StoredRemoteAsset = {
@@ -113,12 +117,10 @@ http.route({
       .query("references")
       .withIndex("by_captured_at")
       .order("desc")
-      .take(120);
-
-    const visibleReferences = references.filter((reference) => !reference.deleted);
+      .take(300);
 
     const items = await Promise.all(
-      visibleReferences.map(async (reference) => {
+      references.map(async (reference) => {
         const assets = await ctx.db
           .query("assets")
           .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
@@ -166,7 +168,13 @@ http.route({
       ...(typeof body.title === "string" ? { title: body.title.trim() } : {}),
       ...(typeof body.notes === "string" ? { notes: body.notes.trim() } : {}),
       ...(typeof body.favorite === "boolean" ? { favorite: body.favorite } : {}),
+      ...(body.triageState === "inbox" || body.triageState === "kept" || body.triageState === "later"
+        ? { triageState: body.triageState }
+        : {}),
+      ...(typeof body.reviewedAt === "number" ? { reviewedAt: body.reviewedAt } : {}),
+      ...(typeof body.lastOpenedAt === "number" ? { lastOpenedAt: body.lastOpenedAt } : {}),
       ...(typeof body.archived === "boolean" ? { archived: body.archived } : {}),
+      ...(typeof body.deleted === "boolean" ? { deleted: body.deleted } : {}),
     };
 
     await ctx.db.patch(referenceId as any, patch);
@@ -189,6 +197,7 @@ http.route({
     await ctx.db.patch(referenceId as any, {
       deleted: true,
       archived: true,
+      reviewedAt: Date.now(),
     });
 
     return jsonResponse({ ok: true });
@@ -256,6 +265,7 @@ http.route({
       canonicalUrl,
       platform,
       capturedAt,
+      triageState: "inbox",
       boardIds: [],
       tagIds: [],
       favorite: false,
