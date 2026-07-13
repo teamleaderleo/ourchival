@@ -3,6 +3,7 @@ import {
   assetLabel,
   filterReferences,
   getSelectedReference,
+  referenceCollection,
   referenceKindLabel,
   referenceMode,
   type SavedReference,
@@ -44,6 +45,15 @@ const references: SavedReference[] = [
   },
 ];
 
+const triageReferences: SavedReference[] = [
+  { ...references[0]!, _id: "inbox", triageState: "inbox" },
+  { ...references[0]!, _id: "kept", triageState: "kept" },
+  { ...references[0]!, _id: "legacy" },
+  { ...references[0]!, _id: "later", triageState: "later" },
+  { ...references[0]!, _id: "archive", archived: true },
+  { ...references[0]!, _id: "trash", archived: true, deleted: true },
+];
+
 describe("filterReferences", () => {
   it("searches title, notes, URL, platform, and kind", () => {
     expect(filterReferences(references, { query: "hands" }).map((item) => item._id)).toEqual([
@@ -80,6 +90,45 @@ describe("filterReferences", () => {
     expect(filterReferences(references, { lane: "links" }).map((item) => item._id)).toEqual([
       "color-article",
     ]);
+  });
+
+  it("filters Inbox, Library, Later, Archive, and Trash independently", () => {
+    expect(filterReferences(triageReferences, { collection: "inbox" }).map((item) => item._id)).toEqual([
+      "inbox",
+    ]);
+    expect(filterReferences(triageReferences, { collection: "library" }).map((item) => item._id)).toEqual([
+      "kept",
+      "legacy",
+    ]);
+    expect(filterReferences(triageReferences, { collection: "later" }).map((item) => item._id)).toEqual([
+      "later",
+    ]);
+    expect(filterReferences(triageReferences, { collection: "archive" }).map((item) => item._id)).toEqual([
+      "archive",
+    ]);
+    expect(filterReferences(triageReferences, { collection: "trash" }).map((item) => item._id)).toEqual([
+      "trash",
+    ]);
+  });
+});
+
+describe("referenceCollection", () => {
+  it("treats pre-triage references as kept Library items", () => {
+    expect(referenceCollection(references[0]!)).toBe("library");
+  });
+
+  it("gives Trash and Archive precedence over triage state", () => {
+    expect(referenceCollection({ ...references[0]!, triageState: "inbox", archived: true })).toBe(
+      "archive",
+    );
+    expect(
+      referenceCollection({
+        ...references[0]!,
+        triageState: "inbox",
+        archived: true,
+        deleted: true,
+      }),
+    ).toBe("trash");
   });
 });
 

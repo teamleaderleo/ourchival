@@ -1,10 +1,22 @@
-export type VaultView = "all" | "images" | "links" | "favorites";
+export type VaultView =
+  | "inbox"
+  | "all"
+  | "images"
+  | "links"
+  | "favorites"
+  | "later"
+  | "archive"
+  | "trash";
 
 export const viewLabels: Record<VaultView, string> = {
+  inbox: "Inbox",
   all: "Library",
   images: "Images",
   links: "Links",
   favorites: "Favorites",
+  later: "Later",
+  archive: "Archive",
+  trash: "Trash",
 };
 
 export function VaultSidebar({
@@ -19,6 +31,17 @@ export function VaultSidebar({
   return (
     <aside className="vault-sidebar" aria-label="Vault navigation">
       <nav>
+        <p className="nav-label">Review</p>
+        <VaultNavButton
+          label="Inbox"
+          count={counts.inbox}
+          active={activeView === "inbox"}
+          onClick={() => onChange("inbox")}
+          icon="↓"
+        />
+      </nav>
+
+      <nav className="sidebar-section">
         <p className="nav-label">Library</p>
         <VaultNavButton
           label="All references"
@@ -46,22 +69,43 @@ export function VaultSidebar({
           icon="★"
         />
       </nav>
-      <div className="planned-nav" aria-label="Planned workflow areas">
+
+      <nav className="sidebar-section">
         <p className="nav-label">Workflow</p>
-        {["Inbox", "Later", "Boards", "Archive"].map((label) => (
-          <div
-            className="planned-nav-item"
-            title={`${label} is planned for the next workflow slice`}
-            key={label}
-          >
-            <span>{label}</span>
-            <span>Soon</span>
-          </div>
-        ))}
+        <VaultNavButton
+          label="Later"
+          count={counts.later}
+          active={activeView === "later"}
+          onClick={() => onChange("later")}
+          icon="◷"
+        />
+        <VaultNavButton
+          label="Archive"
+          count={counts.archive}
+          active={activeView === "archive"}
+          onClick={() => onChange("archive")}
+          icon="□"
+        />
+        <VaultNavButton
+          label="Trash"
+          count={counts.trash}
+          active={activeView === "trash"}
+          onClick={() => onChange("trash")}
+          icon="×"
+        />
+      </nav>
+
+      <div className="planned-nav" aria-label="Planned organization areas">
+        <p className="nav-label">Organization</p>
+        <div className="planned-nav-item" title="Boards are planned for the next organization slice">
+          <span>Boards</span>
+          <span>Soon</span>
+        </div>
       </div>
+
       <div className="sidebar-note">
         <p className="eyebrow">Capture loop</p>
-        <p>Right-click an image, link, or page in Edge to send it here.</p>
+        <p>New saves land in Inbox. Keep them, defer them, archive them, or send them to Trash.</p>
       </div>
     </aside>
   );

@@ -3,19 +3,24 @@
 import { useState } from "react";
 import {
   assetLabel,
+  referenceCollection,
+  referenceCollectionLabel,
   referenceMode,
   type SavedReference,
 } from "./referenceVaultModel";
 import { getDomain, getInitial } from "./ReferenceCards";
+import { type TriageDestination } from "./useReferenceVault";
 
 export function SelectedReference({
   reference,
-  onDelete,
+  onMove,
+  onOpen,
   onToggleFavorite,
   onSaveDetails,
 }: {
   reference: SavedReference;
-  onDelete: (referenceId: string) => void;
+  onMove: (referenceId: string, destination: TriageDestination) => Promise<boolean>;
+  onOpen: (reference: SavedReference) => Promise<void>;
   onToggleFavorite: (reference: SavedReference) => void;
   onSaveDetails: (
     referenceId: string,
@@ -24,6 +29,7 @@ export function SelectedReference({
 }) {
   const asset = reference.assets[0];
   const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
+  const collection = referenceCollection(reference);
   const [titleDraft, setTitleDraft] = useState(reference.title ?? "");
   const [notesDraft, setNotesDraft] = useState(reference.notes ?? "");
   const [savingDetails, setSavingDetails] = useState(false);
@@ -79,6 +85,10 @@ export function SelectedReference({
       </div>
       <dl className="reference-facts">
         <div>
+          <dt>Location</dt>
+          <dd>{referenceCollectionLabel(reference)}</dd>
+        </div>
+        <div>
           <dt>Platform</dt>
           <dd>{reference.platform}</dd>
         </div>
@@ -86,11 +96,58 @@ export function SelectedReference({
           <dt>Captured</dt>
           <dd>{new Date(reference.capturedAt).toLocaleString()}</dd>
         </div>
+        {reference.lastOpenedAt ? (
+          <div>
+            <dt>Opened</dt>
+            <dd>{new Date(reference.lastOpenedAt).toLocaleString()}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Asset</dt>
           <dd>{assetLabel(asset, reference.kind)}</dd>
         </div>
       </dl>
+
+      <div className="triage-actions" aria-label="Reference workflow actions">
+        {collection === "trash" || collection === "archive" ? (
+          <button
+            type="button"
+            className="button secondary full-width"
+            onClick={() => void onMove(reference._id, "restore")}
+          >
+            {collection === "trash" ? "Restore to Inbox" : "Restore to Library"}
+          </button>
+        ) : (
+          <>
+            {collection !== "library" ? (
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => void onMove(reference._id, "keep")}
+              >
+                Keep
+              </button>
+            ) : null}
+            {collection !== "later" ? (
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => void onMove(reference._id, "later")}
+              >
+                Later
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="button ghost"
+              onClick={() => void onMove(reference._id, "archive")}
+            >
+              Archive
+            </button>
+          </>
+        )}
+      </div>
+
       <div className="inspector-fields">
         <label>
           Title
@@ -124,6 +181,7 @@ export function SelectedReference({
           href={reference.sourceUrl}
           target="_blank"
           rel="noreferrer"
+          onClick={() => void onOpen(reference)}
         >
           Open source ↗
         </a>
@@ -149,13 +207,15 @@ export function SelectedReference({
             </a>
           ) : null}
         </div>
-        <button
-          type="button"
-          className="button danger full-width"
-          onClick={() => onDelete(reference._id)}
-        >
-          Remove reference
-        </button>
+        {collection !== "trash" ? (
+          <button
+            type="button"
+            className="button danger full-width"
+            onClick={() => void onMove(reference._id, "trash")}
+          >
+            Move to Trash
+          </button>
+        ) : null}
       </div>
     </div>
   );
