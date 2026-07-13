@@ -10,6 +10,9 @@ export function ReferenceVault() {
   const vault = useReferenceVault();
   const currentViewLabel = viewLabels[vault.activeView];
   const isReviewView = vault.activeView === "inbox" || vault.activeView === "later";
+  const displayedCount = vault.query
+    ? `${vault.filteredReferences.length}${vault.hasMore ? "+" : ""}`
+    : String(vault.activeCount);
 
   return (
     <div className="app-frame">
@@ -158,12 +161,8 @@ export function ReferenceVault() {
               <h1>{currentViewLabel}</h1>
             </div>
             <p className="vault-count">
-              <strong>{vault.filteredReferences.length}</strong>
-              <span>
-                {vault.filteredReferences.length === 1
-                  ? "reference"
-                  : "references"}
-              </span>
+              <strong>{displayedCount}</strong>
+              <span>{vault.query ? "matches loaded" : "references"}</span>
             </p>
           </div>
           <div className="vault-toolbar">
@@ -231,6 +230,7 @@ export function ReferenceVault() {
           ) : null}
 
           <div className="result-summary">
+            <span>{vault.filteredReferences.length} loaded here</span>
             <span>{vault.libraryCount} in Library</span>
             <span>{vault.inboxCount} in Inbox</span>
             <span>{vault.laterCount} for Later</span>
@@ -239,19 +239,31 @@ export function ReferenceVault() {
           <section
             className={`reference-grid ${vault.activeView === "links" ? "link-grid" : ""}`}
           >
-            {vault.filteredReferences.length === 0 ? (
+            {vault.isLoading && vault.filteredReferences.length === 0 ? (
+              <article className="empty-card loading-card" aria-live="polite">
+                <span className="empty-mark" aria-hidden="true">
+                  ◌
+                </span>
+                <h2>Loading {currentViewLabel.toLowerCase()}</h2>
+                <p>Fetching the first page and current archive counts.</p>
+              </article>
+            ) : vault.filteredReferences.length === 0 ? (
               <article className="empty-card">
                 <span className="empty-mark" aria-hidden="true">
                   ◇
                 </span>
                 <h2>
                   {vault.query
-                    ? "No matching saves"
+                    ? vault.hasMore
+                      ? "No matches in this page yet"
+                      : "No matching saves"
                     : emptyHeading(vault.activeView, currentViewLabel)}
                 </h2>
                 <p>
                   {vault.query
-                    ? "Try a source domain, artist name, title, or phrase from your notes."
+                    ? vault.hasMore
+                      ? "Search can continue deeper into the archive."
+                      : "Try a source domain, artist name, title, or phrase from your notes."
                     : emptyMessage(vault.activeView)}
                 </p>
                 {!vault.query && vault.activeView === "inbox" ? (
@@ -276,6 +288,27 @@ export function ReferenceVault() {
               ))
             )}
           </section>
+
+          {!vault.isLoading ? (
+            <div className="pagination-bar" aria-live="polite">
+              <p>
+                {vault.filteredReferences.length} loaded
+                {vault.query ? " for this search" : ` of ${vault.activeCount}`}
+              </p>
+              {vault.hasMore ? (
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => void vault.loadMore()}
+                  disabled={vault.isLoadingMore}
+                >
+                  {vault.isLoadingMore ? "Loading…" : "Load more"}
+                </button>
+              ) : vault.filteredReferences.length > 0 ? (
+                <span>End of collection</span>
+              ) : null}
+            </div>
+          ) : null}
         </main>
         <aside className="inspector" aria-label="Selected reference inspector">
           <div className="inspector-label-row">
