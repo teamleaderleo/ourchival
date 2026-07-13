@@ -22,6 +22,7 @@ export function ReferenceCard({
   const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
   const mode = referenceMode(reference.kind);
   const domain = getDomain(reference.sourceUrl);
+  const sourceLabel = reference.authorHandle || reference.authorName || domain;
 
   return (
     <article
@@ -44,8 +45,8 @@ export function ReferenceCard({
           </span>
         </div>
         <div className="card-copy">
-          <h2>{reference.title || domain || reference.sourceUrl}</h2>
-          <p className="card-domain">{domain}</p>
+          <h2>{reference.title || sourceLabel || reference.sourceUrl}</h2>
+          <p className="card-domain">{sourceLabel}</p>
           <p className="card-meta">
             <span>{reference.platform}</span>
             <span>{formatCaptureDate(reference.capturedAt)}</span>
