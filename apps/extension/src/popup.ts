@@ -1,5 +1,5 @@
 import type { CapturePayload } from "@ourchival/shared";
-import { parseUrlList } from "./imports";
+import { parseBookmarksHtml, parseUrlList } from "./imports";
 import {
   getPopupState,
   LAST_BATCH_KEY,
@@ -79,8 +79,14 @@ async function render() {
           placeholder="https://example.com/art | Gesture reference"
           ${disabled}
         ></textarea>
-        <button type="submit" class="primary" ${disabled}>Import pasted links</button>
-        <p id="import-feedback" class="hint">Duplicate lines are removed before the job starts.</p>
+        <div class="import-actions">
+          <button type="submit" class="primary" ${disabled}>Import pasted links</button>
+          <label class="file-button ${disabled ? "disabled" : ""}">
+            Import bookmarks HTML
+            <input id="bookmarks-file" type="file" accept=".html,.htm,text/html" ${disabled} />
+          </label>
+        </div>
+        <p id="import-feedback" class="hint">Duplicate lines and bookmark entries are removed before the job starts.</p>
       </form>
 
       ${renderBatch(batch)}
@@ -136,7 +142,29 @@ async function render() {
     }
 
     transientMessage = `Starting import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
-    void sendRuntimeMessage({ type: "OURCHIVAL_CAPTURE_URLS", entries });
+    void sendRuntimeMessage({ type: "OURCHIVAL_CAPTURE_URLS", source: "url_list", entries });
+  });
+
+  document.getElementById("bookmarks-file")?.addEventListener("change", async (event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    const feedback = document.getElementById("import-feedback");
+    if (!file) return;
+
+    try {
+      const entries = parseBookmarksHtml(await file.text());
+      if (entries.length === 0) {
+        if (feedback) feedback.textContent = "The file contained no HTTP or HTTPS bookmarks.";
+        return;
+      }
+
+      transientMessage = `Starting bookmark import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
+      void sendRuntimeMessage({ type: "OURCHIVAL_CAPTURE_URLS", source: "bookmarks", entries });
+    } catch (error) {
+      if (feedback) {
+        feedback.textContent = error instanceof Error ? error.message : "Could not read that bookmarks file.";
+      }
+    }
   });
 
   document.getElementById("close-saved-tabs")?.addEventListener("click", () => {
@@ -145,6 +173,19 @@ async function render() {
     void sendRuntimeMessage({
       type: "OURCHIVAL_CLOSE_SAVED_TABS",
       tabIds: batch.successfulTabIds,
+    });
+  });
+
+  document.getElementById("retry-failures")?.addEventListener("click", () => {
+    if (!batch?.failures.length) return;
+    transientMessage = `Retrying ${batch.failures.length} failed ${batch.failures.length === 1 ? "link" : "links"}…`;
+    void sendRuntimeMessage({
+      type: "OURCHIVAL_CAPTURE_URLS",
+      source: "retry",
+      entries: batch.failures.map((failure) => ({
+        url: failure.url,
+        ...(failure.title ? { title: failure.title } : {}),
+      })),
     });
   });
 
@@ -172,13 +213,18 @@ function renderBatch(batch: BatchCaptureState | undefined) {
     !batch.running && batch.successfulTabIds.length > 0
       ? `<button id="close-saved-tabs" type="button" class="secondary full-width">Close ${batch.successfulTabIds.length} saved ${batch.successfulTabIds.length === 1 ? "tab" : "tabs"}</button>`
       : "";
+  const retryButton =
+    !batch.running && batch.failures.length > 0
+      ? `<button id="retry-failures" type="button" class="secondary full-width">Retry ${batch.failures.length} failed ${batch.failures.length === 1 ? "link" : "links"}</button>`
+      : "";
+  const visibleFailures = batch.failures.slice(0, 25);
   const failures = batch.failures.length
-    ? `<details class="failure-details"><summary>${batch.failed} failed</summary><ul>${batch.failures
+    ? `<details class="failure-details"><summary>${batch.failed} failed</summary><ul>${visibleFailures
         .map(
           (failure) =>
             `<li><span>${escapeHtml(failure.url)}</span><small>${escapeHtml(failure.message)}</small></li>`,
         )
-        .join("")}</ul></details>`
+        .join("")}</ul>${batch.failures.length > visibleFailures.length ? `<p class="hint">Showing the first ${visibleFailures.length}; Retry includes all failures.</p>` : ""}</details>`
     : "";
 
   return `
@@ -200,7 +246,7 @@ function renderBatch(batch: BatchCaptureState | undefined) {
         <span><strong>${batch.skipped}</strong> skipped</span>
         <span><strong>${batch.failed}</strong> failed</span>
       </div>
-      ${closeButton}
+      <div class="batch-actions">${closeButton}${retryButton}</div>
       ${failures}
     </section>
   `;
@@ -228,12 +274,16 @@ function batchSourceLabel(source: BatchCaptureSource) {
   if (source === "current_tab") return "Current tab";
   if (source === "selected_tabs") return "Selected tabs";
   if (source === "window") return "Entire window";
+  if (source === "bookmarks") return "Bookmarks HTML";
+  if (source === "retry") return "Failed-item retry";
   return "Pasted links";
 }
 
 function formatTime(value: string) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function escapeHtml(value: string) {

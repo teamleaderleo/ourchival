@@ -7,18 +7,14 @@ import {
   saveBatchState,
   saveLastCapture,
   saveLastResult,
+  type BatchCaptureItem,
   type BatchCaptureSource,
   type BatchCaptureState,
   type CaptureResult,
 } from "./storage";
 
 type TabCaptureMode = "current" | "selected" | "window";
-
-type BatchItem = {
-  url?: string;
-  title?: string;
-  tabId?: number;
-};
+type ImportSource = "url_list" | "bookmarks" | "retry";
 
 type CaptureResponse = {
   ok?: boolean;
@@ -33,8 +29,10 @@ type CaptureResponse = {
 
 type ExtensionMessage =
   | { type: "OURCHIVAL_CAPTURE_TABS"; mode: TabCaptureMode }
-  | { type: "OURCHIVAL_CAPTURE_URLS"; entries: ImportedUrl[] }
+  | { type: "OURCHIVAL_CAPTURE_URLS"; entries: ImportedUrl[]; source?: ImportSource }
   | { type: "OURCHIVAL_CLOSE_SAVED_TABS"; tabIds: number[] };
+
+let activeJobId: string | undefined;
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -100,7 +98,7 @@ chrome.runtime.onMessage.addListener(
 
     if (message?.type === "OURCHIVAL_CAPTURE_URLS") {
       void runBatch(
-        "url_list",
+        message.source ?? "url_list",
         message.entries.map((entry) => ({ url: entry.url, title: entry.title })),
       )
         .then((state) => sendResponse({ ok: true, state }))
@@ -158,13 +156,16 @@ async function queryTabs(mode: TabCaptureMode) {
   }
 
   const tabs = await chrome.tabs.query({ lastFocusedWindow: true });
-  return tabs.sort((left, right) => (left.index ?? 0) - (right.index ?? 0));
+  return tabs.sort((left, right) => left.index - right.index);
 }
 
-async function runBatch(source: BatchCaptureSource, items: BatchItem[]) {
+async function runBatch(source: BatchCaptureSource, items: BatchCaptureItem[]) {
+  if (activeJobId) {
+    throw new Error("A bulk capture is already running.");
+  }
+
   const settings = await getSettings();
   const endpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
-
   if (!endpoint) {
     throw new Error("Add your Convex site URL before starting a bulk capture.");
   }
@@ -176,83 +177,144 @@ async function runBatch(source: BatchCaptureSource, items: BatchItem[]) {
     startedAt: new Date().toISOString(),
     total: items.length,
     completed: 0,
+    nextIndex: 0,
     saved: 0,
     duplicates: 0,
     failed: 0,
     skipped: 0,
+    items,
     successfulTabIds: [],
     failures: [],
   };
 
   await saveBatchState(state);
+  return await continueBatch(state, endpoint);
+}
+
+async function continueBatch(state: BatchCaptureState, endpoint?: string) {
+  if (activeJobId && activeJobId !== state.jobId) {
+    throw new Error("Another bulk capture is already running.");
+  }
+
+  const resolvedEndpoint =
+    endpoint ?? normalizeCaptureEndpoint((await getSettings()).captureEndpoint);
+  if (!resolvedEndpoint) {
+    state.running = false;
+    state.currentLabel = "Reconnect the clipper endpoint, then retry the remaining links.";
+    await saveBatchState(state);
+    return state;
+  }
+
+  activeJobId = state.jobId;
+  state.running = true;
   await chrome.action.setBadgeText({ text: "…" });
   await chrome.action.setBadgeBackgroundColor({ color: "#6f5bb7" });
 
-  for (const item of items) {
-    state.currentLabel = item.title || item.url || "Unsupported tab";
+  try {
+    while (state.nextIndex < state.items.length) {
+      const item = state.items[state.nextIndex]!;
+      state.currentLabel = item.title || item.url || "Unsupported tab";
 
-    if (!isCapturableUrl(item.url)) {
-      state.skipped += 1;
-      state.completed += 1;
-      await saveBatchState({ ...state });
-      continue;
-    }
-
-    const payload: CapturePayload = {
-      kind: "page",
-      sourceUrl: item.url,
-      ...(item.title ? { pageTitle: item.title } : {}),
-      captureSessionId: state.jobId,
-      capturedAt: new Date().toISOString(),
-    };
-
-    try {
-      const result = await capturePayload(endpoint, payload);
-
-      if (!result.ok) {
-        throw new Error(result.error || `Capture failed with status ${result.status}`);
+      if (!isCapturableUrl(item.url)) {
+        state.skipped += 1;
+        advanceCheckpoint(state);
+        await saveBatchState({ ...state });
+        continue;
       }
 
-      if (result.body.alreadySaved) {
-        state.duplicates += 1;
-      } else {
-        state.saved += 1;
-      }
+      const payload: CapturePayload = {
+        kind: "page",
+        sourceUrl: item.url,
+        ...(item.title ? { pageTitle: item.title } : {}),
+        captureSessionId: state.jobId,
+        capturedAt: new Date().toISOString(),
+      };
 
-      if (typeof item.tabId === "number") {
-        state.successfulTabIds.push(item.tabId);
-      }
+      try {
+        const result = await capturePayload(resolvedEndpoint, payload);
+        if (!result.ok) {
+          throw new Error(result.error || `Capture failed with status ${result.status}`);
+        }
 
-      await saveLastCapture(payload);
-      await saveLastResult(toCaptureResult(result));
-    } catch (error) {
-      state.failed += 1;
-      if (state.failures.length < 25) {
+        if (result.body.alreadySaved) {
+          state.duplicates += 1;
+        } else {
+          state.saved += 1;
+        }
+
+        if (typeof item.tabId === "number") {
+          state.successfulTabIds.push(item.tabId);
+        }
+
+        await saveLastCapture(payload);
+        await saveLastResult(toCaptureResult(result));
+      } catch (error) {
+        state.failed += 1;
         state.failures.push({
           url: item.url,
+          ...(item.title ? { title: item.title } : {}),
           message: error instanceof Error ? error.message : "Capture failed.",
         });
       }
+
+      advanceCheckpoint(state);
+      await saveBatchState({ ...state });
     }
 
-    state.completed += 1;
+    state.running = false;
+    state.completedAt = new Date().toISOString();
+    state.currentLabel = undefined;
     await saveBatchState({ ...state });
+
+    const successful = state.saved + state.duplicates;
+    await chrome.action.setBadgeText({
+      text:
+        successful > 99
+          ? "99+"
+          : successful > 0
+            ? String(successful)
+            : state.failed
+              ? "!"
+              : "✓",
+    });
+    await chrome.action.setBadgeBackgroundColor({
+      color: state.failed ? "#8a5d3d" : "#3d6b3d",
+    });
+
+    return state;
+  } finally {
+    if (activeJobId === state.jobId) {
+      activeJobId = undefined;
+    }
+  }
+}
+
+function advanceCheckpoint(state: BatchCaptureState) {
+  state.nextIndex += 1;
+  state.completed = state.nextIndex;
+}
+
+async function resumeInterruptedBatch() {
+  const stored = await chrome.storage.local.get(LAST_BATCH_KEY);
+  const state = stored[LAST_BATCH_KEY] as BatchCaptureState | undefined;
+
+  if (
+    !state?.running ||
+    !Array.isArray(state.items) ||
+    typeof state.nextIndex !== "number" ||
+    state.nextIndex >= state.items.length
+  ) {
+    return;
   }
 
-  state.running = false;
-  state.completedAt = new Date().toISOString();
-  state.currentLabel = undefined;
-  await saveBatchState({ ...state });
-
-  const successful = state.saved + state.duplicates;
-  await chrome.action.setBadgeText({
-    text: successful > 99 ? "99+" : successful > 0 ? String(successful) : state.failed ? "!" : "✓",
-  });
-  await chrome.action.setBadgeBackgroundColor({
-    color: state.failed ? "#8a5d3d" : "#3d6b3d",
-  });
-
-  return state;
+  try {
+    await continueBatch(state);
+  } catch (error) {
+    state.running = false;
+    state.currentLabel =
+      error instanceof Error ? error.message : "The interrupted import could not resume.";
+    await saveBatchState(state);
+  }
 }
 
 async function closeSavedTabs(tabIds: number[]) {
@@ -301,14 +363,18 @@ async function capturePayload(endpoint: string, payload: CapturePayload) {
   };
 }
 
-function toCaptureResult(result: Awaited<ReturnType<typeof capturePayload>>): CaptureResult {
+function toCaptureResult(
+  result: Awaited<ReturnType<typeof capturePayload>>,
+): CaptureResult {
   return {
     ok: result.ok,
     status: result.status,
     message: result.ok
       ? result.body.alreadySaved
         ? duplicateMessage(result.body.existingReference)
-        : ["Saved to Ourchival.", result.body.storageStatus].filter(Boolean).join(" ")
+        : ["Saved to Ourchival.", result.body.storageStatus]
+            .filter(Boolean)
+            .join(" ")
       : result.error,
     storageStatus: result.body.storageStatus,
     referenceId: result.body.referenceId,
@@ -372,8 +438,16 @@ function createJobId() {
 
 async function markResult(result: CaptureResult) {
   await saveLastResult(result);
-  await chrome.action.setBadgeText({ text: result.alreadySaved ? "↺" : result.ok ? "✓" : "!" });
+  await chrome.action.setBadgeText({
+    text: result.alreadySaved ? "↺" : result.ok ? "✓" : "!",
+  });
   await chrome.action.setBadgeBackgroundColor({
-    color: result.alreadySaved ? "#6f5bb7" : result.ok ? "#3d6b3d" : "#8a3d3d",
+    color: result.alreadySaved
+      ? "#6f5bb7"
+      : result.ok
+        ? "#3d6b3d"
+        : "#8a3d3d",
   });
 }
+
+void resumeInterruptedBatch();
