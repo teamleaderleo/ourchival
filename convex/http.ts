@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
 import { detectPlatform } from "./lib/platform";
+import { normalizeSourceUrl } from "./lib/urls";
 
 const http = httpRouter();
 const maxRemoteAssetBytes = 25 * 1024 * 1024;
@@ -40,6 +41,12 @@ type StoredRemoteAsset = {
   driveWebContentLink?: string;
   driveThumbnailLink?: string;
   driveMimeType?: string;
+};
+
+type DuplicateCapture = {
+  reference: any;
+  assetId: any | null;
+  reason: "asset_url" | "canonical_url" | "source_url";
 };
 
 http.route({
@@ -209,6 +216,35 @@ http.route({
       return jsonResponse({ ok: false, error: "sourceUrl is required" }, 400);
     }
 
+    const canonicalUrl = normalizeSourceUrl(sourceUrl);
+    const duplicate = await findDuplicateCapture(ctx, {
+      sourceUrl,
+      canonicalUrl,
+      assetUrl,
+    });
+
+    if (duplicate) {
+      if (!duplicate.reference.canonicalUrl) {
+        await ctx.db.patch(duplicate.reference._id, { canonicalUrl });
+      }
+
+      return jsonResponse({
+        ok: true,
+        alreadySaved: true,
+        duplicateReason: duplicate.reason,
+        referenceId: duplicate.reference._id,
+        assetId: duplicate.assetId,
+        storageStatus: "already saved",
+        existingReference: {
+          title: duplicate.reference.title,
+          sourceUrl: duplicate.reference.sourceUrl,
+          capturedAt: duplicate.reference.capturedAt,
+          favorite: duplicate.reference.favorite,
+          boardCount: duplicate.reference.boardIds.length,
+        },
+      });
+    }
+
     const capturedAt = parseCapturedAt(body.capturedAt);
     const kind = body.kind ?? (assetUrl ? "image" : "link");
     const platform = detectPlatform(sourceUrl);
@@ -217,6 +253,7 @@ http.route({
       kind,
       ...(pageTitle ? { title: pageTitle } : {}),
       sourceUrl,
+      canonicalUrl,
       platform,
       capturedAt,
       boardIds: [],
@@ -258,13 +295,56 @@ http.route({
       referenceId,
       ...(pageTitle ? { pageTitle } : {}),
       ...(selectedText ? { selectedText } : {}),
-      jsonMetadata: JSON.stringify({ ...body, storageStatus }),
+      jsonMetadata: JSON.stringify({ ...body, canonicalUrl, storageStatus }),
       createdAt: Date.now(),
     });
 
-    return jsonResponse({ ok: true, referenceId, assetId, storageStatus }, 201);
+    return jsonResponse({ ok: true, alreadySaved: false, referenceId, assetId, storageStatus }, 201);
   }),
 });
+
+async function findDuplicateCapture(
+  ctx: { db: any },
+  args: { sourceUrl: string; canonicalUrl: string; assetUrl?: string },
+): Promise<DuplicateCapture | undefined> {
+  if (args.assetUrl) {
+    const matchingAssets = await ctx.db
+      .query("assets")
+      .withIndex("by_original_url", (q: any) => q.eq("originalUrl", args.assetUrl))
+      .collect();
+
+    for (const asset of matchingAssets) {
+      const reference = await ctx.db.get(asset.referenceId);
+      if (reference && !reference.deleted) {
+        return { reference, assetId: asset._id, reason: "asset_url" };
+      }
+    }
+
+    return undefined;
+  }
+
+  const canonicalMatches = await ctx.db
+    .query("references")
+    .withIndex("by_canonical_url", (q: any) => q.eq("canonicalUrl", args.canonicalUrl))
+    .collect();
+  const canonicalReference = canonicalMatches.find((reference: any) => !reference.deleted);
+
+  if (canonicalReference) {
+    return { reference: canonicalReference, assetId: null, reason: "canonical_url" };
+  }
+
+  const sourceMatches = await ctx.db
+    .query("references")
+    .withIndex("by_source_url", (q: any) => q.eq("sourceUrl", args.sourceUrl))
+    .collect();
+  const sourceReference = sourceMatches.find((reference: any) => !reference.deleted);
+
+  if (sourceReference) {
+    return { reference: sourceReference, assetId: null, reason: "source_url" };
+  }
+
+  return undefined;
+}
 
 async function fetchAndStoreRemoteAsset(
   ctx: { storage: { store: (blob: Blob) => Promise<any> } },
