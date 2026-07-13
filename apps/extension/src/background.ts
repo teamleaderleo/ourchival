@@ -59,17 +59,25 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       referenceId?: string;
       assetId?: string | null;
       storageStatus?: string;
+      alreadySaved?: boolean;
+      duplicateReason?: "asset_url" | "canonical_url" | "source_url";
+      existingReference?: CaptureResult["existingReference"];
     };
 
     await markResult({
       ok: response.ok && body.ok !== false,
       status: response.status,
       message: response.ok
-        ? ["Saved to Ourchival.", body.storageStatus].filter(Boolean).join(" ")
+        ? body.alreadySaved
+          ? duplicateMessage(body.existingReference)
+          : ["Saved to Ourchival.", body.storageStatus].filter(Boolean).join(" ")
         : body.error ?? response.statusText,
       storageStatus: body.storageStatus,
       referenceId: body.referenceId,
       assetId: body.assetId,
+      alreadySaved: body.alreadySaved,
+      duplicateReason: body.duplicateReason,
+      existingReference: body.existingReference,
       savedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -115,8 +123,22 @@ function buildCapturePayload(
   };
 }
 
+function duplicateMessage(existingReference: CaptureResult["existingReference"]) {
+  const title = existingReference?.title?.trim();
+  const savedDate = existingReference?.capturedAt
+    ? new Date(existingReference.capturedAt).toLocaleDateString()
+    : undefined;
+  const boardNote = existingReference?.boardCount
+    ? ` It is already in ${existingReference.boardCount} ${existingReference.boardCount === 1 ? "board" : "boards"}.`
+    : "";
+
+  return `Already saved${title ? ` as “${title}”` : ""}${savedDate ? ` on ${savedDate}` : ""}.${boardNote}`;
+}
+
 async function markResult(result: CaptureResult) {
   await saveLastResult(result);
-  await chrome.action.setBadgeText({ text: result.ok ? "✓" : "!" });
-  await chrome.action.setBadgeBackgroundColor({ color: result.ok ? "#3d6b3d" : "#8a3d3d" });
+  await chrome.action.setBadgeText({ text: result.alreadySaved ? "↺" : result.ok ? "✓" : "!" });
+  await chrome.action.setBadgeBackgroundColor({
+    color: result.alreadySaved ? "#6f5bb7" : result.ok ? "#3d6b3d" : "#8a3d3d",
+  });
 }

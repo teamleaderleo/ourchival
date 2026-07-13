@@ -40,7 +40,7 @@ async function render() {
       </form>
 
       <section class="status ${result?.ok ? "ok" : ""}">
-        <strong>${result?.ok ? "Last save worked" : "Ready"}</strong>
+        <strong>${result?.alreadySaved ? "Already in Reliquary" : result?.ok ? "Last save worked" : "Ready"}</strong>
         <p>${escapeHtml(result?.message ?? "Right-click an image or page to save it.")}</p>
       </section>
 
