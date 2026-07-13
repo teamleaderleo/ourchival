@@ -1,19 +1,25 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   filterReferences,
   getSelectedReference,
   referenceCollection,
+  referenceMode,
   type ReferenceCollection,
   type ReferenceLane,
   type SavedReference,
 } from "./referenceVaultModel";
 import { type VaultView } from "./VaultNavigation";
 
+type VaultCounts = Record<VaultView, number>;
+
 type ReferencesResponse = {
   ok: boolean;
   references?: SavedReference[];
+  continueCursor?: string | null;
+  hasMore?: boolean;
+  counts?: VaultCounts;
   error?: string;
 };
 
@@ -41,9 +47,16 @@ type UndoMove = {
   previous: Pick<SavedReference, "triageState" | "archived" | "deleted">;
 };
 
+const pageSize = 48;
+
 export function useReferenceVault() {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
   const [references, setReferences] = useState<SavedReference[]>([]);
+  const [counts, setCounts] = useState<VaultCounts>(emptyCounts);
+  const [continueCursor, setContinueCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [status, setStatus] = useState("Loading saved references…");
   const [statusTone, setStatusTone] = useState<StatusTone>("info");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -52,11 +65,13 @@ export function useReferenceVault() {
   const [pageTitle, setPageTitle] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeView, setActiveView] = useState<VaultView>("inbox");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [undoMove, setUndoMove] = useState<UndoMove | null>(null);
+  const requestSerial = useRef(0);
 
   function report(message: string, tone: StatusTone = "info") {
     setStatus(message);
@@ -77,22 +92,13 @@ export function useReferenceVault() {
       }),
     [query, references, favoritesOnly, lane, collection],
   );
-  const selectedReference = getSelectedReference(
-    filteredReferences,
-    selectedId,
-  );
+  const selectedReference = getSelectedReference(filteredReferences, selectedId);
+  const activeCount = countForView(counts, activeView);
 
-  const libraryReferences = useMemo(
-    () => filterReferences(references, { collection: "library" }),
-    [references],
-  );
-  const inboxCount = filterReferences(references, { collection: "inbox" }).length;
-  const laterCount = filterReferences(references, { collection: "later" }).length;
-  const archiveCount = filterReferences(references, { collection: "archive" }).length;
-  const trashCount = filterReferences(references, { collection: "trash" }).length;
-  const favoriteCount = filterReferences(libraryReferences, { favoritesOnly: true }).length;
-  const imageCount = filterReferences(libraryReferences, { lane: "images" }).length;
-  const linkCount = filterReferences(libraryReferences, { lane: "links" }).length;
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     if (!siteUrl) {
@@ -100,41 +106,28 @@ export function useReferenceVault() {
         "Add NEXT_PUBLIC_CONVEX_URL or NEXT_PUBLIC_CONVEX_SITE_URL in setup to load saved references.",
         "error",
       );
+      setIsLoading(false);
       return;
     }
 
-    let cancelled = false;
+    setReferences([]);
+    setContinueCursor(null);
+    setHasMore(false);
+    setIsLoadingMore(false);
+    void requestReferencePage(null, false);
+  }, [siteUrl, refreshKey, activeView, debouncedQuery]);
 
-    async function loadReferences() {
-      try {
-        const response = await fetch(`${siteUrl}/references`);
-        const body = (await response.json()) as ReferencesResponse;
-        if (cancelled) return;
-        if (!response.ok || body.ok === false) {
-          report(body.error ?? response.statusText, "error");
-          return;
-        }
-        setReferences(body.references ?? []);
-        report(`Synced ${body.references?.length ?? 0} references.`);
-      } catch (error) {
-        if (!cancelled) {
-          report(
-            error instanceof Error
-              ? error.message
-              : "Could not load saved references.",
-            "error",
-          );
-        }
-      }
+  useEffect(() => {
+    if (
+      (activeView === "inbox" || activeView === "later") &&
+      filteredReferences.length === 0 &&
+      hasMore &&
+      !isLoading &&
+      !isLoadingMore
+    ) {
+      void loadMore();
     }
-
-    void loadReferences();
-    const timer = window.setInterval(loadReferences, 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [siteUrl, refreshKey]);
+  }, [activeView, filteredReferences.length, hasMore, isLoading, isLoadingMore]);
 
   useEffect(() => {
     if (activeView !== "inbox" && activeView !== "later") return;
@@ -182,6 +175,63 @@ export function useReferenceVault() {
     return () => window.removeEventListener("keydown", handleReviewKey);
   }, [activeView, filteredReferences, selectedReference]);
 
+  async function requestReferencePage(cursor: string | null, append: boolean) {
+    if (!siteUrl) return;
+    const serial = append ? requestSerial.current : requestSerial.current + 1;
+    if (!append) requestSerial.current = serial;
+
+    if (append) setIsLoadingMore(true);
+    else setIsLoading(true);
+
+    try {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        collection,
+        lane,
+      });
+      if (favoritesOnly) params.set("favorites", "true");
+      if (debouncedQuery) params.set("query", debouncedQuery);
+      if (cursor) params.set("cursor", cursor);
+
+      const response = await fetch(`${siteUrl}/references?${params.toString()}`);
+      const body = (await response.json()) as ReferencesResponse;
+      if (serial !== requestSerial.current) return;
+      if (!response.ok || body.ok === false) {
+        report(body.error ?? response.statusText, "error");
+        return;
+      }
+
+      const incoming = body.references ?? [];
+      setReferences((items) =>
+        append ? mergeReferences(items, incoming) : incoming,
+      );
+      setContinueCursor(body.continueCursor ?? null);
+      setHasMore(Boolean(body.hasMore));
+      if (body.counts) setCounts(body.counts);
+      report(
+        `${append ? "Loaded" : "Synced"} ${incoming.length} ${incoming.length === 1 ? "reference" : "references"}${body.hasMore ? "; more available." : "."}`,
+        "success",
+      );
+    } catch (error) {
+      if (serial === requestSerial.current) {
+        report(
+          error instanceof Error ? error.message : "Could not load saved references.",
+          "error",
+        );
+      }
+    } finally {
+      if (serial === requestSerial.current) {
+        if (append) setIsLoadingMore(false);
+        else setIsLoading(false);
+      }
+    }
+  }
+
+  async function loadMore() {
+    if (!continueCursor || !hasMore || isLoadingMore) return;
+    await requestReferencePage(continueCursor, true);
+  }
+
   async function saveManualReference(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!siteUrl) {
@@ -215,17 +265,18 @@ export function useReferenceVault() {
       setAssetUrl("");
       setPageTitle("");
       setCaptureOpen(false);
-      setRefreshKey((key) => key + 1);
 
       if (body.alreadySaved) {
         setActiveView("all");
         setSelectedId(body.referenceId ?? null);
+        setRefreshKey((key) => key + 1);
         report(formatDuplicateStatus(body.existingReference), "success");
         return;
       }
 
       setActiveView("inbox");
       setSelectedId(body.referenceId ?? null);
+      setRefreshKey((key) => key + 1);
       report(`Saved to Inbox. ${body.storageStatus ?? ""}`.trim(), "success");
     } catch (error) {
       report(
@@ -247,6 +298,8 @@ export function useReferenceVault() {
       return false;
     }
 
+    const previous = references.find((item) => item._id === referenceId);
+
     try {
       const response = await fetch(
         `${siteUrl}/reference?id=${encodeURIComponent(referenceId)}`,
@@ -264,11 +317,20 @@ export function useReferenceVault() {
         report(body.error ?? response.statusText, "error");
         return false;
       }
+
       setReferences((items) =>
         items.map((item) =>
           item._id === referenceId ? { ...item, ...patch } : item,
         ),
       );
+      if (previous) {
+        setCounts((current) =>
+          updateCountsForReferenceChange(current, previous, {
+            ...previous,
+            ...patch,
+          }),
+        );
+      }
       return true;
     } catch (error) {
       report(
@@ -282,10 +344,7 @@ export function useReferenceVault() {
   async function toggleFavorite(reference: SavedReference) {
     const next = !reference.favorite;
     if (await patchReference(reference._id, { favorite: next })) {
-      report(
-        next ? "Added to favorites." : "Removed from favorites.",
-        "success",
-      );
+      report(next ? "Added to favorites." : "Removed from favorites.", "success");
     }
   }
 
@@ -394,6 +453,7 @@ export function useReferenceVault() {
   function changeView(view: VaultView) {
     setActiveView(view);
     setSelectedId(null);
+    setUndoMove(null);
   }
 
   return {
@@ -411,16 +471,17 @@ export function useReferenceVault() {
     query,
     setQuery,
     activeView,
+    activeCount,
     selectedReference,
     filteredReferences,
-    libraryCount: libraryReferences.length,
-    inboxCount,
-    laterCount,
-    archiveCount,
-    trashCount,
-    favoriteCount,
-    imageCount,
-    linkCount,
+    libraryCount: counts.all,
+    inboxCount: counts.inbox,
+    laterCount: counts.later,
+    archiveCount: counts.archive,
+    trashCount: counts.trash,
+    favoriteCount: counts.favorites,
+    imageCount: counts.images,
+    linkCount: counts.links,
     selectedId,
     setSelectedId,
     captureOpen,
@@ -428,6 +489,10 @@ export function useReferenceVault() {
     setupOpen,
     setSetupOpen,
     undoMove,
+    hasMore,
+    isLoading,
+    isLoadingMore,
+    loadMore,
     saveManualReference,
     toggleFavorite,
     saveDetails,
@@ -453,6 +518,52 @@ function viewForCollection(collection: ReferenceCollection): VaultView {
   if (collection === "archive") return "archive";
   if (collection === "trash") return "trash";
   return "all";
+}
+
+function countForView(counts: VaultCounts, view: VaultView) {
+  return counts[view];
+}
+
+function mergeReferences(current: SavedReference[], incoming: SavedReference[]) {
+  const merged = new Map(current.map((reference) => [reference._id, reference]));
+  for (const reference of incoming) merged.set(reference._id, reference);
+  return Array.from(merged.values());
+}
+
+function updateCountsForReferenceChange(
+  counts: VaultCounts,
+  before: SavedReference,
+  after: SavedReference,
+): VaultCounts {
+  const next = { ...counts };
+  for (const key of referenceCountKeys(before)) next[key] = Math.max(0, next[key] - 1);
+  for (const key of referenceCountKeys(after)) next[key] += 1;
+  return next;
+}
+
+function referenceCountKeys(reference: SavedReference): VaultView[] {
+  const collection = referenceCollection(reference);
+  if (collection === "inbox") return ["inbox"];
+  if (collection === "later") return ["later"];
+  if (collection === "archive") return ["archive"];
+  if (collection === "trash") return ["trash"];
+
+  const keys: VaultView[] = ["all", referenceMode(reference.kind)];
+  if (reference.favorite) keys.push("favorites");
+  return keys;
+}
+
+function emptyCounts(): VaultCounts {
+  return {
+    inbox: 0,
+    all: 0,
+    images: 0,
+    links: 0,
+    favorites: 0,
+    later: 0,
+    archive: 0,
+    trash: 0,
+  };
 }
 
 function triagePatch(
