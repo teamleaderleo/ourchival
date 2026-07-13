@@ -19,6 +19,34 @@ export type CaptureResult = {
   savedAt: string;
 };
 
+export type BatchCaptureSource =
+  | "current_tab"
+  | "selected_tabs"
+  | "window"
+  | "url_list";
+
+export type BatchCaptureFailure = {
+  url: string;
+  message: string;
+};
+
+export type BatchCaptureState = {
+  jobId: string;
+  source: BatchCaptureSource;
+  running: boolean;
+  startedAt: string;
+  completedAt?: string;
+  total: number;
+  completed: number;
+  saved: number;
+  duplicates: number;
+  failed: number;
+  skipped: number;
+  currentLabel?: string;
+  successfulTabIds: number[];
+  failures: BatchCaptureFailure[];
+};
+
 export type ExtensionSettings = {
   captureEndpoint?: string;
 };
@@ -26,6 +54,7 @@ export type ExtensionSettings = {
 export const SETTINGS_KEY = "ourchivalSettings";
 export const LAST_CAPTURE_KEY = "lastCapture";
 export const LAST_RESULT_KEY = "lastCaptureResult";
+export const LAST_BATCH_KEY = "lastBatchCapture";
 
 export async function getSettings(): Promise<ExtensionSettings> {
   const values = await chrome.storage.local.get(SETTINGS_KEY);
@@ -44,11 +73,16 @@ export async function saveLastResult(result: CaptureResult) {
   await chrome.storage.local.set({ [LAST_RESULT_KEY]: result });
 }
 
+export async function saveBatchState(state: BatchCaptureState) {
+  await chrome.storage.local.set({ [LAST_BATCH_KEY]: state });
+}
+
 export async function getPopupState() {
   return await chrome.storage.local.get([
     SETTINGS_KEY,
     LAST_CAPTURE_KEY,
     LAST_RESULT_KEY,
+    LAST_BATCH_KEY,
   ]);
 }
 

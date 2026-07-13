@@ -13,6 +13,7 @@ export type CapturePayload = {
   assetUrl?: string;
   pageTitle?: string;
   selectedText?: string;
+  captureSessionId?: string;
   capturedAt: string;
 };
 
