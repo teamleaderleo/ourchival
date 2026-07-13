@@ -4,6 +4,7 @@
   .capture-heading { grid-column: 1 / -1; }
   .capture-heading p:last-child { max-width: 620px; }
   .capture-submit { min-height: 41px; }
+  .review-strip { align-items: flex-start; }
 }
 
 @media (max-width: 980px) {
@@ -12,9 +13,11 @@
   .vault-workspace { grid-template-columns: 150px minmax(0, 1fr); }
   .inspector { position: static; grid-column: 1 / -1; max-height: none; }
   .selected-reference { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr); gap: 18px; }
-  .selected-image, .selected-placeholder { grid-row: 1 / span 5; max-height: 520px; }
-  .inspector-heading, .reference-facts, .inspector-fields, .inspector-actions { grid-column: 2; }
+  .selected-image, .selected-placeholder { grid-row: 1 / span 6; max-height: 520px; }
+  .inspector-heading, .reference-facts, .triage-actions, .inspector-fields, .inspector-actions { grid-column: 2; }
   .setup-panel { grid-template-columns: 1fr; }
+  .review-strip { display: grid; }
+  .review-actions { justify-content: flex-start; }
 }
 
 @media (max-width: 720px) {
@@ -30,11 +33,13 @@
   .vault-sidebar { margin-bottom: 12px; }
   .vault-sidebar nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .vault-sidebar .nav-label, .planned-nav, .sidebar-note { display: none; }
+  .sidebar-section { margin-top: 8px; padding-top: 8px; }
   .nav-button { display: grid; justify-items: center; gap: 3px; padding: 7px 4px; text-align: center; }
   .nav-button-label { display: grid; justify-items: center; gap: 1px; font-size: 0.69rem; }
   .nav-icon { display: none; }
   .nav-count { font-size: 0.63rem; }
   .vault-main { min-height: 0; padding: 14px; }
+  .review-actions .button { flex: 1; }
   .reference-grid, .reference-grid.link-grid { columns: 2 150px; }
   .inspector { margin-top: 12px; }
   .selected-reference { display: block; }
@@ -51,6 +56,7 @@
   .vault-heading h1 { font-size: 1.75rem; }
   .vault-count { display: grid; justify-items: end; gap: 0; }
   .search-field input { padding-right: 58px; font-size: 0.8rem; }
+  .review-strip span { display: none; }
   .result-summary span:nth-child(2), .result-summary span:nth-child(3) { display: none; }
   .reference-grid, .reference-grid.link-grid { columns: 1; }
 }
