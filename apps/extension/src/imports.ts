@@ -34,6 +34,23 @@ export function parseUrlList(value: string): ImportedUrl[] {
   return entries;
 }
 
+export function parseBookmarksHtml(value: string): ImportedUrl[] {
+  const seen = new Set<string>();
+  const entries: ImportedUrl[] = [];
+  const linkPattern = /<A\b[^>]*\bHREF=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/A>/gi;
+
+  for (const match of value.matchAll(linkPattern)) {
+    const url = decodeHtml(match[2] ?? "").trim();
+    if (!isCapturableUrl(url) || seen.has(url)) continue;
+
+    const title = decodeHtml(stripTags(match[3] ?? "")).trim() || undefined;
+    seen.add(url);
+    entries.push({ url, ...(title ? { title } : {}) });
+  }
+
+  return entries;
+}
+
 export function isCapturableUrl(value: string | undefined): value is string {
   if (!value) return false;
 
@@ -47,4 +64,29 @@ export function isCapturableUrl(value: string | undefined): value is string {
 
 function trimTrailingPunctuation(value: string) {
   return value.replace(/[),.;]+$/, "");
+}
+
+function stripTags(value: string) {
+  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+}
+
+function decodeHtml(value: string) {
+  const namedEntities: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    nbsp: " ",
+    quot: '"',
+  };
+
+  return value.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (_entity, code: string) => {
+    if (code.startsWith("#x") || code.startsWith("#X")) {
+      return String.fromCodePoint(Number.parseInt(code.slice(2), 16));
+    }
+    if (code.startsWith("#")) {
+      return String.fromCodePoint(Number.parseInt(code.slice(1), 10));
+    }
+    return namedEntities[code.toLowerCase()] ?? `&${code};`;
+  });
 }
