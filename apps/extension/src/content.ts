@@ -31,11 +31,12 @@ document.addEventListener(
   "contextmenu",
   (event) => {
     const target = event.target instanceof Element ? event.target : undefined;
+    const closestImage = target?.closest("img");
     const clickedImage =
       target instanceof HTMLImageElement
         ? target
-        : target?.closest("img") instanceof HTMLImageElement
-          ? target.closest("img")
+        : closestImage instanceof HTMLImageElement
+          ? closestImage
           : undefined;
     const selectedText = window.getSelection()?.toString().trim() || undefined;
 
@@ -119,5 +120,10 @@ function snapshotXArticle(
 
 function isXPage() {
   const host = location.hostname.toLowerCase();
-  return host === "x.com" || host.endsWith(".x.com") || host === "twitter.com" || host.endsWith(".twitter.com");
+  return (
+    host === "x.com" ||
+    host.endsWith(".x.com") ||
+    host === "twitter.com" ||
+    host.endsWith(".twitter.com")
+  );
 }
