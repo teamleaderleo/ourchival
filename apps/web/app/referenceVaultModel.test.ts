@@ -4,7 +4,9 @@ import {
   filterReferences,
   getSelectedReference,
   referenceCollection,
+  referenceDisplayTitle,
   referenceKindLabel,
+  referenceMetadataLabel,
   referenceMode,
   type SavedReference,
 } from "./referenceVaultModel";
@@ -36,8 +38,20 @@ const references: SavedReference[] = [
     notes: "palette and value grouping",
     favorite: false,
     sourceUrl: "https://example.com/color-theory",
+    canonicalUrl: "https://example.com/lessons/color",
     platform: "generic",
     capturedAt: 2,
+    sourceSnapshot: {
+      pageTitle: "Color and value grouping",
+      description: "A practical guide to temperature shifts and focal contrast",
+      siteName: "Painter Notes",
+      pageAuthor: "A. Artist",
+      canonicalUrl: "https://example.com/lessons/color",
+      contentType: "text/html",
+      metadataStatus: "ready",
+      metadataFetchedAt: 2,
+      createdAt: 2,
+    },
     assets: [],
   },
   {
@@ -89,6 +103,20 @@ describe("filterReferences", () => {
     expect(filterReferences(references, { query: "palette relationship" }).map((item) => item._id)).toEqual([
       "pose-study",
     ]);
+  });
+
+  it("searches rich link description, site, author, canonical URL, and content type", () => {
+    for (const query of [
+      "temperature shifts",
+      "Painter Notes",
+      "A. Artist",
+      "lessons/color",
+      "text/html",
+    ]) {
+      expect(filterReferences(references, { query }).map((item) => item._id)).toEqual([
+        "color-article",
+      ]);
+    }
   });
 
   it("filters favorites without losing search behavior", () => {
@@ -152,6 +180,40 @@ describe("referenceCollection", () => {
         deleted: true,
       }),
     ).toBe("trash");
+  });
+});
+
+describe("link display helpers", () => {
+  it("uses captured page metadata as a title fallback", () => {
+    const reference = {
+      ...references[1]!,
+      title: undefined,
+    };
+    expect(referenceDisplayTitle(reference)).toBe("Color and value grouping");
+  });
+
+  it("labels ready, sparse, failed, and pending metadata", () => {
+    expect(referenceMetadataLabel(references[1]!)).toBe("Metadata ready");
+    expect(
+      referenceMetadataLabel({
+        ...references[1]!,
+        sourceSnapshot: {
+          metadataStatus: "missing",
+          createdAt: 3,
+        },
+      }),
+    ).toBe("Sparse metadata");
+    expect(
+      referenceMetadataLabel({
+        ...references[1]!,
+        sourceSnapshot: {
+          metadataStatus: "failed",
+          httpStatus: 404,
+          createdAt: 4,
+        },
+      }),
+    ).toBe("HTTP 404");
+    expect(referenceMetadataLabel(references[2]!)).toBe("Metadata pending");
   });
 });
 
