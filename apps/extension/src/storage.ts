@@ -7,6 +7,15 @@ export type CaptureResult = {
   storageStatus?: string;
   referenceId?: string;
   assetId?: string | null;
+  alreadySaved?: boolean;
+  duplicateReason?: "asset_url" | "canonical_url" | "source_url";
+  existingReference?: {
+    title?: string;
+    sourceUrl: string;
+    capturedAt: number;
+    favorite: boolean;
+    boardCount: number;
+  };
   savedAt: string;
 };
 
