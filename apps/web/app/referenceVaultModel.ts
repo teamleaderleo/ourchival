@@ -7,6 +7,14 @@ export type ReferenceAsset = {
   driveWebViewLink?: string;
 };
 
+export type ReferenceSourceSnapshot = {
+  pageTitle?: string;
+  postText?: string;
+  altText?: string;
+  selectedText?: string;
+  createdAt: number;
+};
+
 export type TriageState = "inbox" | "kept" | "later";
 export type ReferenceCollection = "inbox" | "library" | "later" | "archive" | "trash";
 
@@ -31,6 +39,7 @@ export type SavedReference = {
   archived?: boolean;
   deleted?: boolean;
   assets: ReferenceAsset[];
+  sourceSnapshot?: ReferenceSourceSnapshot;
 };
 
 export type ReferenceLane = "all" | "images" | "links";
@@ -75,6 +84,10 @@ export function filterReferences(
       reference.authorName,
       reference.authorHandle,
       reference.postId,
+      reference.sourceSnapshot?.pageTitle,
+      reference.sourceSnapshot?.postText,
+      reference.sourceSnapshot?.altText,
+      reference.sourceSnapshot?.selectedText,
     ]
       .filter(Boolean)
       .some((value) => value?.toLowerCase().includes(needle)),
