@@ -9,6 +9,7 @@ import { useReferenceVault } from "./useReferenceVault";
 export function ReferenceVault() {
   const vault = useReferenceVault();
   const currentViewLabel = viewLabels[vault.activeView];
+  const isReviewView = vault.activeView === "inbox" || vault.activeView === "later";
 
   return (
     <div className="app-frame">
@@ -30,6 +31,15 @@ export function ReferenceVault() {
             <span aria-hidden="true" />
             <span>{vault.status}</span>
           </div>
+          {vault.undoMove ? (
+            <button
+              type="button"
+              className="button ghost"
+              onClick={() => void vault.undoLastMove()}
+            >
+              Undo move
+            </button>
+          ) : null}
           <button
             type="button"
             className="button ghost"
@@ -121,7 +131,7 @@ export function ReferenceVault() {
             className="button primary capture-submit"
             disabled={vault.isSaving}
           >
-            {vault.isSaving ? "Saving…" : "Save to Reliquary"}
+            {vault.isSaving ? "Saving…" : "Save to Inbox"}
           </button>
         </form>
       ) : null}
@@ -130,10 +140,14 @@ export function ReferenceVault() {
         <VaultSidebar
           activeView={vault.activeView}
           counts={{
-            all: vault.references.length,
+            inbox: vault.inboxCount,
+            all: vault.libraryCount,
             images: vault.imageCount,
             links: vault.linkCount,
             favorites: vault.favoriteCount,
+            later: vault.laterCount,
+            archive: vault.archiveCount,
+            trash: vault.trashCount,
           }}
           onChange={vault.changeView}
         />
@@ -175,10 +189,51 @@ export function ReferenceVault() {
               ) : null}
             </label>
           </div>
+
+          {isReviewView && vault.selectedReference ? (
+            <div className="review-strip">
+              <div>
+                <strong>Review queue</strong>
+                <span>←/→ move · K keep · L later · A archive · O open · Delete trash</span>
+              </div>
+              <div className="review-actions">
+                <button
+                  type="button"
+                  className="button primary"
+                  onClick={() =>
+                    void vault.moveReference(vault.selectedReference!._id, "keep")
+                  }
+                >
+                  Keep <kbd>K</kbd>
+                </button>
+                {vault.activeView !== "later" ? (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() =>
+                      void vault.moveReference(vault.selectedReference!._id, "later")
+                    }
+                  >
+                    Later <kbd>L</kbd>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="button ghost"
+                  onClick={() =>
+                    void vault.moveReference(vault.selectedReference!._id, "archive")
+                  }
+                >
+                  Archive <kbd>A</kbd>
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="result-summary">
-            <span>{vault.references.length} total</span>
-            <span>{vault.imageCount} images</span>
-            <span>{vault.linkCount} links</span>
+            <span>{vault.libraryCount} in Library</span>
+            <span>{vault.inboxCount} in Inbox</span>
+            <span>{vault.laterCount} for Later</span>
             {vault.query ? <span>Filtered by “{vault.query}”</span> : null}
           </div>
           <section
@@ -192,14 +247,14 @@ export function ReferenceVault() {
                 <h2>
                   {vault.query
                     ? "No matching saves"
-                    : `No ${currentViewLabel.toLowerCase()} yet`}
+                    : emptyHeading(vault.activeView, currentViewLabel)}
                 </h2>
                 <p>
                   {vault.query
                     ? "Try a source domain, artist name, title, or phrase from your notes."
-                    : "Capture something from Edge or use Add reference to begin."}
+                    : emptyMessage(vault.activeView)}
                 </p>
-                {!vault.query ? (
+                {!vault.query && vault.activeView === "inbox" ? (
                   <button
                     type="button"
                     className="button secondary"
@@ -233,7 +288,8 @@ export function ReferenceVault() {
             <SelectedReference
               key={vault.selectedReference._id}
               reference={vault.selectedReference}
-              onDelete={vault.deleteReference}
+              onMove={vault.moveReference}
+              onOpen={vault.markReferenceOpened}
               onToggleFavorite={vault.toggleFavorite}
               onSaveDetails={vault.saveDetails}
             />
@@ -241,7 +297,7 @@ export function ReferenceVault() {
             <div className="inspector-empty">
               <span aria-hidden="true">↖</span>
               <p>
-                Select a reference to inspect its source, notes, and saved file.
+                Select a reference to inspect its source, notes, and workflow actions.
               </p>
             </div>
           )}
@@ -249,4 +305,20 @@ export function ReferenceVault() {
       </section>
     </div>
   );
+}
+
+function emptyHeading(view: string, label: string) {
+  if (view === "inbox") return "Inbox cleared";
+  if (view === "later") return "Nothing waiting for later";
+  if (view === "archive") return "Archive is empty";
+  if (view === "trash") return "Trash is empty";
+  return `No ${label.toLowerCase()} yet`;
+}
+
+function emptyMessage(view: string) {
+  if (view === "inbox") return "New captures will arrive here for a quick decision.";
+  if (view === "later") return "Defer an Inbox item when it deserves another look.";
+  if (view === "archive") return "Archived references stay available without filling the Library.";
+  if (view === "trash") return "Items in Trash can be restored to Inbox.";
+  return "Keep an Inbox reference to add it to this collection.";
 }
