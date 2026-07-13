@@ -19,6 +19,15 @@ type CaptureBody = {
   assetUrl?: string;
   pageTitle?: string;
   selectedText?: string;
+  authorName?: string;
+  authorHandle?: string;
+  authorUrl?: string;
+  postId?: string;
+  postText?: string;
+  publishedAt?: string;
+  altText?: string;
+  rawMetadata?: string;
+  captureSessionId?: string;
   capturedAt?: string;
 };
 
@@ -53,43 +62,22 @@ type DuplicateCapture = {
   reason: "asset_url" | "canonical_url" | "source_url";
 };
 
-http.route({
-  path: "/capture",
-  method: "OPTIONS",
-  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
-});
-
-http.route({
-  path: "/references",
-  method: "OPTIONS",
-  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
-});
-
-http.route({
-  path: "/reference",
-  method: "OPTIONS",
-  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
-});
-
-http.route({
-  path: "/drive-file",
-  method: "OPTIONS",
-  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
-});
+for (const path of ["/capture", "/references", "/reference", "/drive-file"]) {
+  http.route({
+    path,
+    method: "OPTIONS",
+    handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
+  });
+}
 
 http.route({
   path: "/drive-file",
   method: "GET",
   handler: httpAction(async (_ctx, request) => {
-    const url = new URL(request.url);
-    const fileId = url.searchParams.get("id");
-
-    if (!fileId) {
-      return jsonResponse({ ok: false, error: "id is required" }, 400);
-    }
+    const fileId = new URL(request.url).searchParams.get("id");
+    if (!fileId) return jsonResponse({ ok: false, error: "id is required" }, 400);
 
     const driveResponse = await fetchDriveFile(fileId);
-
     if (!driveResponse.ok || !driveResponse.body) {
       return jsonResponse(
         { ok: false, error: `Drive file fetch failed: ${driveResponse.status}` },
@@ -125,7 +113,6 @@ http.route({
           .query("assets")
           .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
           .collect();
-
         const assetsWithUrls = await Promise.all(
           assets.map(async (asset) => ({
             ...asset,
@@ -136,7 +123,6 @@ http.route({
                 : null,
           })),
         );
-
         return { ...reference, assets: assetsWithUrls };
       }),
     );
@@ -149,15 +135,10 @@ http.route({
   path: "/reference",
   method: "PATCH",
   handler: httpAction(async (ctx, request) => {
-    const url = new URL(request.url);
-    const referenceId = url.searchParams.get("id");
-
-    if (!referenceId) {
-      return jsonResponse({ ok: false, error: "id is required" }, 400);
-    }
+    const referenceId = new URL(request.url).searchParams.get("id");
+    if (!referenceId) return jsonResponse({ ok: false, error: "id is required" }, 400);
 
     let body: UpdateReferenceBody;
-
     try {
       body = (await request.json()) as UpdateReferenceBody;
     } catch {
@@ -178,7 +159,6 @@ http.route({
     };
 
     await ctx.db.patch(referenceId as any, patch);
-
     return jsonResponse({ ok: true });
   }),
 });
@@ -187,19 +167,13 @@ http.route({
   path: "/reference",
   method: "DELETE",
   handler: httpAction(async (ctx, request) => {
-    const url = new URL(request.url);
-    const referenceId = url.searchParams.get("id");
-
-    if (!referenceId) {
-      return jsonResponse({ ok: false, error: "id is required" }, 400);
-    }
-
+    const referenceId = new URL(request.url).searchParams.get("id");
+    if (!referenceId) return jsonResponse({ ok: false, error: "id is required" }, 400);
     await ctx.db.patch(referenceId as any, {
       deleted: true,
       archived: true,
       reviewedAt: Date.now(),
     });
-
     return jsonResponse({ ok: true });
   }),
 });
@@ -209,7 +183,6 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     let body: CaptureBody;
-
     try {
       body = (await request.json()) as CaptureBody;
     } catch {
@@ -220,21 +193,42 @@ http.route({
     const assetUrl = cleanString(body.assetUrl);
     const pageTitle = cleanString(body.pageTitle);
     const selectedText = cleanString(body.selectedText);
+    const authorName = cleanString(body.authorName);
+    const authorHandle = cleanString(body.authorHandle);
+    const authorUrl = cleanString(body.authorUrl);
+    const postId = cleanString(body.postId);
+    const postText = cleanString(body.postText);
+    const altText = cleanString(body.altText);
+    const rawMetadata = cleanString(body.rawMetadata);
+    const captureSessionId = cleanString(body.captureSessionId);
+    const publishedAt = parseOptionalDate(body.publishedAt);
 
-    if (!sourceUrl) {
-      return jsonResponse({ ok: false, error: "sourceUrl is required" }, 400);
-    }
+    if (!sourceUrl) return jsonResponse({ ok: false, error: "sourceUrl is required" }, 400);
 
     const canonicalUrl = normalizeSourceUrl(sourceUrl);
-    const duplicate = await findDuplicateCapture(ctx, {
-      sourceUrl,
-      canonicalUrl,
-      assetUrl,
-    });
+    const duplicate = await findDuplicateCapture(ctx, { sourceUrl, canonicalUrl, assetUrl });
 
     if (duplicate) {
-      if (!duplicate.reference.canonicalUrl) {
-        await ctx.db.patch(duplicate.reference._id, { canonicalUrl });
+      const patch = {
+        ...(!duplicate.reference.canonicalUrl ? { canonicalUrl } : {}),
+        ...(!duplicate.reference.authorName && authorName ? { authorName } : {}),
+        ...(!duplicate.reference.authorHandle && authorHandle ? { authorHandle } : {}),
+        ...(!duplicate.reference.authorUrl && authorUrl ? { authorUrl } : {}),
+        ...(!duplicate.reference.postId && postId ? { postId } : {}),
+        ...(!duplicate.reference.publishedAt && publishedAt ? { publishedAt } : {}),
+        ...(!duplicate.reference.captureSessionId && captureSessionId ? { captureSessionId } : {}),
+      };
+      if (Object.keys(patch).length > 0) await ctx.db.patch(duplicate.reference._id, patch);
+      if (postText || altText || selectedText || rawMetadata) {
+        await ctx.db.insert("sourceSnapshots", {
+          referenceId: duplicate.reference._id,
+          ...(pageTitle ? { pageTitle } : {}),
+          ...(postText ? { postText } : {}),
+          ...(altText ? { altText } : {}),
+          ...(selectedText ? { selectedText } : {}),
+          jsonMetadata: JSON.stringify({ ...body, canonicalUrl, duplicateReason: duplicate.reason }),
+          createdAt: Date.now(),
+        });
       }
 
       return jsonResponse({
@@ -264,7 +258,13 @@ http.route({
       sourceUrl,
       canonicalUrl,
       platform,
+      ...(authorName ? { authorName } : {}),
+      ...(authorHandle ? { authorHandle } : {}),
+      ...(authorUrl ? { authorUrl } : {}),
+      ...(postId ? { postId } : {}),
       capturedAt,
+      ...(publishedAt ? { publishedAt } : {}),
+      ...(captureSessionId ? { captureSessionId } : {}),
       triageState: "inbox",
       boardIds: [],
       tagIds: [],
@@ -283,7 +283,6 @@ http.route({
         title: pageTitle,
       });
       storageStatus = storedAsset.status;
-
       assetId = await ctx.db.insert("assets", {
         referenceId,
         storageProvider: storedAsset.storageProvider,
@@ -304,8 +303,15 @@ http.route({
     await ctx.db.insert("sourceSnapshots", {
       referenceId,
       ...(pageTitle ? { pageTitle } : {}),
+      ...(postText ? { postText } : {}),
+      ...(altText ? { altText } : {}),
       ...(selectedText ? { selectedText } : {}),
-      jsonMetadata: JSON.stringify({ ...body, canonicalUrl, storageStatus }),
+      jsonMetadata: JSON.stringify({
+        ...body,
+        ...(rawMetadata ? { rawMetadata: safeJsonValue(rawMetadata) } : {}),
+        canonicalUrl,
+        storageStatus,
+      }),
       createdAt: Date.now(),
     });
 
@@ -322,14 +328,10 @@ async function findDuplicateCapture(
       .query("assets")
       .withIndex("by_original_url", (q: any) => q.eq("originalUrl", args.assetUrl))
       .collect();
-
     for (const asset of matchingAssets) {
       const reference = await ctx.db.get(asset.referenceId);
-      if (reference && !reference.deleted) {
-        return { reference, assetId: asset._id, reason: "asset_url" };
-      }
+      if (reference && !reference.deleted) return { reference, assetId: asset._id, reason: "asset_url" };
     }
-
     return undefined;
   }
 
@@ -338,22 +340,14 @@ async function findDuplicateCapture(
     .withIndex("by_canonical_url", (q: any) => q.eq("canonicalUrl", args.canonicalUrl))
     .collect();
   const canonicalReference = canonicalMatches.find((reference: any) => !reference.deleted);
-
-  if (canonicalReference) {
-    return { reference: canonicalReference, assetId: null, reason: "canonical_url" };
-  }
+  if (canonicalReference) return { reference: canonicalReference, assetId: null, reason: "canonical_url" };
 
   const sourceMatches = await ctx.db
     .query("references")
     .withIndex("by_source_url", (q: any) => q.eq("sourceUrl", args.sourceUrl))
     .collect();
   const sourceReference = sourceMatches.find((reference: any) => !reference.deleted);
-
-  if (sourceReference) {
-    return { reference: sourceReference, assetId: null, reason: "source_url" };
-  }
-
-  return undefined;
+  return sourceReference ? { reference: sourceReference, assetId: null, reason: "source_url" } : undefined;
 }
 
 async function fetchAndStoreRemoteAsset(
@@ -362,31 +356,19 @@ async function fetchAndStoreRemoteAsset(
 ): Promise<StoredRemoteAsset> {
   try {
     const response = await fetch(args.assetUrl, {
-      headers: {
-        Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-      },
+      headers: { Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" },
     });
-
-    if (!response.ok) {
-      return { status: `fetch failed: ${response.status}`, storageProvider: "linked" };
-    }
+    if (!response.ok) return { status: `fetch failed: ${response.status}`, storageProvider: "linked" };
 
     const mimeType = response.headers.get("Content-Type") ?? undefined;
     const contentLength = Number(response.headers.get("Content-Length") ?? 0);
-
-    if (contentLength > maxRemoteAssetBytes) {
-      return { status: "remote asset too large", storageProvider: "linked" };
-    }
-
+    if (contentLength > maxRemoteAssetBytes) return { status: "remote asset too large", storageProvider: "linked" };
     if (mimeType && !mimeType.toLowerCase().startsWith("image/")) {
       return { status: `remote asset is ${mimeType}`, storageProvider: "linked" };
     }
 
     const blob = await response.blob();
-
-    if (blob.size > maxRemoteAssetBytes) {
-      return { status: "remote asset too large", storageProvider: "linked" };
-    }
+    if (blob.size > maxRemoteAssetBytes) return { status: "remote asset too large", storageProvider: "linked" };
 
     const driveUpload = await uploadBlobToDrive({
       blob,
@@ -394,7 +376,6 @@ async function fetchAndStoreRemoteAsset(
       title: args.title,
       mimeType,
     });
-
     if (driveUpload.ok && driveUpload.file?.id) {
       return {
         status: driveUpload.status,
@@ -411,7 +392,6 @@ async function fetchAndStoreRemoteAsset(
     }
 
     const storageId = await ctx.storage.store(blob);
-
     return {
       status: `${driveUpload.status}; stored original asset in Convex Storage fallback`,
       storageProvider: "convex",
@@ -430,25 +410,34 @@ async function fetchAndStoreRemoteAsset(
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-    },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
 function cleanString(value: unknown) {
   if (typeof value !== "string") return undefined;
-
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function parseCapturedAt(value: unknown) {
   if (typeof value !== "string") return Date.now();
-
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function parseOptionalDate(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function safeJsonValue(value: string) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }
 
 export default http;
