@@ -8,7 +8,6 @@ import {
   type ReferenceCollection,
   type ReferenceLane,
   type SavedReference,
-  type TriageState,
 } from "./referenceVaultModel";
 import { type VaultView } from "./VaultNavigation";
 
@@ -103,26 +102,32 @@ export function useReferenceVault() {
       );
       return;
     }
+
     let cancelled = false;
+
     async function loadReferences() {
       try {
         const response = await fetch(`${siteUrl}/references`);
         const body = (await response.json()) as ReferencesResponse;
         if (cancelled) return;
-        if (!response.ok || body.ok === false)
-          return report(body.error ?? response.statusText, "error");
+        if (!response.ok || body.ok === false) {
+          report(body.error ?? response.statusText, "error");
+          return;
+        }
         setReferences(body.references ?? []);
         report(`Synced ${body.references?.length ?? 0} references.`);
       } catch (error) {
-        if (!cancelled)
+        if (!cancelled) {
           report(
             error instanceof Error
               ? error.message
               : "Could not load saved references.",
             "error",
           );
+        }
       }
     }
+
     void loadReferences();
     const timer = window.setInterval(loadReferences, 5000);
     return () => {
@@ -184,8 +189,10 @@ export function useReferenceVault() {
       setSetupOpen(true);
       return;
     }
+
     setIsSaving(true);
     report("Saving reference…");
+
     try {
       const response = await fetch(`${siteUrl}/capture`, {
         method: "POST",
@@ -199,8 +206,10 @@ export function useReferenceVault() {
         }),
       });
       const body = (await response.json().catch(() => ({}))) as CaptureResponse;
-      if (!response.ok || body.ok === false)
-        return report(body.error ?? response.statusText, "error");
+      if (!response.ok || body.ok === false) {
+        report(body.error ?? response.statusText, "error");
+        return;
+      }
 
       setSourceUrl("");
       setAssetUrl("");
@@ -237,6 +246,7 @@ export function useReferenceVault() {
       setSetupOpen(true);
       return false;
     }
+
     try {
       const response = await fetch(
         `${siteUrl}/reference?id=${encodeURIComponent(referenceId)}`,
@@ -271,11 +281,12 @@ export function useReferenceVault() {
 
   async function toggleFavorite(reference: SavedReference) {
     const next = !reference.favorite;
-    if (await patchReference(reference._id, { favorite: next }))
+    if (await patchReference(reference._id, { favorite: next })) {
       report(
         next ? "Added to favorites." : "Removed from favorites.",
         "success",
       );
+    }
   }
 
   async function saveDetails(
@@ -287,13 +298,15 @@ export function useReferenceVault() {
     return ok;
   }
 
-  async function moveReference(referenceId: string, destination: TriageDestination) {
+  async function moveReference(
+    referenceId: string,
+    destination: TriageDestination,
+  ) {
     const reference = references.find((item) => item._id === referenceId);
     if (!reference) return false;
 
     const nextId = nextVisibleReferenceId(referenceId);
-    const reviewedAt = Date.now();
-    const patch = triagePatch(reference, destination, reviewedAt);
+    const patch = triagePatch(reference, destination, Date.now());
     const previous: UndoMove["previous"] = {
       triageState: reference.triageState,
       archived: reference.archived,
@@ -314,23 +327,22 @@ export function useReferenceVault() {
 
   async function undoLastMove() {
     if (!undoMove) return;
-    const patch = {
+
+    const current = references.find((item) => item._id === undoMove.referenceId);
+    if (!current) {
+      setUndoMove(null);
+      return;
+    }
+
+    const patch: Partial<SavedReference> = {
       triageState: undoMove.previous.triageState ?? "kept",
       archived: Boolean(undoMove.previous.archived),
       deleted: Boolean(undoMove.previous.deleted),
-    } satisfies Partial<SavedReference>;
+    };
 
     if (await patchReference(undoMove.referenceId, patch)) {
-      setActiveView(viewForCollection(referenceCollection({
-        ...references.find((item) => item._id === undoMove.referenceId),
-        ...patch,
-        _id: undoMove.referenceId,
-        kind: references.find((item) => item._id === undoMove.referenceId)?.kind ?? "link",
-        sourceUrl: references.find((item) => item._id === undoMove.referenceId)?.sourceUrl ?? "",
-        platform: references.find((item) => item._id === undoMove.referenceId)?.platform ?? "generic",
-        capturedAt: references.find((item) => item._id === undoMove.referenceId)?.capturedAt ?? Date.now(),
-        assets: references.find((item) => item._id === undoMove.referenceId)?.assets ?? [],
-      })));
+      const restored = { ...current, ...patch };
+      setActiveView(viewForCollection(referenceCollection(restored)));
       setSelectedId(undoMove.referenceId);
       report(`Restored “${undoMove.title}”.`, "success");
       setUndoMove(null);
@@ -342,11 +354,11 @@ export function useReferenceVault() {
   }
 
   async function copyEndpoint() {
-    if (!siteUrl)
-      return report(
-        "Add a Convex site URL before copying the endpoint.",
-        "error",
-      );
+    if (!siteUrl) {
+      report("Add a Convex site URL before copying the endpoint.", "error");
+      return;
+    }
+
     try {
       await navigator.clipboard.writeText(`${siteUrl}/capture`);
       report("Clipper endpoint copied.", "success");
@@ -450,7 +462,7 @@ function triagePatch(
 ): Partial<SavedReference> {
   if (destination === "keep") {
     return {
-      triageState: "kept" satisfies TriageState,
+      triageState: "kept",
       reviewedAt,
       archived: false,
       deleted: false,
@@ -458,7 +470,7 @@ function triagePatch(
   }
   if (destination === "later") {
     return {
-      triageState: "later" satisfies TriageState,
+      triageState: "later",
       reviewedAt,
       archived: false,
       deleted: false,
@@ -472,13 +484,13 @@ function triagePatch(
   }
   return reference.deleted
     ? {
-        triageState: "inbox" satisfies TriageState,
+        triageState: "inbox",
         reviewedAt,
         archived: false,
         deleted: false,
       }
     : {
-        triageState: "kept" satisfies TriageState,
+        triageState: "kept",
         reviewedAt,
         archived: false,
         deleted: false,
