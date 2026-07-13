@@ -5,6 +5,8 @@ import {
   assetLabel,
   referenceCollection,
   referenceCollectionLabel,
+  referenceDisplayTitle,
+  referenceMetadataLabel,
   referenceMode,
   type ReferenceSourceSnapshot,
   type SavedReference,
@@ -29,8 +31,11 @@ export function SelectedReference({
   ) => Promise<boolean>;
 }) {
   const asset = reference.assets[0];
-  const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
+  const snapshot = reference.sourceSnapshot;
+  const imageUrl =
+    asset?.storedUrl ?? asset?.originalUrl ?? snapshot?.previewImageUrl;
   const collection = referenceCollection(reference);
+  const displayTitle = referenceDisplayTitle(reference);
   const [titleDraft, setTitleDraft] = useState(reference.title ?? "");
   const [notesDraft, setNotesDraft] = useState(reference.notes ?? "");
   const [savingDetails, setSavingDetails] = useState(false);
@@ -55,7 +60,7 @@ export function SelectedReference({
         <img
           className="selected-image"
           src={imageUrl}
-          alt={reference.title ?? "Selected reference"}
+          alt={displayTitle}
           onError={() => setImageFailed(true)}
         />
       ) : (
@@ -63,16 +68,19 @@ export function SelectedReference({
           className={`selected-placeholder ${referenceMode(reference.kind) === "links" ? "link-placeholder" : ""}`}
         >
           {referenceMode(reference.kind) === "links" ? (
-            <span>{getInitial(reference.title)}</span>
+            <span>{getInitial(displayTitle)}</span>
           ) : null}
         </div>
       )}
       <div className="inspector-heading">
         <div>
           <p className="inspector-domain">
-            {reference.authorHandle || reference.authorName || getDomain(reference.sourceUrl)}
+            {snapshot?.siteName ||
+              reference.authorHandle ||
+              reference.authorName ||
+              getDomain(reference.sourceUrl)}
           </p>
-          <h2>{reference.title || "Untitled reference"}</h2>
+          <h2>{displayTitle}</h2>
         </div>
         <button
           type="button"
@@ -91,12 +99,14 @@ export function SelectedReference({
           <dt>Location</dt>
           <dd>{referenceCollectionLabel(reference)}</dd>
         </div>
-        {reference.authorName || reference.authorHandle ? (
+        {reference.authorName || reference.authorHandle || snapshot?.pageAuthor ? (
           <div>
             <dt>Creator</dt>
             <dd>
-              {reference.authorName}
-              {reference.authorName && reference.authorHandle ? " · " : ""}
+              {reference.authorName || snapshot?.pageAuthor}
+              {(reference.authorName || snapshot?.pageAuthor) && reference.authorHandle
+                ? " · "
+                : ""}
               {reference.authorHandle}
             </dd>
           </div>
@@ -105,6 +115,18 @@ export function SelectedReference({
           <dt>Platform</dt>
           <dd>{reference.platform}</dd>
         </div>
+        {referenceMode(reference.kind) === "links" ? (
+          <div>
+            <dt>Metadata</dt>
+            <dd>{referenceMetadataLabel(reference)}</dd>
+          </div>
+        ) : null}
+        {snapshot?.contentType ? (
+          <div>
+            <dt>Type</dt>
+            <dd>{snapshot.contentType}</dd>
+          </div>
+        ) : null}
         {reference.publishedAt ? (
           <div>
             <dt>Published</dt>
@@ -115,6 +137,12 @@ export function SelectedReference({
           <dt>Captured</dt>
           <dd>{new Date(reference.capturedAt).toLocaleString()}</dd>
         </div>
+        {snapshot?.metadataFetchedAt ? (
+          <div>
+            <dt>Checked</dt>
+            <dd>{new Date(snapshot.metadataFetchedAt).toLocaleString()}</dd>
+          </div>
+        ) : null}
         {reference.lastOpenedAt ? (
           <div>
             <dt>Opened</dt>
@@ -127,9 +155,7 @@ export function SelectedReference({
         </div>
       </dl>
 
-      {reference.sourceSnapshot ? (
-        <SourceContext snapshot={reference.sourceSnapshot} />
-      ) : null}
+      {snapshot ? <SourceContext snapshot={snapshot} /> : null}
 
       <div className="triage-actions" aria-label="Reference workflow actions">
         {collection === "trash" || collection === "archive" ? (
@@ -236,7 +262,7 @@ export function SelectedReference({
               target="_blank"
               rel="noreferrer"
             >
-              Image
+              {asset ? "Image" : "Preview"}
             </a>
           ) : null}
         </div>
@@ -256,6 +282,9 @@ export function SelectedReference({
 
 function SourceContext({ snapshot }: { snapshot: ReferenceSourceSnapshot }) {
   const entries = [
+    snapshot.description
+      ? { label: "Page description", value: snapshot.description }
+      : undefined,
     snapshot.postText ? { label: "Post text", value: snapshot.postText } : undefined,
     snapshot.altText ? { label: "Image description", value: snapshot.altText } : undefined,
     snapshot.selectedText
