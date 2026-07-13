@@ -37,6 +37,7 @@ export default defineSchema({
     deleted: v.boolean(),
   })
     .index("by_source_url", ["sourceUrl"])
+    .index("by_canonical_url", ["canonicalUrl"])
     .index("by_captured_at", ["capturedAt"])
     .searchIndex("search_references", {
       searchField: "title",
@@ -72,6 +73,7 @@ export default defineSchema({
     dominantColors: v.array(v.string()),
   })
     .index("by_reference", ["referenceId"])
+    .index("by_original_url", ["originalUrl"])
     .index("by_drive_file_id", ["driveFileId"]),
 
   boards: defineTable({
