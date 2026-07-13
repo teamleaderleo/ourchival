@@ -53,10 +53,12 @@ export function useReferenceVault() {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
   const [references, setReferences] = useState<SavedReference[]>([]);
   const [counts, setCounts] = useState<VaultCounts>(emptyCounts);
+  const [currentCursor, setCurrentCursor] = useState<string | null>(null);
   const [continueCursor, setContinueCursor] = useState<string | null>(null);
+  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
   const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isLoadingPage, setIsLoadingPage] = useState(false);
   const [status, setStatus] = useState("Loading saved references…");
   const [statusTone, setStatusTone] = useState<StatusTone>("info");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -111,10 +113,12 @@ export function useReferenceVault() {
     }
 
     setReferences([]);
+    setCurrentCursor(null);
     setContinueCursor(null);
+    setCursorHistory([]);
     setHasMore(false);
-    setIsLoadingMore(false);
-    void requestReferencePage(null, false);
+    setIsLoadingPage(false);
+    void requestReferencePage(null, []);
   }, [siteUrl, refreshKey, activeView, debouncedQuery]);
 
   useEffect(() => {
@@ -123,11 +127,11 @@ export function useReferenceVault() {
       filteredReferences.length === 0 &&
       hasMore &&
       !isLoading &&
-      !isLoadingMore
+      !isLoadingPage
     ) {
-      void loadMore();
+      void loadOlderPage();
     }
-  }, [activeView, filteredReferences.length, hasMore, isLoading, isLoadingMore]);
+  }, [activeView, filteredReferences.length, hasMore, isLoading, isLoadingPage]);
 
   useEffect(() => {
     if (activeView !== "inbox" && activeView !== "later") return;
@@ -175,13 +179,16 @@ export function useReferenceVault() {
     return () => window.removeEventListener("keydown", handleReviewKey);
   }, [activeView, filteredReferences, selectedReference]);
 
-  async function requestReferencePage(cursor: string | null, append: boolean) {
+  async function requestReferencePage(
+    cursor: string | null,
+    history: Array<string | null>,
+  ) {
     if (!siteUrl) return;
-    const serial = append ? requestSerial.current : requestSerial.current + 1;
-    if (!append) requestSerial.current = serial;
+    const serial = requestSerial.current + 1;
+    requestSerial.current = serial;
 
-    if (append) setIsLoadingMore(true);
-    else setIsLoading(true);
+    if (history.length === 0 && cursor === null) setIsLoading(true);
+    else setIsLoadingPage(true);
 
     try {
       const params = new URLSearchParams({
@@ -202,14 +209,15 @@ export function useReferenceVault() {
       }
 
       const incoming = body.references ?? [];
-      setReferences((items) =>
-        append ? mergeReferences(items, incoming) : incoming,
-      );
+      setReferences(incoming);
+      setCurrentCursor(cursor);
+      setCursorHistory(history);
       setContinueCursor(body.continueCursor ?? null);
       setHasMore(Boolean(body.hasMore));
+      setSelectedId(null);
       if (body.counts) setCounts(body.counts);
       report(
-        `${append ? "Loaded" : "Synced"} ${incoming.length} ${incoming.length === 1 ? "reference" : "references"}${body.hasMore ? "; more available." : "."}`,
+        `Loaded page ${history.length + 1} with ${incoming.length} ${incoming.length === 1 ? "reference" : "references"}${body.hasMore ? "; older pages available." : "."}`,
         "success",
       );
     } catch (error) {
@@ -221,15 +229,21 @@ export function useReferenceVault() {
       }
     } finally {
       if (serial === requestSerial.current) {
-        if (append) setIsLoadingMore(false);
-        else setIsLoading(false);
+        setIsLoading(false);
+        setIsLoadingPage(false);
       }
     }
   }
 
-  async function loadMore() {
-    if (!continueCursor || !hasMore || isLoadingMore) return;
-    await requestReferencePage(continueCursor, true);
+  async function loadOlderPage() {
+    if (!continueCursor || !hasMore || isLoadingPage) return;
+    await requestReferencePage(continueCursor, [...cursorHistory, currentCursor]);
+  }
+
+  async function loadNewerPage() {
+    if (cursorHistory.length === 0 || isLoadingPage) return;
+    const previousCursor = cursorHistory[cursorHistory.length - 1] ?? null;
+    await requestReferencePage(previousCursor, cursorHistory.slice(0, -1));
   }
 
   async function saveManualReference(event: FormEvent<HTMLFormElement>) {
@@ -490,9 +504,12 @@ export function useReferenceVault() {
     setSetupOpen,
     undoMove,
     hasMore,
+    canLoadNewer: cursorHistory.length > 0,
+    pageNumber: cursorHistory.length + 1,
     isLoading,
-    isLoadingMore,
-    loadMore,
+    isLoadingPage,
+    loadOlderPage,
+    loadNewerPage,
     saveManualReference,
     toggleFavorite,
     saveDetails,
@@ -522,12 +539,6 @@ function viewForCollection(collection: ReferenceCollection): VaultView {
 
 function countForView(counts: VaultCounts, view: VaultView) {
   return counts[view];
-}
-
-function mergeReferences(current: SavedReference[], incoming: SavedReference[]) {
-  const merged = new Map(current.map((reference) => [reference._id, reference]));
-  for (const reference of incoming) merged.set(reference._id, reference);
-  return Array.from(merged.values());
 }
 
 function updateCountsForReferenceChange(

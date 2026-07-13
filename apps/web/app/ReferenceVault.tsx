@@ -162,7 +162,7 @@ export function ReferenceVault() {
             </div>
             <p className="vault-count">
               <strong>{displayedCount}</strong>
-              <span>{vault.query ? "matches loaded" : "references"}</span>
+              <span>{vault.query ? "matches on page" : "references"}</span>
             </p>
           </div>
           <div className="vault-toolbar">
@@ -230,7 +230,8 @@ export function ReferenceVault() {
           ) : null}
 
           <div className="result-summary">
-            <span>{vault.filteredReferences.length} loaded here</span>
+            <span>Page {vault.pageNumber}</span>
+            <span>{vault.filteredReferences.length} mounted</span>
             <span>{vault.libraryCount} in Library</span>
             <span>{vault.inboxCount} in Inbox</span>
             <span>{vault.laterCount} for Later</span>
@@ -255,14 +256,14 @@ export function ReferenceVault() {
                 <h2>
                   {vault.query
                     ? vault.hasMore
-                      ? "No matches in this page yet"
+                      ? "No matches on this page"
                       : "No matching saves"
                     : emptyHeading(vault.activeView, currentViewLabel)}
                 </h2>
                 <p>
                   {vault.query
                     ? vault.hasMore
-                      ? "Search can continue deeper into the archive."
+                      ? "Move to the next older page to continue this search."
                       : "Try a source domain, artist name, title, or phrase from your notes."
                     : emptyMessage(vault.activeView)}
                 </p>
@@ -292,21 +293,27 @@ export function ReferenceVault() {
           {!vault.isLoading ? (
             <div className="pagination-bar" aria-live="polite">
               <p>
-                {vault.filteredReferences.length} loaded
-                {vault.query ? " for this search" : ` of ${vault.activeCount}`}
+                Page {vault.pageNumber} · {vault.filteredReferences.length} mounted
+                {vault.query ? " for this search" : ` · ${vault.activeCount} total`}
               </p>
-              {vault.hasMore ? (
+              <div className="pagination-actions">
+                <button
+                  type="button"
+                  className="button ghost"
+                  onClick={() => void vault.loadNewerPage()}
+                  disabled={!vault.canLoadNewer || vault.isLoadingPage}
+                >
+                  Newer
+                </button>
                 <button
                   type="button"
                   className="button secondary"
-                  onClick={() => void vault.loadMore()}
-                  disabled={vault.isLoadingMore}
+                  onClick={() => void vault.loadOlderPage()}
+                  disabled={!vault.hasMore || vault.isLoadingPage}
                 >
-                  {vault.isLoadingMore ? "Loading…" : "Load more"}
+                  {vault.isLoadingPage ? "Loading…" : vault.hasMore ? "Older" : "End reached"}
                 </button>
-              ) : vault.filteredReferences.length > 0 ? (
-                <span>End of collection</span>
-              ) : null}
+              </div>
             </div>
           ) : null}
         </main>
