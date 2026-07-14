@@ -19,6 +19,8 @@ type ReferenceListOptions = {
   lane: ReferenceLane;
   favoritesOnly: boolean;
   query: string;
+  domain: string;
+  sourceType: string;
 };
 
 const statsKey = "global";
@@ -236,6 +238,8 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
     lane: isLane(lane) ? lane : "all",
     favoritesOnly: url.searchParams.get("favorites") === "true",
     query: normalizeSearchText(url.searchParams.get("query") ?? ""),
+    domain: normalizeDomain(url.searchParams.get("domain") ?? ""),
+    sourceType: normalizeSearchText(url.searchParams.get("sourceType") ?? ""),
   };
 }
 
@@ -245,6 +249,10 @@ function matchesReferenceFilters(reference: any, options: ReferenceListOptions) 
     return false;
   }
   if (options.favoritesOnly && !reference.favorite) return false;
+  if (options.sourceType && normalizeSearchText(reference.kind) !== options.sourceType) {
+    return false;
+  }
+  if (options.domain && !matchesDomain(reference.sourceUrl, options.domain)) return false;
   return true;
 }
 
@@ -271,6 +279,15 @@ function matchesSearch(reference: any, snapshot: any | null, query: string) {
   ]
     .filter((value) => typeof value === "string")
     .some((value) => normalizeSearchText(value).includes(query));
+}
+
+function matchesDomain(sourceUrl: string, domain: string) {
+  try {
+    const hostname = new URL(sourceUrl).hostname.toLocaleLowerCase().replace(/^www\./, "");
+    return hostname === domain || hostname.endsWith(`.${domain}`);
+  } catch {
+    return false;
+  }
 }
 
 function referenceFacetKeys(reference: any | null | undefined): ReferenceCountKey[] {
@@ -314,6 +331,11 @@ function isLane(value: string | null): value is ReferenceLane {
 
 function normalizeSearchText(value: string) {
   return value.trim().toLocaleLowerCase();
+}
+
+function normalizeDomain(value: string) {
+  const normalized = normalizeSearchText(value).replace(/^https?:\/\//, "").split("/")[0] ?? "";
+  return normalized.replace(/^www\./, "").replace(/\.$/, "");
 }
 
 function emptyCounts(): ReferenceCounts {
