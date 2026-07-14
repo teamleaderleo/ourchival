@@ -8,6 +8,7 @@ import {
   referenceMode,
   type SavedReference,
 } from "./referenceVaultModel";
+import { useReferenceTags } from "./useReferenceTags";
 
 export function ReferenceCard({
   reference,
@@ -23,6 +24,7 @@ export function ReferenceCard({
   const asset = reference.assets[0];
   const mode = referenceMode(reference.kind);
   const snapshot = reference.sourceSnapshot;
+  const [tags] = useReferenceTags(reference.tagIds, reference.tags);
   const imageUrl =
     asset?.storedUrl ?? asset?.originalUrl ?? snapshot?.previewImageUrl;
   const domain = getDomain(reference.sourceUrl);
@@ -30,8 +32,8 @@ export function ReferenceCard({
   const sourceLabel =
     snapshot?.siteName || reference.authorHandle || reference.authorName || domain;
   const metadataFailed = snapshot?.metadataStatus === "failed";
-  const visibleTags = (reference.tags ?? []).slice(0, 3);
-  const hiddenTagCount = Math.max(0, (reference.tags?.length ?? 0) - visibleTags.length);
+  const visibleTags = tags.slice(0, 3);
+  const hiddenTagCount = Math.max(0, tags.length - visibleTags.length);
 
   return (
     <article
