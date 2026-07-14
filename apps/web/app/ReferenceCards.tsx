@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ReferenceBoardAssignment } from "./BoardPanel";
+import { ReferenceProjectAssignment } from "./ProjectPanel";
 import {
   referenceDisplayTitle,
   referenceKindLabel,
@@ -101,7 +102,12 @@ export function ReferenceCard({
       >
         {reference.favorite ? "★" : "☆"}
       </button>
-      {selected ? <ReferenceBoardAssignment reference={reference} /> : null}
+      {selected ? (
+        <div className="selected-card-organization">
+          <ReferenceBoardAssignment reference={reference} />
+          <ReferenceProjectAssignment reference={reference} />
+        </div>
+      ) : null}
     </article>
   );
 }

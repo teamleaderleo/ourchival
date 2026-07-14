@@ -127,7 +127,7 @@ export function searchTextOnly(value: string) {
     .trim()
     .toLowerCase()
     .split(/\s+/)
-    .filter((token) => !/^(site|domain|type|kind|tag|board):/.test(token))
+    .filter((token) => !/^(site|domain|type|kind|tag|board|project):/.test(token))
     .join(" ");
 }
 

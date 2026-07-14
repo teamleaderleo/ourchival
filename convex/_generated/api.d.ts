@@ -12,6 +12,7 @@ import type * as boards from "../boards.js";
 import type * as http from "../http.js";
 import type * as lib_drive from "../lib/drive.js";
 import type * as lib_platform from "../lib/platform.js";
+import type * as projects from "../projects.js";
 import type * as references from "../references.js";
 import type * as tags from "../tags.js";
 
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "lib/drive": typeof lib_drive;
   "lib/platform": typeof lib_platform;
+  projects: typeof projects;
   references: typeof references;
   tags: typeof tags;
 }>;
