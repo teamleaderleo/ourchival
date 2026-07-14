@@ -19,6 +19,7 @@ export type CapturePayload = {
   previewImageUrl?: string;
   pageAuthor?: string;
   contentType?: string;
+  deferMetadata?: boolean;
   selectedText?: string;
   authorName?: string;
   authorHandle?: string;
