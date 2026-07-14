@@ -11,6 +11,12 @@ type UpdateReferenceTagsArgs = {
   removeIds: string[];
 };
 
+type UpdateReferencesTagsArgs = {
+  referenceIds: string[];
+  addNames: string[];
+  removeIds: string[];
+};
+
 const listTagsReference = makeFunctionReference<"query", {}, ReferenceTag[]>(
   "tags:list",
 );
@@ -19,6 +25,11 @@ const updateReferenceTagsReference = makeFunctionReference<
   UpdateReferenceTagsArgs,
   ReferenceTag[]
 >("tags:updateReference");
+const updateReferencesTagsReference = makeFunctionReference<
+  "mutation",
+  UpdateReferencesTagsArgs,
+  { updated: number }
+>("tags:updateReferences");
 
 let client: ConvexHttpClient | undefined;
 let allTagsPromise: Promise<ReferenceTag[]> | undefined;
@@ -77,6 +88,19 @@ export async function mutateReferenceTags(
 ) {
   const result = await getClient().mutation(updateReferenceTagsReference, {
     referenceId,
+    addNames: args.addNames ?? [],
+    removeIds: args.removeIds ?? [],
+  });
+  await refreshAllTags();
+  return result;
+}
+
+export async function mutateReferencesTags(
+  referenceIds: string[],
+  args: { addNames?: string[]; removeIds?: string[] },
+) {
+  const result = await getClient().mutation(updateReferencesTagsReference, {
+    referenceIds,
     addNames: args.addNames ?? [],
     removeIds: args.removeIds ?? [],
   });

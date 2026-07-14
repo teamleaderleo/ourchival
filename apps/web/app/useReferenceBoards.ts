@@ -21,6 +21,11 @@ type UpdateReferenceBoardsArgs = {
   addBoardIds: string[];
   removeBoardIds: string[];
 };
+type UpdateReferencesBoardsArgs = {
+  referenceIds: string[];
+  boardId: string;
+  mode: "add" | "remove";
+};
 
 const listBoardsReference = makeFunctionReference<"query", {}, ReferenceBoard[]>(
   "boards:list",
@@ -45,6 +50,11 @@ const updateReferenceBoardsReference = makeFunctionReference<
   UpdateReferenceBoardsArgs,
   string[]
 >("boards:updateReference");
+const updateReferencesBoardsReference = makeFunctionReference<
+  "mutation",
+  UpdateReferencesBoardsArgs,
+  { updated: number }
+>("boards:updateReferences");
 
 let client: ConvexHttpClient | undefined;
 let boardsPromise: Promise<ReferenceBoard[]> | undefined;
@@ -96,6 +106,20 @@ export async function mutateReferenceBoards(
   });
   await refreshBoards();
   return boardIds;
+}
+
+export async function mutateReferencesBoards(
+  referenceIds: string[],
+  boardId: string,
+  mode: "add" | "remove",
+) {
+  const result = await getClient().mutation(updateReferencesBoardsReference, {
+    referenceIds,
+    boardId,
+    mode,
+  });
+  await refreshBoards();
+  return result;
 }
 
 async function refreshBoards() {

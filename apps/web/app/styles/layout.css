@@ -106,6 +106,22 @@
 .project-use-form select, .project-use-form input, .project-use-form textarea { width: 100%; min-height: 34px; padding: 7px 8px; font-size: .68rem; }
 .project-use-form textarea { resize: vertical; line-height: 1.35; }
 .project-use-form .button { min-height: 34px; padding: 7px 9px; font-size: .67rem; }
+.batch-organizer { display: grid; gap: 9px; margin-top: 10px; border: 1px dashed var(--line); border-radius: 12px; padding: 9px 10px; background: color-mix(in srgb, var(--panel-raised), transparent 45%); transition: border-color 130ms ease, background 130ms ease; }
+.batch-organizer.active { border-style: solid; border-color: color-mix(in srgb, var(--success), transparent 55%); background: color-mix(in srgb, var(--success), var(--panel-raised) 92%); }
+.batch-organizer-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.batch-organizer-heading > div:first-child { display: grid; gap: 2px; }
+.batch-organizer-heading strong { color: var(--text); font-size: .74rem; }
+.batch-organizer-heading span { color: var(--muted); font-size: .65rem; }
+.batch-selection-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.batch-selection-actions .button { min-height: 32px; padding: 6px 9px; font-size: .65rem; }
+.batch-organizer-forms { display: grid; gap: 8px; border-top: 1px solid color-mix(in srgb, var(--line), transparent 25%); padding-top: 8px; }
+.batch-organizer-forms form { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; align-items: center; }
+.batch-organizer-forms form > p { margin: 0; color: var(--muted-strong); font-size: .65rem; font-weight: 700; }
+.batch-form-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; gap: 6px; }
+.batch-form-row.project-row { grid-template-columns: 110px minmax(125px, .75fr) minmax(120px, 1fr) minmax(120px, 1fr) auto; }
+.batch-form-row select, .batch-form-row input { min-width: 0; min-height: 34px; padding: 6px 8px; font-size: .68rem; }
+.batch-form-row .button { min-height: 34px; padding: 6px 9px; font-size: .66rem; }
+.batch-status { margin: 0; color: var(--muted); font-size: .64rem; line-height: 1.4; text-align: center; }
 .review-strip { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; border: 1px solid color-mix(in srgb, var(--accent), transparent 62%); border-radius: 13px; padding: 10px 11px; background: color-mix(in srgb, var(--accent-soft), transparent 18%); }
 .review-strip > div:first-child { display: grid; gap: 3px; }
 .review-strip strong { color: var(--accent-strong); font-size: 0.78rem; }
@@ -120,6 +136,7 @@
 .pagination-bar p, .pagination-bar span { margin: 0; color: var(--muted); font-size: 0.72rem; }
 .pagination-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pagination-actions .button { min-width: 92px; }
-@media (max-width: 900px) { .link-filter-bar, .tag-filter-bar, .board-filter-row, .board-panel-empty, .project-filter-row, .project-panel-empty { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 620px) { .link-filter-bar, .tag-filter-bar, .board-filter-row, .board-panel-empty, .project-filter-row, .project-panel-empty { grid-template-columns: 1fr; } .board-manager-list > div, .project-manager-list > div { grid-template-columns: 1fr auto auto; } }
+@media (max-width: 1100px) { .batch-form-row.project-row { grid-template-columns: 100px minmax(130px, 1fr) minmax(0, 1fr); } .batch-form-row.project-row .button { grid-column: 3; } }
+@media (max-width: 900px) { .link-filter-bar, .tag-filter-bar, .board-filter-row, .board-panel-empty, .project-filter-row, .project-panel-empty { grid-template-columns: 1fr 1fr; } .batch-organizer-forms form { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .link-filter-bar, .tag-filter-bar, .board-filter-row, .board-panel-empty, .project-filter-row, .project-panel-empty { grid-template-columns: 1fr; } .board-manager-list > div, .project-manager-list > div { grid-template-columns: 1fr auto auto; } .batch-organizer-heading { align-items: flex-start; flex-direction: column; } .batch-selection-actions { justify-content: flex-start; } .batch-form-row, .batch-form-row.project-row { grid-template-columns: 1fr; } .batch-form-row.project-row .button { grid-column: auto; } }
 @keyframes pagination-pulse { from { opacity: 0.35; transform: scale(0.92); } to { opacity: 1; transform: scale(1.05); } }

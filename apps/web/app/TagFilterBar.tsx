@@ -1,5 +1,6 @@
 "use client";
 
+import { BatchOrganizationBar } from "./BatchOrganizationBar";
 import { BoardPanel } from "./BoardPanel";
 import { ProjectPanel } from "./ProjectPanel";
 import { useAllReferenceTags } from "./useReferenceTags";
@@ -53,6 +54,7 @@ export function TagFilterBar({
       ) : null}
       <BoardPanel query={query} onChange={onChange} />
       <ProjectPanel query={query} onChange={onChange} />
+      <BatchOrganizationBar />
     </>
   );
 }

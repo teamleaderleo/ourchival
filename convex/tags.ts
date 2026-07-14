@@ -47,3 +47,28 @@ export const updateReference = mutation({
     });
   },
 });
+
+export const updateReferences = mutation({
+  args: {
+    referenceIds: v.array(v.id("references")),
+    addNames: v.array(v.string()),
+    removeIds: v.array(v.id("tags")),
+  },
+  handler: async (ctx, args) => {
+    const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
+    const addNames = Array.from(
+      new Set(args.addNames.map((name) => name.trim()).filter(Boolean)),
+    ).slice(0, 20);
+    const removeIds = Array.from(new Set(args.removeIds.map(String))).slice(0, 20);
+    let updated = 0;
+
+    for (const referenceId of referenceIds) {
+      const reference = await ctx.db.get(referenceId);
+      if (!reference) continue;
+      await updateReferenceTags(ctx, referenceId, { addNames, removeIds });
+      updated += 1;
+    }
+
+    return { updated };
+  },
+});
