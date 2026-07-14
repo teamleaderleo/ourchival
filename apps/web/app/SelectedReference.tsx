@@ -9,11 +9,11 @@ import {
   referenceMetadataLabel,
   referenceMode,
   type ReferenceSourceSnapshot,
-  type ReferenceTag,
   type SavedReference,
 } from "./referenceVaultModel";
 import { getDomain, getInitial } from "./ReferenceCards";
 import { type TriageDestination } from "./useReferenceVault";
+import { mutateReferenceTags, useReferenceTags } from "./useReferenceTags";
 
 const quickReasons = [
   "pose",
@@ -52,7 +52,10 @@ export function SelectedReference({
   const displayTitle = referenceDisplayTitle(reference);
   const [titleDraft, setTitleDraft] = useState(reference.title ?? "");
   const [notesDraft, setNotesDraft] = useState(reference.notes ?? "");
-  const [currentTags, setCurrentTags] = useState<ReferenceTag[]>(reference.tags ?? []);
+  const [currentTags, setCurrentTags] = useReferenceTags(
+    reference.tagIds,
+    reference.tags,
+  );
   const [customTag, setCustomTag] = useState("");
   const [savingDetails, setSavingDetails] = useState(false);
   const [updatingTags, setUpdatingTags] = useState(false);
@@ -74,34 +77,11 @@ export function SelectedReference({
   }
 
   async function updateTags(args: { addNames?: string[]; removeIds?: string[] }) {
-    const siteUrl = resolveConvexSiteUrl();
-    if (!siteUrl) {
-      setTagMessage("Add a Convex site URL in Setup before editing tags.");
-      return false;
-    }
-
     setUpdatingTags(true);
     setTagMessage("Saving tags…");
     try {
-      const response = await fetch(
-        `${siteUrl}/reference-tags?id=${encodeURIComponent(reference._id)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(args),
-        },
-      );
-      const body = (await response.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        tags?: ReferenceTag[];
-      };
-      if (!response.ok || body.ok === false) {
-        setTagMessage(body.error ?? response.statusText);
-        return false;
-      }
-
-      setCurrentTags(body.tags ?? []);
+      const tags = await mutateReferenceTags(reference._id, args);
+      setCurrentTags(tags);
       setTagMessage("Tags saved.");
       return true;
     } catch (error) {
