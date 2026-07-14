@@ -1,3 +1,8 @@
+import {
+  findReferenceSearchMatches,
+  type ReferenceSearchContext,
+  type SearchMatch,
+} from "./searchMatches";
 import { slugifyTagName } from "./tags";
 
 type ReferenceCollection = "inbox" | "library" | "later" | "archive" | "trash";
@@ -30,6 +35,12 @@ type ReferenceListOptions = {
   projectReferenceIds: Set<string> | null;
 };
 
+type SearchCaches = {
+  tags: Map<string, Promise<any | null>>;
+  boards: Map<string, Promise<any | null>>;
+  projects: Map<string, Promise<any | null>>;
+};
+
 const statsKey = "global";
 const linkKinds = new Set(["link", "article", "page"]);
 
@@ -60,7 +71,12 @@ export async function listReferencePage(ctx: any, request: Request) {
   }
 
   const origin = url.origin;
-  const references: Array<{ reference: any; snapshot: any | null | undefined }> = [];
+  const searchCaches = createSearchCaches();
+  const references: Array<{
+    reference: any;
+    snapshot: any | null | undefined;
+    searchMatches: SearchMatch[];
+  }> = [];
   let cursor = options.cursor;
   let isDone = false;
   let scanned = 0;
@@ -87,28 +103,39 @@ export async function listReferencePage(ctx: any, request: Request) {
         ...candidates.map((reference: any) => ({
           reference,
           snapshot: undefined,
+          searchMatches: [],
         })),
       );
       continue;
     }
 
     const searchable = await Promise.all(
-      candidates.map(async (reference: any) => ({
-        reference,
-        snapshot: await getLatestSnapshot(ctx, reference._id),
-      })),
+      candidates.map(async (reference: any) => {
+        const [snapshot, context] = await Promise.all([
+          getLatestSnapshot(ctx, reference._id),
+          getReferenceSearchContext(ctx, reference, searchCaches),
+        ]);
+        return {
+          reference,
+          snapshot,
+          searchMatches: findReferenceSearchMatches(
+            reference,
+            snapshot,
+            context,
+            options.query,
+          ),
+        };
+      }),
     );
 
     references.push(
-      ...searchable.filter(({ reference, snapshot }) =>
-        matchesSearch(reference, snapshot, options.query),
-      ),
+      ...searchable.filter(({ searchMatches }) => searchMatches.length > 0),
     );
   }
 
   const hydrated = await Promise.all(
-    references.map(({ reference, snapshot }) =>
-      hydrateReference(ctx, origin, reference, snapshot),
+    references.map(({ reference, snapshot, searchMatches }) =>
+      hydrateReference(ctx, origin, reference, snapshot, searchMatches),
     ),
   );
   const counts = await getReferenceCounts(ctx);
@@ -163,6 +190,7 @@ export async function hydrateReference(
   origin: string,
   reference: any,
   knownSnapshot: any | null | undefined = undefined,
+  knownSearchMatches: SearchMatch[] = [],
 ) {
   const [assets, snapshot] = await Promise.all([
     ctx.db
@@ -189,6 +217,9 @@ export async function hydrateReference(
     ...reference,
     assets: assetsWithUrls,
     ...(snapshot ? { sourceSnapshot: sourceSnapshotPayload(snapshot) } : {}),
+    ...(knownSearchMatches.length > 0
+      ? { searchMatches: knownSearchMatches }
+      : {}),
   };
 }
 
@@ -210,6 +241,63 @@ export function sourceSnapshotPayload(snapshot: any) {
     metadataFetchedAt: snapshot.metadataFetchedAt,
     createdAt: snapshot.createdAt,
   };
+}
+
+async function getReferenceSearchContext(
+  ctx: any,
+  reference: any,
+  caches: SearchCaches,
+): Promise<ReferenceSearchContext> {
+  const [tags, boards, uses] = await Promise.all([
+    Promise.all(
+      reference.tagIds.map((tagId: any) =>
+        getCachedDocument(ctx, caches.tags, tagId),
+      ),
+    ),
+    Promise.all(
+      reference.boardIds.map((boardId: any) =>
+        getCachedDocument(ctx, caches.boards, boardId),
+      ),
+    ),
+    ctx.db
+      .query("projectReferences")
+      .withIndex("by_reference", (q: any) => q.eq("referenceId", reference._id))
+      .collect(),
+  ]);
+
+  const projectUses = await Promise.all(
+    uses.map(async (use: any) => ({
+      ...use,
+      project: await getCachedDocument(ctx, caches.projects, use.projectId),
+    })),
+  );
+
+  return {
+    tags: tags.filter(Boolean),
+    boards: boards.filter(Boolean),
+    projectUses,
+  };
+}
+
+function createSearchCaches(): SearchCaches {
+  return {
+    tags: new Map(),
+    boards: new Map(),
+    projects: new Map(),
+  };
+}
+
+function getCachedDocument(
+  ctx: any,
+  cache: Map<string, Promise<any | null>>,
+  id: any,
+) {
+  const key = String(id);
+  const existing = cache.get(key);
+  if (existing) return existing;
+  const request = Promise.resolve(ctx.db.get(id)).then((value) => value ?? null);
+  cache.set(key, request);
+  return request;
 }
 
 async function rebuildReferenceStats(ctx: any): Promise<ReferenceCounts> {
@@ -341,31 +429,6 @@ function matchesReferenceFilters(reference: any, options: ReferenceListOptions) 
     return false;
   }
   return true;
-}
-
-function matchesSearch(reference: any, snapshot: any | null, query: string) {
-  return [
-    reference.title,
-    reference.notes,
-    reference.sourceUrl,
-    reference.canonicalUrl,
-    reference.platform,
-    reference.kind,
-    reference.authorName,
-    reference.authorHandle,
-    reference.postId,
-    snapshot?.pageTitle,
-    snapshot?.postText,
-    snapshot?.altText,
-    snapshot?.selectedText,
-    snapshot?.description,
-    snapshot?.siteName,
-    snapshot?.pageAuthor,
-    snapshot?.canonicalUrl,
-    snapshot?.contentType,
-  ]
-    .filter((value) => typeof value === "string")
-    .some((value) => normalizeSearchText(value).includes(query));
 }
 
 function matchesDomain(sourceUrl: string, domain: string) {
