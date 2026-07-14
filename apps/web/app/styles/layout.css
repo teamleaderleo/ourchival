@@ -53,40 +53,59 @@
 .link-filter-bar label { display: grid; gap: 5px; color: var(--muted); font-size: 0.65rem; font-weight: 700; }
 .link-filter-bar input, .link-filter-bar select { min-height: 36px; padding: 7px 9px; font-size: 0.76rem; }
 .link-filter-bar .button { min-height: 36px; padding: 8px 10px; white-space: nowrap; }
-.tag-filter-bar, .board-panel { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 9px 10px; background: color-mix(in srgb, var(--panel-raised), transparent 28%); }
+.tag-filter-bar, .board-panel, .project-panel { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 9px 10px; background: color-mix(in srgb, var(--panel-raised), transparent 28%); }
 .tag-filter-bar { display: grid; grid-template-columns: minmax(145px, 0.4fr) minmax(0, 1fr); gap: 10px; align-items: center; }
-.tag-filter-bar label, .board-filter-row label { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; color: var(--muted); font-size: 0.65rem; font-weight: 700; }
-.tag-filter-bar select, .board-filter-row select { min-height: 34px; padding: 6px 8px; font-size: 0.73rem; }
-.tag-filter-chips, .board-filter-chips, .assigned-boards { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; }
-.tag-filter-chips button, .board-filter-chips button, .assigned-boards button { max-width: 150px; overflow: hidden; border: 1px solid var(--line); border-radius: 999px; padding: 5px 8px; background: var(--panel); color: var(--muted-strong); cursor: pointer; font-size: 0.62rem; text-overflow: ellipsis; white-space: nowrap; }
-.tag-filter-chips button:hover, .tag-filter-chips button.active, .board-filter-chips button:hover, .board-filter-chips button.active { border-color: color-mix(in srgb, var(--accent), transparent 42%); background: var(--accent-soft); color: var(--accent-strong); }
-.board-panel { display: grid; gap: 9px; }
-.board-panel-empty { grid-template-columns: minmax(0, 1fr) minmax(240px, .75fr); align-items: center; }
-.board-panel-empty > div { display: grid; gap: 3px; }
-.board-panel-empty strong { color: var(--text); font-size: .75rem; }
-.board-panel-empty span { color: var(--muted); font-size: .67rem; }
-.board-filter-row { display: grid; grid-template-columns: minmax(165px, .45fr) minmax(0, 1fr); gap: 10px; align-items: center; }
-.board-filter-chips button { display: inline-flex; align-items: center; gap: 6px; }
-.board-filter-chips button span { color: var(--muted); font-variant-numeric: tabular-nums; }
-.board-manager { border-top: 1px solid color-mix(in srgb, var(--line), transparent 25%); padding-top: 8px; }
-.board-manager summary { color: var(--muted-strong); cursor: pointer; font-size: .68rem; font-weight: 700; }
-.board-create-row, .board-assign-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 8px; }
-.board-create-row input, .board-assign-row select { min-height: 35px; padding: 7px 9px; font-size: .73rem; }
-.board-create-row .button, .board-assign-row .button { min-height: 35px; padding: 7px 10px; }
-.board-manager-list { display: grid; gap: 6px; margin-top: 8px; }
-.board-manager-list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
-.board-manager-list > div > button:first-child { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-radius: 8px; padding: 7px 8px; background: var(--panel); color: var(--text); cursor: pointer; text-align: left; }
-.board-manager-list > div > button:first-child strong { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
-.board-manager-list > div > button:first-child span { color: var(--muted); font-size: .64rem; }
-.board-manager-list .button { min-height: 32px; padding: 6px 8px; font-size: .65rem; }
-.board-status, .board-empty { margin: 0; color: var(--muted); font-size: .66rem; line-height: 1.4; text-align: center; }
-.reference-board-assignment { display: grid; gap: 7px; border-top: 1px solid var(--line); padding: 9px 10px 10px; background: color-mix(in srgb, var(--panel), transparent 20%); }
-.reference-board-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.reference-board-heading strong { color: var(--muted-strong); font-size: .67rem; }
-.reference-board-heading span { color: var(--muted); font-size: .62rem; }
+.tag-filter-bar label, .board-filter-row label, .project-filter-row label { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; color: var(--muted); font-size: 0.65rem; font-weight: 700; }
+.tag-filter-bar select, .board-filter-row select, .project-filter-row select { min-height: 34px; padding: 6px 8px; font-size: 0.73rem; }
+.tag-filter-chips, .board-filter-chips, .project-filter-chips, .assigned-boards { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; }
+.tag-filter-chips button, .board-filter-chips button, .project-filter-chips button, .assigned-boards button { max-width: 160px; overflow: hidden; border: 1px solid var(--line); border-radius: 999px; padding: 5px 8px; background: var(--panel); color: var(--muted-strong); cursor: pointer; font-size: 0.62rem; text-overflow: ellipsis; white-space: nowrap; }
+.tag-filter-chips button:hover, .tag-filter-chips button.active, .board-filter-chips button:hover, .board-filter-chips button.active, .project-filter-chips button:hover, .project-filter-chips button.active { border-color: color-mix(in srgb, var(--accent), transparent 42%); background: var(--accent-soft); color: var(--accent-strong); }
+.board-panel, .project-panel { display: grid; gap: 9px; }
+.board-panel-empty, .project-panel-empty { grid-template-columns: minmax(0, 1fr) minmax(240px, .75fr); align-items: center; }
+.board-panel-empty > div, .project-panel-empty > div { display: grid; gap: 3px; }
+.board-panel-empty strong, .project-panel-empty strong { color: var(--text); font-size: .75rem; }
+.board-panel-empty span, .project-panel-empty span { color: var(--muted); font-size: .67rem; }
+.board-filter-row, .project-filter-row { display: grid; grid-template-columns: minmax(165px, .45fr) minmax(0, 1fr); gap: 10px; align-items: center; }
+.board-filter-chips button, .project-filter-chips button { display: inline-flex; align-items: center; gap: 6px; }
+.board-filter-chips button span:last-child, .project-filter-chips button span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+.board-manager, .project-manager { border-top: 1px solid color-mix(in srgb, var(--line), transparent 25%); padding-top: 8px; }
+.board-manager summary, .project-manager summary { color: var(--muted-strong); cursor: pointer; font-size: .68rem; font-weight: 700; }
+.board-create-row, .board-assign-row, .project-create-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 8px; }
+.board-create-row input, .board-assign-row select, .project-create-row input { min-height: 35px; padding: 7px 9px; font-size: .73rem; }
+.board-create-row .button, .board-assign-row .button, .project-create-row .button { min-height: 35px; padding: 7px 10px; }
+.board-manager-list, .project-manager-list { display: grid; gap: 6px; margin-top: 8px; }
+.board-manager-list > div, .project-manager-list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
+.board-manager-list > div > button:first-child, .project-manager-list > div > button:first-child { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-radius: 8px; padding: 7px 8px; background: var(--panel); color: var(--text); cursor: pointer; text-align: left; }
+.board-manager-list > div > button:first-child strong, .project-manager-list > div > button:first-child strong { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.board-manager-list > div > button:first-child span, .project-manager-list > div > button:first-child span { color: var(--muted); font-size: .64rem; text-transform: capitalize; }
+.board-manager-list .button, .project-manager-list .button { min-height: 32px; padding: 6px 8px; font-size: .65rem; }
+.board-status, .board-empty, .project-status { margin: 0; color: var(--muted); font-size: .66rem; line-height: 1.4; text-align: center; }
+.project-status-dot { width: 6px; height: 6px; flex: none; border-radius: 999px; background: var(--muted); }
+.project-status-dot.active { background: var(--success); }
+.project-status-dot.paused { background: var(--warning); }
+.project-status-dot.finished { background: var(--accent); }
+.project-status-dot.archived { background: var(--muted); }
+.selected-card-organization { display: grid; border-top: 1px solid var(--line); }
+.reference-board-assignment, .reference-project-assignment { display: grid; gap: 7px; padding: 9px 10px 10px; background: color-mix(in srgb, var(--panel), transparent 20%); }
+.reference-project-assignment { border-top: 1px solid color-mix(in srgb, var(--line), transparent 25%); }
+.reference-board-heading, .reference-project-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.reference-board-heading strong, .reference-project-heading strong { color: var(--muted-strong); font-size: .67rem; }
+.reference-board-heading span, .reference-project-heading span { color: var(--muted); font-size: .62rem; }
 .assigned-boards button { border-color: color-mix(in srgb, var(--accent), transparent 58%); background: var(--accent-soft); color: var(--accent-strong); }
 .assigned-boards button:hover { border-color: var(--danger); color: var(--danger); }
-.reference-board-assignment > p { margin: 0; color: var(--muted); font-size: .62rem; text-align: center; }
+.reference-board-assignment > p, .reference-project-assignment > p { margin: 0; color: var(--muted); font-size: .62rem; line-height: 1.4; text-align: center; }
+.project-use-list { display: grid; gap: 5px; }
+.project-use-list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; align-items: center; }
+.project-use-list > div > button:first-child { display: grid; gap: 2px; min-width: 0; border: 1px solid color-mix(in srgb, var(--accent), transparent 68%); border-radius: 8px; padding: 6px 7px; background: var(--accent-soft); color: var(--text); cursor: pointer; text-align: left; }
+.project-use-list strong, .project-use-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-use-list strong { font-size: .65rem; }
+.project-use-list span { color: var(--muted); font-size: .59rem; }
+.project-use-list > div > button:last-child { border: 0; padding: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+.project-use-list > div > button:last-child:hover { color: var(--danger); }
+.project-use-form { display: grid; gap: 6px; }
+.project-use-form select, .project-use-form input, .project-use-form textarea { width: 100%; min-height: 34px; padding: 7px 8px; font-size: .68rem; }
+.project-use-form textarea { resize: vertical; line-height: 1.35; }
+.project-use-form .button { min-height: 34px; padding: 7px 9px; font-size: .67rem; }
 .review-strip { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; border: 1px solid color-mix(in srgb, var(--accent), transparent 62%); border-radius: 13px; padding: 10px 11px; background: color-mix(in srgb, var(--accent-soft), transparent 18%); }
 .review-strip > div:first-child { display: grid; gap: 3px; }
 .review-strip strong { color: var(--accent-strong); font-size: 0.78rem; }
@@ -101,6 +120,6 @@
 .pagination-bar p, .pagination-bar span { margin: 0; color: var(--muted); font-size: 0.72rem; }
 .pagination-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pagination-actions .button { min-width: 92px; }
-@media (max-width: 900px) { .link-filter-bar, .tag-filter-bar, .board-filter-row, .board-panel-empty { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 620px) { .link-filter-bar, .tag-filter-bar, .board-filter-row, .board-panel-empty { grid-template-columns: 1fr; } .board-manager-list > div { grid-template-columns: 1fr auto auto; } }
+@media (max-width: 900px) { .link-filter-bar, .tag-filter-bar, .board-filter-row, .board-panel-empty, .project-filter-row, .project-panel-empty { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) { .link-filter-bar, .tag-filter-bar, .board-filter-row, .board-panel-empty, .project-filter-row, .project-panel-empty { grid-template-columns: 1fr; } .board-manager-list > div, .project-manager-list > div { grid-template-columns: 1fr auto auto; } }
 @keyframes pagination-pulse { from { opacity: 0.35; transform: scale(0.92); } to { opacity: 1; transform: scale(1.05); } }
