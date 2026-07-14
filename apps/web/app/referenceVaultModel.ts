@@ -57,6 +57,7 @@ export type SavedReference = {
   archived?: boolean;
   deleted?: boolean;
   assets: ReferenceAsset[];
+  tagIds?: string[];
   tags?: ReferenceTag[];
   sourceSnapshot?: ReferenceSourceSnapshot;
 };
