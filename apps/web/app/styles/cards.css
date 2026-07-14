@@ -49,6 +49,8 @@
 .reference-facts dt, .reference-facts dd { margin: 0; font-size: 0.7rem; line-height: 1.4; }
 .reference-facts dt { color: var(--muted); }
 .reference-facts dd { overflow-wrap: anywhere; color: var(--muted-strong); text-align: right; }
+.metadata-refresh { display: grid; gap: 6px; margin: -4px 0 16px; }
+.metadata-refresh p { margin: 0; color: var(--muted); font-size: 0.68rem; line-height: 1.4; text-align: center; }
 .source-context { display: grid; gap: 7px; margin: 0 0 16px; border: 1px solid var(--line); border-radius: 12px; padding: 11px; background: color-mix(in srgb, var(--panel-raised), transparent 22%); }
 .source-context > .eyebrow { margin-bottom: 1px; }
 .source-context details { border-top: 1px solid color-mix(in srgb, var(--line), transparent 26%); padding-top: 7px; }

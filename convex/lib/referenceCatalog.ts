@@ -19,6 +19,8 @@ type ReferenceListOptions = {
   lane: ReferenceLane;
   favoritesOnly: boolean;
   query: string;
+  domain: string;
+  sourceType: string;
 };
 
 const statsKey = "global";
@@ -226,6 +228,7 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
   const requestedPageSize = Number(url.searchParams.get("limit") ?? 48);
   const collection = url.searchParams.get("collection");
   const lane = url.searchParams.get("lane");
+  const queryFilters = parseQueryFilters(url.searchParams.get("query") ?? "");
 
   return {
     cursor: url.searchParams.get("cursor") || null,
@@ -235,8 +238,36 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
     collection: isCollection(collection) ? collection : "inbox",
     lane: isLane(lane) ? lane : "all",
     favoritesOnly: url.searchParams.get("favorites") === "true",
-    query: normalizeSearchText(url.searchParams.get("query") ?? ""),
+    query: normalizeSearchText(queryFilters.query),
+    domain: normalizeDomain(url.searchParams.get("domain") ?? queryFilters.domain),
+    sourceType: normalizeSearchText(
+      url.searchParams.get("sourceType") ?? queryFilters.sourceType,
+    ),
   };
+}
+
+function parseQueryFilters(value: string) {
+  const words: string[] = [];
+  let domain = "";
+  let sourceType = "";
+
+  for (const token of value.trim().split(/\s+/).filter(Boolean)) {
+    const separator = token.indexOf(":");
+    if (separator <= 0) {
+      words.push(token);
+      continue;
+    }
+
+    const key = token.slice(0, separator).toLocaleLowerCase();
+    const filterValue = token.slice(separator + 1).trim();
+    if (!filterValue) continue;
+
+    if (key === "site" || key === "domain") domain = filterValue;
+    else if (key === "type" || key === "kind") sourceType = filterValue;
+    else words.push(token);
+  }
+
+  return { query: words.join(" "), domain, sourceType };
 }
 
 function matchesReferenceFilters(reference: any, options: ReferenceListOptions) {
@@ -245,6 +276,10 @@ function matchesReferenceFilters(reference: any, options: ReferenceListOptions) 
     return false;
   }
   if (options.favoritesOnly && !reference.favorite) return false;
+  if (options.sourceType && normalizeSearchText(reference.kind) !== options.sourceType) {
+    return false;
+  }
+  if (options.domain && !matchesDomain(reference.sourceUrl, options.domain)) return false;
   return true;
 }
 
@@ -271,6 +306,15 @@ function matchesSearch(reference: any, snapshot: any | null, query: string) {
   ]
     .filter((value) => typeof value === "string")
     .some((value) => normalizeSearchText(value).includes(query));
+}
+
+function matchesDomain(sourceUrl: string, domain: string) {
+  try {
+    const hostname = new URL(sourceUrl).hostname.toLocaleLowerCase().replace(/^www\./, "");
+    return hostname === domain || hostname.endsWith(`.${domain}`);
+  } catch {
+    return false;
+  }
 }
 
 function referenceFacetKeys(reference: any | null | undefined): ReferenceCountKey[] {
@@ -314,6 +358,11 @@ function isLane(value: string | null): value is ReferenceLane {
 
 function normalizeSearchText(value: string) {
   return value.trim().toLocaleLowerCase();
+}
+
+function normalizeDomain(value: string) {
+  const normalized = normalizeSearchText(value).replace(/^https?:\/\//, "").split("/")[0] ?? "";
+  return normalized.replace(/^www\./, "").replace(/\.$/, "");
 }
 
 function emptyCounts(): ReferenceCounts {

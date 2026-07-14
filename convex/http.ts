@@ -34,6 +34,7 @@ type CaptureBody = {
   previewImageUrl?: string;
   pageAuthor?: string;
   contentType?: string;
+  deferMetadata?: boolean;
   selectedText?: string;
   authorName?: string;
   authorHandle?: string;
@@ -278,6 +279,7 @@ http.route({
     const altText = cleanString(body.altText);
     const rawMetadata = cleanString(body.rawMetadata);
     const captureSessionId = cleanString(body.captureSessionId);
+    const deferMetadata = body.deferMetadata === true || Boolean(captureSessionId);
     const publishedAt = parseOptionalDate(body.publishedAt);
 
     if (!sourceUrl) {
@@ -316,7 +318,7 @@ http.route({
     }
 
     let linkMetadata: LinkMetadata | undefined;
-    if (isLinkKind(kind) && !assetUrl) {
+    if (isLinkKind(kind) && !assetUrl && !deferMetadata) {
       linkMetadata = mergeLinkMetadata(
         await fetchLinkMetadata(sourceUrl),
         clientMetadata,
@@ -350,6 +352,12 @@ http.route({
       }
     } else if (hasClientLinkMetadata(clientMetadata)) {
       linkMetadata = clientMetadata;
+    } else if (isLinkKind(kind) && !assetUrl) {
+      linkMetadata = {
+        metadataStatus: "missing",
+        metadataFetchedAt: Date.now(),
+        error: "Metadata enrichment deferred for bulk capture.",
+      };
     }
 
     const capturedAt = parseCapturedAt(body.capturedAt);

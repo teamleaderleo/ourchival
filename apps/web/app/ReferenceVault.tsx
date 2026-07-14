@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ReferenceCard } from "./ReferenceCards";
 import { SelectedReference } from "./SelectedReference";
 import { VaultSidebar, viewLabels } from "./VaultNavigation";
@@ -8,11 +9,29 @@ import { useReferenceVault } from "./useReferenceVault";
 
 export function ReferenceVault() {
   const vault = useReferenceVault();
+  const [linkDomain, setLinkDomain] = useState("");
+  const [linkType, setLinkType] = useState("");
   const currentViewLabel = viewLabels[vault.activeView];
   const isReviewView = vault.activeView === "inbox" || vault.activeView === "later";
   const displayedCount = vault.query
     ? `${vault.filteredReferences.length}${vault.hasMore ? "+" : ""}`
     : String(vault.activeCount);
+
+  function applyLinkFilters() {
+    const freeText = stripLinkFilterTokens(vault.query);
+    const domain = normalizeDomainToken(linkDomain);
+    vault.setQuery(
+      [freeText, domain ? `site:${domain}` : "", linkType ? `type:${linkType}` : ""]
+        .filter(Boolean)
+        .join(" "),
+    );
+  }
+
+  function clearLinkFilters() {
+    setLinkDomain("");
+    setLinkType("");
+    vault.setQuery(stripLinkFilterTokens(vault.query));
+  }
 
   return (
     <div className="app-frame">
@@ -189,6 +208,44 @@ export function ReferenceVault() {
             </label>
           </div>
 
+          {vault.activeView === "links" ? (
+            <form
+              className="link-filter-bar"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applyLinkFilters();
+              }}
+            >
+              <label>
+                Domain
+                <input
+                  value={linkDomain}
+                  onChange={(event) => setLinkDomain(event.target.value)}
+                  placeholder="example.com"
+                  inputMode="url"
+                />
+              </label>
+              <label>
+                Source type
+                <select
+                  value={linkType}
+                  onChange={(event) => setLinkType(event.target.value)}
+                >
+                  <option value="">All link types</option>
+                  <option value="page">Pages</option>
+                  <option value="link">Links</option>
+                  <option value="article">Articles</option>
+                </select>
+              </label>
+              <button type="submit" className="button secondary">
+                Apply filters
+              </button>
+              <button type="button" className="button ghost" onClick={clearLinkFilters}>
+                Clear filters
+              </button>
+            </form>
+          ) : null}
+
           {isReviewView && vault.selectedReference ? (
             <div className="review-strip">
               <div>
@@ -345,6 +402,24 @@ export function ReferenceVault() {
       </section>
     </div>
   );
+}
+
+function stripLinkFilterTokens(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .filter((token) => !/^(site|domain|type|kind):/i.test(token))
+    .join(" ");
+}
+
+function normalizeDomainToken(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/^https?:\/\//, "")
+    .split("/")[0]
+    ?.replace(/^www\./, "")
+    .replace(/\.$/, "");
 }
 
 function emptyHeading(view: string, label: string) {

@@ -39,6 +39,8 @@ export function SelectedReference({
   const [titleDraft, setTitleDraft] = useState(reference.title ?? "");
   const [notesDraft, setNotesDraft] = useState(reference.notes ?? "");
   const [savingDetails, setSavingDetails] = useState(false);
+  const [refreshingMetadata, setRefreshingMetadata] = useState(false);
+  const [metadataMessage, setMetadataMessage] = useState("");
   const [imageFailed, setImageFailed] = useState(false);
   const isDirty =
     titleDraft.trim() !== (reference.title ?? "") ||
@@ -51,6 +53,47 @@ export function SelectedReference({
       notes: notesDraft.trim(),
     });
     setSavingDetails(false);
+  }
+
+  async function handleRefreshMetadata() {
+    const siteUrl = resolveConvexSiteUrl();
+    if (!siteUrl) {
+      setMetadataMessage("Add a Convex site URL in Setup before refreshing metadata.");
+      return;
+    }
+
+    setRefreshingMetadata(true);
+    setMetadataMessage("Checking the source page…");
+    try {
+      const response = await fetch(
+        `${siteUrl}/reference-metadata?id=${encodeURIComponent(reference._id)}`,
+        { method: "POST" },
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        status?: "ready" | "missing" | "failed";
+      };
+      if (!response.ok || body.ok === false) {
+        setMetadataMessage(body.error ?? response.statusText);
+        return;
+      }
+
+      setMetadataMessage(
+        body.status === "ready"
+          ? "Metadata refreshed."
+          : body.status === "missing"
+            ? "The page returned sparse metadata."
+            : "The metadata check recorded a failure.",
+      );
+      window.setTimeout(() => window.location.reload(), 250);
+    } catch (error) {
+      setMetadataMessage(
+        error instanceof Error ? error.message : "Could not refresh metadata.",
+      );
+    } finally {
+      setRefreshingMetadata(false);
+    }
   }
 
   return (
@@ -154,6 +197,20 @@ export function SelectedReference({
           <dd>{assetLabel(asset, reference.kind)}</dd>
         </div>
       </dl>
+
+      {referenceMode(reference.kind) === "links" ? (
+        <div className="metadata-refresh">
+          <button
+            type="button"
+            className="button ghost full-width"
+            onClick={() => void handleRefreshMetadata()}
+            disabled={refreshingMetadata}
+          >
+            {refreshingMetadata ? "Refreshing metadata…" : "Refresh link metadata"}
+          </button>
+          {metadataMessage ? <p aria-live="polite">{metadataMessage}</p> : null}
+        </div>
+      ) : null}
 
       {snapshot ? <SourceContext snapshot={snapshot} /> : null}
 
@@ -309,4 +366,12 @@ function SourceContext({ snapshot }: { snapshot: ReferenceSourceSnapshot }) {
       ))}
     </section>
   );
+}
+
+function resolveConvexSiteUrl() {
+  const explicit = process.env.NEXT_PUBLIC_CONVEX_SITE_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL?.trim();
+  if (!convexUrl) return undefined;
+  return convexUrl.replace(/\.convex\.cloud\/?$/, ".convex.site");
 }
