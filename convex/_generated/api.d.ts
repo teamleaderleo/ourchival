@@ -9,6 +9,7 @@
  */
 
 import type * as boards from "../boards.js";
+import type * as enrichmentJobs from "../enrichmentJobs.js";
 import type * as http from "../http.js";
 import type * as lib_drive from "../lib/drive.js";
 import type * as lib_platform from "../lib/platform.js";
@@ -25,6 +26,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   boards: typeof boards;
+  enrichmentJobs: typeof enrichmentJobs;
   http: typeof http;
   "lib/drive": typeof lib_drive;
   "lib/platform": typeof lib_platform;
