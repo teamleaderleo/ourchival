@@ -1,10 +1,16 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import {
+  ensureTag,
+  getTagsByIds,
+  listTags,
+  updateReferenceTags,
+} from "./lib/tags";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("tags").collect();
+    return await listTags(ctx);
   },
 });
 
@@ -13,16 +19,31 @@ export const create = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    const slug = args.name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "");
+    return await ensureTag(ctx, args.name);
+  },
+});
 
-    return await ctx.db.insert("tags", {
-      name: args.name,
-      slug,
-      createdAt: Date.now(),
+export const listForReference = query({
+  args: {
+    referenceId: v.id("references"),
+  },
+  handler: async (ctx, args) => {
+    const reference = await ctx.db.get(args.referenceId);
+    if (!reference) return [];
+    return await getTagsByIds(ctx, reference.tagIds);
+  },
+});
+
+export const updateReference = mutation({
+  args: {
+    referenceId: v.id("references"),
+    addNames: v.array(v.string()),
+    removeIds: v.array(v.id("tags")),
+  },
+  handler: async (ctx, args) => {
+    return await updateReferenceTags(ctx, args.referenceId, {
+      addNames: args.addNames,
+      removeIds: args.removeIds.map(String),
     });
   },
 });

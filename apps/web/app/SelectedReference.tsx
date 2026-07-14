@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import {
   assetLabel,
   referenceCollection,
@@ -13,6 +13,20 @@ import {
 } from "./referenceVaultModel";
 import { getDomain, getInitial } from "./ReferenceCards";
 import { type TriageDestination } from "./useReferenceVault";
+import { mutateReferenceTags, useReferenceTags } from "./useReferenceTags";
+
+const quickReasons = [
+  "pose",
+  "composition",
+  "lighting",
+  "color",
+  "clothing",
+  "anatomy",
+  "environment",
+  "brushwork",
+  "expression",
+  "artist study",
+];
 
 export function SelectedReference({
   reference,
@@ -38,7 +52,14 @@ export function SelectedReference({
   const displayTitle = referenceDisplayTitle(reference);
   const [titleDraft, setTitleDraft] = useState(reference.title ?? "");
   const [notesDraft, setNotesDraft] = useState(reference.notes ?? "");
+  const [currentTags, setCurrentTags] = useReferenceTags(
+    reference.tagIds,
+    reference.tags,
+  );
+  const [customTag, setCustomTag] = useState("");
   const [savingDetails, setSavingDetails] = useState(false);
+  const [updatingTags, setUpdatingTags] = useState(false);
+  const [tagMessage, setTagMessage] = useState("");
   const [refreshingMetadata, setRefreshingMetadata] = useState(false);
   const [metadataMessage, setMetadataMessage] = useState("");
   const [imageFailed, setImageFailed] = useState(false);
@@ -53,6 +74,34 @@ export function SelectedReference({
       notes: notesDraft.trim(),
     });
     setSavingDetails(false);
+  }
+
+  async function updateTags(args: { addNames?: string[]; removeIds?: string[] }) {
+    setUpdatingTags(true);
+    setTagMessage("Saving tags…");
+    try {
+      const tags = await mutateReferenceTags(reference._id, args);
+      setCurrentTags(tags);
+      setTagMessage("Tags saved.");
+      return true;
+    } catch (error) {
+      setTagMessage(error instanceof Error ? error.message : "Could not update tags.");
+      return false;
+    } finally {
+      setUpdatingTags(false);
+    }
+  }
+
+  async function addQuickReason(reason: string) {
+    if (currentTags.some((tag) => tag.slug === slugifyTag(reason))) return;
+    await updateTags({ addNames: [reason] });
+  }
+
+  async function addCustomTag(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = customTag.trim();
+    if (!name) return;
+    if (await updateTags({ addNames: [name] })) setCustomTag("");
   }
 
   async function handleRefreshMetadata() {
@@ -214,6 +263,65 @@ export function SelectedReference({
 
       {snapshot ? <SourceContext snapshot={snapshot} /> : null}
 
+      <section className="tag-editor" aria-label="Reference tags and save reasons">
+        <div className="tag-editor-heading">
+          <div>
+            <p className="eyebrow">Save reasons</p>
+            <p>Tag the detail future-you will search for.</p>
+          </div>
+          <span>{currentTags.length}</span>
+        </div>
+        {currentTags.length > 0 ? (
+          <div className="assigned-tags">
+            {currentTags.map((tag) => (
+              <button
+                key={tag._id}
+                type="button"
+                title={`Remove ${tag.name}`}
+                onClick={() => void updateTags({ removeIds: [tag._id] })}
+                disabled={updatingTags}
+              >
+                #{tag.name} <span aria-hidden="true">×</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="tag-empty">No save reasons yet.</p>
+        )}
+        <div className="quick-reasons">
+          {quickReasons.map((reason) => {
+            const active = currentTags.some((tag) => tag.slug === slugifyTag(reason));
+            return (
+              <button
+                key={reason}
+                type="button"
+                className={active ? "active" : ""}
+                onClick={() => void addQuickReason(reason)}
+                disabled={active || updatingTags}
+              >
+                {reason}
+              </button>
+            );
+          })}
+        </div>
+        <form className="custom-tag-form" onSubmit={addCustomTag}>
+          <input
+            value={customTag}
+            onChange={(event) => setCustomTag(event.target.value)}
+            placeholder="Custom tag"
+            maxLength={48}
+          />
+          <button
+            type="submit"
+            className="button secondary"
+            disabled={!customTag.trim() || updatingTags}
+          >
+            Add
+          </button>
+        </form>
+        {tagMessage ? <p className="tag-message" aria-live="polite">{tagMessage}</p> : null}
+      </section>
+
       <div className="triage-actions" aria-label="Reference workflow actions">
         {collection === "trash" || collection === "archive" ? (
           <button
@@ -366,6 +474,15 @@ function SourceContext({ snapshot }: { snapshot: ReferenceSourceSnapshot }) {
       ))}
     </section>
   );
+}
+
+function slugifyTag(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function resolveConvexSiteUrl() {
