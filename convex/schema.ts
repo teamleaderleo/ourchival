@@ -179,6 +179,24 @@ export default defineSchema({
     .index("by_reference_type", ["referenceId", "type"])
     .index("by_updated_at", ["updatedAt"]),
 
+  enrichmentSuggestions: defineTable({
+    referenceId: v.id("references"),
+    jobId: v.id("enrichmentJobs"),
+    type: v.literal("tag"),
+    value: v.string(),
+    normalizedValue: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("dismissed"),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_reference", ["referenceId"])
+    .index("by_job", ["jobId"])
+    .index("by_reference_status", ["referenceId", "status"]),
+
   exports: defineTable({
     referenceId: v.id("references"),
     assetId: v.optional(v.id("assets")),

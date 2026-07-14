@@ -91,7 +91,7 @@ export async function mutateReferenceTags(
     addNames: args.addNames ?? [],
     removeIds: args.removeIds ?? [],
   });
-  await refreshAllTags();
+  await refreshReferenceTagCatalog();
   return result;
 }
 
@@ -104,11 +104,11 @@ export async function mutateReferencesTags(
     addNames: args.addNames ?? [],
     removeIds: args.removeIds ?? [],
   });
-  await refreshAllTags();
+  await refreshReferenceTagCatalog();
   return result;
 }
 
-async function refreshAllTags() {
+export async function refreshReferenceTagCatalog() {
   allTagsPromise = undefined;
   allTagsCache = undefined;
   const tags = await loadAllTags();

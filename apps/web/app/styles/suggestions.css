@@ -1,0 +1,19 @@
+.suggested-tags-panel { display: grid; gap: 8px; border-top: 1px solid color-mix(in srgb, var(--line), transparent 25%); padding: 10px; background: color-mix(in srgb, var(--panel), transparent 18%); }
+.suggested-tags-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.suggested-tags-heading > div:first-child { display: grid; gap: 2px; min-width: 0; }
+.suggested-tags-heading strong { color: var(--muted-strong); font-size: .68rem; }
+.suggested-tags-heading span { color: var(--muted); font-size: .6rem; }
+.suggested-tags-heading > div:last-child { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.suggested-tags-heading .button { min-height: 31px; padding: 6px 8px; font-size: .62rem; }
+.suggested-tag-list { display: grid; gap: 6px; }
+.suggested-tag-list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 5px; }
+.suggested-tag-list input { min-width: 0; min-height: 33px; padding: 6px 8px; font-size: .67rem; }
+.suggested-tag-list .button { min-height: 33px; padding: 6px 8px; font-size: .61rem; }
+.suggested-tags-empty, .suggested-tags-message { margin: 0; color: var(--muted); font-size: .62rem; line-height: 1.42; text-align: center; }
+.suggested-tags-history { border-top: 1px solid color-mix(in srgb, var(--line), transparent 28%); padding-top: 7px; }
+.suggested-tags-history summary { color: var(--muted-strong); cursor: pointer; font-size: .61rem; font-weight: 700; }
+.suggested-tags-history > div { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.suggested-tags-history span { border: 1px solid var(--line); border-radius: 999px; padding: 4px 7px; color: var(--muted); font-size: .58rem; }
+.suggested-tags-history span.status-accepted { border-color: color-mix(in srgb, var(--success), transparent 65%); color: var(--success); }
+.suggested-tags-history span.status-dismissed { opacity: .6; text-decoration: line-through; }
+@media (max-width: 620px) { .suggested-tags-heading { align-items: flex-start; flex-direction: column; } .suggested-tags-heading > div:last-child { justify-content: flex-start; } .suggested-tag-list > div { grid-template-columns: 1fr auto auto; } }

@@ -109,9 +109,14 @@ export const retry = mutation({
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Enrichment job not found.");
     if (job.status === "queued" || job.status === "running") return job;
-    if (job.type !== "source_metadata") {
-      throw new Error("This processor is not available yet.");
-    }
+
+    const processor =
+      job.type === "source_metadata"
+        ? internal.enrichmentJobs.processSourceMetadata
+        : job.type === "suggested_tags"
+          ? internal.suggestedTags.process
+          : null;
+    if (!processor) throw new Error("This processor is not available yet.");
 
     const now = Date.now();
     await ctx.db.patch(args.jobId, {
@@ -123,11 +128,7 @@ export const retry = mutation({
       resultSummary: undefined,
       updatedAt: now,
     });
-    await ctx.scheduler.runAfter(
-      0,
-      internal.enrichmentJobs.processSourceMetadata,
-      { jobId: args.jobId },
-    );
+    await ctx.scheduler.runAfter(0, processor, { jobId: args.jobId });
     return await ctx.db.get(args.jobId);
   },
 });
@@ -229,7 +230,7 @@ export const fail = internalMutation({
       status: "failed",
       completedAt: Date.now(),
       error: args.error.slice(0, 1000),
-      resultSummary: "Processor stopped before metadata could be stored.",
+      resultSummary: "Processor stopped before results could be stored.",
       updatedAt: Date.now(),
     });
     return true;

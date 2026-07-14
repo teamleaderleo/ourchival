@@ -5,6 +5,7 @@ import { useBatchSelectionItem } from "./batchSelection";
 import { ReferenceBoardAssignment } from "./BoardPanel";
 import { ReferenceEnrichmentPanel } from "./ReferenceEnrichmentPanel";
 import { ReferenceProjectAssignment } from "./ProjectPanel";
+import { ReferenceSuggestedTagsPanel } from "./ReferenceSuggestedTagsPanel";
 import {
   referenceDisplayTitle,
   referenceKindLabel,
@@ -134,6 +135,7 @@ export function ReferenceCard({
         <div className="selected-card-organization">
           <ReferenceBoardAssignment reference={reference} />
           <ReferenceProjectAssignment reference={reference} />
+          <ReferenceSuggestedTagsPanel referenceId={reference._id} />
           <ReferenceEnrichmentPanel
             referenceId={reference._id}
             enabled={mode === "links"}
