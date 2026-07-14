@@ -37,8 +37,9 @@ export function createBatchSelectionStore() {
       publish();
     },
     unregister(referenceId: string) {
-      const changed = mounted.delete(referenceId) || selected.delete(referenceId);
-      if (changed) publish();
+      const removedMounted = mounted.delete(referenceId);
+      const removedSelected = selected.delete(referenceId);
+      if (removedMounted || removedSelected) publish();
     },
     toggle(referenceId: string) {
       if (!mounted.has(referenceId)) return;
