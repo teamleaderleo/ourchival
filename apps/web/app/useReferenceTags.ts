@@ -22,6 +22,22 @@ const updateReferenceTagsReference = makeFunctionReference<
 
 let client: ConvexHttpClient | undefined;
 let allTagsPromise: Promise<ReferenceTag[]> | undefined;
+let allTagsCache: ReferenceTag[] | undefined;
+const tagListeners = new Set<(tags: ReferenceTag[]) => void>();
+
+export function useAllReferenceTags() {
+  const [tags, setTags] = useState<ReferenceTag[]>(allTagsCache ?? []);
+
+  useEffect(() => {
+    tagListeners.add(setTags);
+    void loadAllTags().then(setTags).catch(() => undefined);
+    return () => {
+      tagListeners.delete(setTags);
+    };
+  }, []);
+
+  return tags;
+}
 
 export function useReferenceTags(
   tagIds: string[] | undefined,
@@ -64,13 +80,25 @@ export async function mutateReferenceTags(
     addNames: args.addNames ?? [],
     removeIds: args.removeIds ?? [],
   });
-  allTagsPromise = undefined;
+  await refreshAllTags();
   return result;
 }
 
+async function refreshAllTags() {
+  allTagsPromise = undefined;
+  allTagsCache = undefined;
+  const tags = await loadAllTags();
+  for (const listener of tagListeners) listener(tags);
+  return tags;
+}
+
 async function loadAllTags() {
+  if (allTagsCache) return allTagsCache;
   if (!allTagsPromise) {
-    allTagsPromise = getClient().query(listTagsReference, {});
+    allTagsPromise = getClient().query(listTagsReference, {}).then((tags) => {
+      allTagsCache = tags;
+      return tags;
+    });
   }
   return await allTagsPromise;
 }
