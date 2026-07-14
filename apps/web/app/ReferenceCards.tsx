@@ -38,6 +38,11 @@ export function ReferenceCard({
   const metadataFailed = snapshot?.metadataStatus === "failed";
   const visibleTags = tags.slice(0, 3);
   const hiddenTagCount = Math.max(0, tags.length - visibleTags.length);
+  const visibleMatches = reference.searchMatches?.slice(0, 3) ?? [];
+  const hiddenMatchCount = Math.max(
+    0,
+    (reference.searchMatches?.length ?? 0) - visibleMatches.length,
+  );
 
   return (
     <article
@@ -79,6 +84,17 @@ export function ReferenceCard({
                 <span key={tag._id}>#{tag.name}</span>
               ))}
               {hiddenTagCount > 0 ? <span>+{hiddenTagCount}</span> : null}
+            </div>
+          ) : null}
+          {visibleMatches.length > 0 ? (
+            <div className="search-match-reasons" aria-label="Search match reasons">
+              <strong>Matched</strong>
+              {visibleMatches.map((match) => (
+                <span key={`${match.field}:${match.excerpt}`} title={match.excerpt}>
+                  {match.label}
+                </span>
+              ))}
+              {hiddenMatchCount > 0 ? <span>+{hiddenMatchCount}</span> : null}
             </div>
           ) : null}
           <p className="card-meta">
