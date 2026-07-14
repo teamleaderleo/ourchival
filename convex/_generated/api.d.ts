@@ -14,6 +14,7 @@ import type * as lib_drive from "../lib/drive.js";
 import type * as lib_platform from "../lib/platform.js";
 import type * as projects from "../projects.js";
 import type * as references from "../references.js";
+import type * as savedSearches from "../savedSearches.js";
 import type * as tags from "../tags.js";
 
 import type {
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   "lib/platform": typeof lib_platform;
   projects: typeof projects;
   references: typeof references;
+  savedSearches: typeof savedSearches;
   tags: typeof tags;
 }>;
 

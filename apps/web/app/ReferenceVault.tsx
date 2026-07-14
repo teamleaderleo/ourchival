@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ReferenceCard } from "./ReferenceCards";
+import { SavedSearchPanel } from "./SavedSearchPanel";
 import { SelectedReference } from "./SelectedReference";
 import { TagFilterBar } from "./TagFilterBar";
 import { VaultSidebar, viewLabels } from "./VaultNavigation";
@@ -32,6 +33,13 @@ export function ReferenceVault() {
     setLinkDomain("");
     setLinkType("");
     vault.setQuery(stripLinkFilterTokens(vault.query));
+  }
+
+  function applySavedSearch(search: { view: typeof vault.activeView; query: string }) {
+    setLinkDomain("");
+    setLinkType("");
+    vault.changeView(search.view);
+    vault.setQuery(search.query);
   }
 
   return (
@@ -207,6 +215,11 @@ export function ReferenceVault() {
                 </button>
               ) : null}
             </label>
+            <SavedSearchPanel
+              activeView={vault.activeView}
+              query={vault.query}
+              onApply={applySavedSearch}
+            />
           </div>
 
           {vault.activeView === "links" ? (
@@ -324,7 +337,7 @@ export function ReferenceVault() {
                   {vault.query
                     ? vault.hasMore
                       ? "Move to the next older page to continue this search."
-                      : "Try a source domain, artist name, title, or phrase from your notes."
+                      : "Try a source domain, artist name, title, note, tag, board, project, or reuse reason."
                     : emptyMessage(vault.activeView)}
                 </p>
                 {!vault.query && vault.activeView === "inbox" ? (

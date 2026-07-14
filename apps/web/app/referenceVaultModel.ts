@@ -14,6 +14,12 @@ export type ReferenceTag = {
   createdAt: number;
 };
 
+export type ReferenceSearchMatch = {
+  field: string;
+  label: string;
+  excerpt: string;
+};
+
 export type ReferenceSourceSnapshot = {
   pageTitle?: string;
   postText?: string;
@@ -60,6 +66,7 @@ export type SavedReference = {
   boardIds?: string[];
   tagIds?: string[];
   tags?: ReferenceTag[];
+  searchMatches?: ReferenceSearchMatch[];
   sourceSnapshot?: ReferenceSourceSnapshot;
 };
 
@@ -95,30 +102,32 @@ export function filterReferences(
   const needle = searchTextOnly(options.query ?? "");
   if (!needle) return list;
 
-  return list.filter((reference) =>
-    [
-      reference.title,
-      reference.notes,
-      reference.sourceUrl,
-      reference.canonicalUrl,
-      reference.platform,
-      reference.kind,
-      reference.authorName,
-      reference.authorHandle,
-      reference.postId,
-      reference.sourceSnapshot?.pageTitle,
-      reference.sourceSnapshot?.postText,
-      reference.sourceSnapshot?.altText,
-      reference.sourceSnapshot?.selectedText,
-      reference.sourceSnapshot?.description,
-      reference.sourceSnapshot?.siteName,
-      reference.sourceSnapshot?.pageAuthor,
-      reference.sourceSnapshot?.canonicalUrl,
-      reference.sourceSnapshot?.contentType,
-      ...(reference.tags ?? []).flatMap((tag) => [tag.name, tag.slug]),
-    ]
-      .filter(Boolean)
-      .some((value) => value?.toLowerCase().includes(needle)),
+  return list.filter(
+    (reference) =>
+      Boolean(reference.searchMatches?.length) ||
+      [
+        reference.title,
+        reference.notes,
+        reference.sourceUrl,
+        reference.canonicalUrl,
+        reference.platform,
+        reference.kind,
+        reference.authorName,
+        reference.authorHandle,
+        reference.postId,
+        reference.sourceSnapshot?.pageTitle,
+        reference.sourceSnapshot?.postText,
+        reference.sourceSnapshot?.altText,
+        reference.sourceSnapshot?.selectedText,
+        reference.sourceSnapshot?.description,
+        reference.sourceSnapshot?.siteName,
+        reference.sourceSnapshot?.pageAuthor,
+        reference.sourceSnapshot?.canonicalUrl,
+        reference.sourceSnapshot?.contentType,
+        ...(reference.tags ?? []).flatMap((tag) => [tag.name, tag.slug]),
+      ]
+        .filter(Boolean)
+        .some((value) => value?.toLowerCase().includes(needle)),
   );
 }
 
