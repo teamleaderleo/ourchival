@@ -1,0 +1,25 @@
+.reference-enrichment { display: grid; gap: 8px; border-top: 1px solid color-mix(in srgb, var(--line), transparent 25%); padding: 10px; background: color-mix(in srgb, var(--panel), transparent 18%); }
+.reference-enrichment-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.reference-enrichment-heading > div { display: grid; gap: 2px; min-width: 0; }
+.reference-enrichment-heading strong { color: var(--muted-strong); font-size: .68rem; }
+.reference-enrichment-heading span { color: var(--muted); font-size: .6rem; }
+.reference-enrichment-heading .button { min-height: 32px; padding: 6px 8px; font-size: .64rem; }
+.enrichment-job { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 9px; padding: 8px; background: var(--panel-raised); }
+.enrichment-job > div:first-child { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.enrichment-job > div:first-child strong { color: var(--text); font-size: .66rem; }
+.enrichment-job > div:first-child span:last-child { margin-left: auto; color: var(--muted); font-size: .58rem; }
+.enrichment-status-dot { width: 7px; height: 7px; flex: none; border-radius: 999px; background: var(--muted); box-shadow: 0 0 0 3px color-mix(in srgb, var(--muted), transparent 88%); }
+.enrichment-job.status-queued .enrichment-status-dot { background: var(--warning); }
+.enrichment-job.status-running .enrichment-status-dot { background: var(--accent); animation: enrichment-pulse 800ms ease-in-out infinite alternate; }
+.enrichment-job.status-succeeded .enrichment-status-dot { background: var(--success); }
+.enrichment-job.status-failed .enrichment-status-dot { background: var(--danger); }
+.enrichment-job.status-dismissed { opacity: .66; }
+.enrichment-job > p, .enrichment-empty, .enrichment-message { margin: 0; color: var(--muted); font-size: .62rem; line-height: 1.42; }
+.enrichment-job-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.enrichment-job-actions .button { min-height: 29px; padding: 5px 7px; font-size: .61rem; }
+.enrichment-history { border-top: 1px solid color-mix(in srgb, var(--line), transparent 28%); padding-top: 7px; }
+.enrichment-history summary { color: var(--muted-strong); cursor: pointer; font-size: .61rem; font-weight: 700; }
+.enrichment-history > div { display: grid; gap: 4px; margin-top: 6px; }
+.enrichment-history p { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; color: var(--muted); font-size: .58rem; }
+.enrichment-message { text-align: center; }
+@keyframes enrichment-pulse { from { opacity: .45; transform: scale(.9); } to { opacity: 1; transform: scale(1.08); } }
