@@ -2,8 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { ConvexHttpClient } from "convex/browser";
-import { api } from "../../../convex/_generated/api";
+import { makeFunctionReference } from "convex/server";
 import type { ReferenceTag } from "./referenceVaultModel";
+
+type UpdateReferenceTagsArgs = {
+  referenceId: string;
+  addNames: string[];
+  removeIds: string[];
+};
+
+const listTagsReference = makeFunctionReference<"query", {}, ReferenceTag[]>(
+  "tags:list",
+);
+const updateReferenceTagsReference = makeFunctionReference<
+  "mutation",
+  UpdateReferenceTagsArgs,
+  ReferenceTag[]
+>("tags:updateReference");
 
 let client: ConvexHttpClient | undefined;
 let allTagsPromise: Promise<ReferenceTag[]> | undefined;
@@ -44,18 +59,18 @@ export async function mutateReferenceTags(
   referenceId: string,
   args: { addNames?: string[]; removeIds?: string[] },
 ) {
-  const result = (await getClient().mutation(api.tags.updateReference, {
-    referenceId: referenceId as any,
+  const result = await getClient().mutation(updateReferenceTagsReference, {
+    referenceId,
     addNames: args.addNames ?? [],
-    removeIds: (args.removeIds ?? []) as any,
-  })) as ReferenceTag[];
+    removeIds: args.removeIds ?? [],
+  });
   allTagsPromise = undefined;
   return result;
 }
 
 async function loadAllTags() {
   if (!allTagsPromise) {
-    allTagsPromise = getClient().query(api.tags.list, {}) as Promise<ReferenceTag[]>;
+    allTagsPromise = getClient().query(listTagsReference, {});
   }
   return await allTagsPromise;
 }
