@@ -1,0 +1,220 @@
+import { mutation, query } from "./_generated/server";
+import { v } from "convex/values";
+
+const projectStatus = v.union(
+  v.literal("active"),
+  v.literal("paused"),
+  v.literal("finished"),
+  v.literal("archived"),
+);
+
+export const list = query({
+  args: {},
+  handler: async (ctx) => {
+    const [projects, uses] = await Promise.all([
+      ctx.db.query("projects").collect(),
+      ctx.db.query("projectReferences").collect(),
+    ]);
+    const counts = new Map<string, number>();
+    for (const use of uses) {
+      const key = String(use.projectId);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    return projects
+      .map((project) => ({
+        ...project,
+        referenceCount: counts.get(String(project._id)) ?? 0,
+      }))
+      .sort(compareProjects);
+  },
+});
+
+export const create = mutation({
+  args: {
+    name: v.string(),
+    description: v.optional(v.string()),
+    status: v.optional(projectStatus),
+  },
+  handler: async (ctx, args) => {
+    const name = cleanProjectName(args.name);
+    if (!name) throw new Error("Project name is required.");
+    await assertUniqueName(ctx, name);
+
+    const now = Date.now();
+    const projectId = await ctx.db.insert("projects", {
+      name,
+      ...(cleanOptional(args.description, 500)
+        ? { description: cleanOptional(args.description, 500) }
+        : {}),
+      status: args.status ?? "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    return await ctx.db.get(projectId);
+  },
+});
+
+export const update = mutation({
+  args: {
+    projectId: v.id("projects"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    status: projectStatus,
+  },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error("Project not found.");
+
+    const name = cleanProjectName(args.name);
+    if (!name) throw new Error("Project name is required.");
+    await assertUniqueName(ctx, name, args.projectId);
+
+    await ctx.db.patch(args.projectId, {
+      name,
+      description: cleanOptional(args.description, 500),
+      status: args.status,
+      updatedAt: Date.now(),
+    });
+    return await ctx.db.get(args.projectId);
+  },
+});
+
+export const remove = mutation({
+  args: {
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return { removed: false, usesRemoved: 0 };
+
+    const uses = await ctx.db
+      .query("projectReferences")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+    for (const use of uses) await ctx.db.delete(use._id);
+    await ctx.db.delete(args.projectId);
+    return { removed: true, usesRemoved: uses.length };
+  },
+});
+
+export const listForReference = query({
+  args: {
+    referenceId: v.id("references"),
+  },
+  handler: async (ctx, args) => {
+    const uses = await ctx.db
+      .query("projectReferences")
+      .withIndex("by_reference", (q) => q.eq("referenceId", args.referenceId))
+      .collect();
+    const hydrated = await Promise.all(
+      uses.map(async (use) => ({
+        ...use,
+        project: await ctx.db.get(use.projectId),
+      })),
+    );
+    return hydrated
+      .filter((use) => Boolean(use.project))
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+  },
+});
+
+export const upsertReference = mutation({
+  args: {
+    projectId: v.id("projects"),
+    referenceId: v.id("references"),
+    assetId: v.optional(v.id("assets")),
+    reason: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const [project, reference] = await Promise.all([
+      ctx.db.get(args.projectId),
+      ctx.db.get(args.referenceId),
+    ]);
+    if (!project) throw new Error("Project not found.");
+    if (!reference) throw new Error("Reference not found.");
+
+    const existing = (
+      await ctx.db
+        .query("projectReferences")
+        .withIndex("by_reference", (q) => q.eq("referenceId", args.referenceId))
+        .collect()
+    ).find((use) => use.projectId === args.projectId);
+    const now = Date.now();
+    const patch = {
+      ...(args.assetId ? { assetId: args.assetId } : {}),
+      reason: cleanOptional(args.reason, 120),
+      notes: cleanOptional(args.notes, 1000),
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+      return await ctx.db.get(existing._id);
+    }
+
+    const useId = await ctx.db.insert("projectReferences", {
+      projectId: args.projectId,
+      referenceId: args.referenceId,
+      ...(args.assetId ? { assetId: args.assetId } : {}),
+      ...(cleanOptional(args.reason, 120)
+        ? { reason: cleanOptional(args.reason, 120) }
+        : {}),
+      ...(cleanOptional(args.notes, 1000)
+        ? { notes: cleanOptional(args.notes, 1000) }
+        : {}),
+      createdAt: now,
+      updatedAt: now,
+    });
+    return await ctx.db.get(useId);
+  },
+});
+
+export const removeReference = mutation({
+  args: {
+    projectId: v.id("projects"),
+    referenceId: v.id("references"),
+  },
+  handler: async (ctx, args) => {
+    const uses = await ctx.db
+      .query("projectReferences")
+      .withIndex("by_reference", (q) => q.eq("referenceId", args.referenceId))
+      .collect();
+    const use = uses.find((candidate) => candidate.projectId === args.projectId);
+    if (!use) return false;
+    await ctx.db.delete(use._id);
+    return true;
+  },
+});
+
+export function cleanProjectName(value: string) {
+  return value.trim().replace(/\s+/g, " ").slice(0, 100);
+}
+
+function cleanOptional(value: string | undefined, maxLength: number) {
+  const cleaned = value?.trim().replace(/\s+/g, " ").slice(0, maxLength);
+  return cleaned || undefined;
+}
+
+async function assertUniqueName(ctx: any, name: string, ignoredId?: any) {
+  const normalized = name.toLocaleLowerCase();
+  const projects = await ctx.db.query("projects").collect();
+  const duplicate = projects.find(
+    (project: any) =>
+      project._id !== ignoredId &&
+      project.name.trim().toLocaleLowerCase() === normalized,
+  );
+  if (duplicate) throw new Error("A project with that name already exists.");
+}
+
+function compareProjects(left: any, right: any) {
+  const rank: Record<string, number> = {
+    active: 0,
+    paused: 1,
+    finished: 2,
+    archived: 3,
+  };
+  return (rank[left.status] ?? 4) - (rank[right.status] ?? 4) ||
+    right.updatedAt - left.updatedAt;
+}
