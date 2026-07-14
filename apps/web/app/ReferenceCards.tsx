@@ -30,6 +30,8 @@ export function ReferenceCard({
   const sourceLabel =
     snapshot?.siteName || reference.authorHandle || reference.authorName || domain;
   const metadataFailed = snapshot?.metadataStatus === "failed";
+  const visibleTags = (reference.tags ?? []).slice(0, 3);
+  const hiddenTagCount = Math.max(0, (reference.tags?.length ?? 0) - visibleTags.length);
 
   return (
     <article
@@ -64,6 +66,14 @@ export function ReferenceCard({
             <p className="card-description">{snapshot.description}</p>
           ) : mode !== "links" ? (
             <p className="card-domain">{sourceLabel}</p>
+          ) : null}
+          {visibleTags.length > 0 ? (
+            <div className="card-tags" aria-label="Reference tags">
+              {visibleTags.map((tag) => (
+                <span key={tag._id}>#{tag.name}</span>
+              ))}
+              {hiddenTagCount > 0 ? <span>+{hiddenTagCount}</span> : null}
+            </div>
           ) : null}
           <p className="card-meta">
             <span>
