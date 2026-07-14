@@ -1,0 +1,60 @@
+name: Apply metadata defer patch
+
+on:
+  push:
+    branches:
+      - feat/link-metadata-controls
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/link-metadata-controls
+          fetch-depth: 0
+      - name: Patch bulk metadata behavior
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("convex/http.ts")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '  contentType?: string;\n  selectedText?: string;',
+                  '  contentType?: string;\n  deferMetadata?: boolean;\n  selectedText?: string;',
+              ),
+              (
+                  '    const captureSessionId = cleanString(body.captureSessionId);\n    const publishedAt = parseOptionalDate(body.publishedAt);',
+                  '    const captureSessionId = cleanString(body.captureSessionId);\n    const deferMetadata = body.deferMetadata === true || Boolean(captureSessionId);\n    const publishedAt = parseOptionalDate(body.publishedAt);',
+              ),
+              (
+                  '    if (isLinkKind(kind) && !assetUrl) {',
+                  '    if (isLinkKind(kind) && !assetUrl && !deferMetadata) {',
+              ),
+              (
+                  '    } else if (hasClientLinkMetadata(clientMetadata)) {\n      linkMetadata = clientMetadata;\n    }',
+                  '    } else if (hasClientLinkMetadata(clientMetadata)) {\n      linkMetadata = clientMetadata;\n    } else if (isLinkKind(kind) && !assetUrl) {\n      linkMetadata = {\n        metadataStatus: "missing",\n        metadataFetchedAt: Date.now(),\n        error: "Metadata enrichment deferred for bulk capture.",\n      };\n    }',
+              ),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f"Expected text not found: {old!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          Path(".github/workflows/one-time-defer-link-metadata.yml").unlink()
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add convex/http.ts .github/workflows/one-time-defer-link-metadata.yml
+          git commit -m "Defer metadata enrichment for bulk captures"
+          git push origin HEAD:feat/link-metadata-controls
