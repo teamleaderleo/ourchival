@@ -56,7 +56,10 @@ jobs:
         run: pnpm test
 
       - name: Typecheck workspace
-        run: pnpm typecheck 2>&1 | tee typecheck.log
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm typecheck 2>&1 | tee typecheck.log
 
       - name: Upload typecheck diagnostics
         if: always()
@@ -71,4 +74,16 @@ jobs:
         run: pnpm extension:build
 
       - name: Build web app
-        run: pnpm --filter @ourchival/web build
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm --filter @ourchival/web build 2>&1 | tee web-build.log
+
+      - name: Upload web build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build-diagnostics
+          path: web-build.log
+          if-no-files-found: ignore
+          retention-days: 1
