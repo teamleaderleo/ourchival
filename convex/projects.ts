@@ -134,40 +134,33 @@ export const upsertReference = mutation({
     ]);
     if (!project) throw new Error("Project not found.");
     if (!reference) throw new Error("Reference not found.");
+    return await upsertProjectReference(ctx, args);
+  },
+});
 
-    const existing = (
-      await ctx.db
-        .query("projectReferences")
-        .withIndex("by_reference", (q) => q.eq("referenceId", args.referenceId))
-        .collect()
-    ).find((use) => use.projectId === args.projectId);
-    const now = Date.now();
-    const patch = {
-      ...(args.assetId ? { assetId: args.assetId } : {}),
-      reason: cleanOptional(args.reason, 120),
-      notes: cleanOptional(args.notes, 1000),
-      updatedAt: now,
-    };
+export const upsertReferences = mutation({
+  args: {
+    projectId: v.id("projects"),
+    referenceIds: v.array(v.id("references")),
+    reason: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (!(await ctx.db.get(args.projectId))) throw new Error("Project not found.");
+    const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
+    let updated = 0;
 
-    if (existing) {
-      await ctx.db.patch(existing._id, patch);
-      return await ctx.db.get(existing._id);
+    for (const referenceId of referenceIds) {
+      if (!(await ctx.db.get(referenceId))) continue;
+      await upsertProjectReference(ctx, {
+        projectId: args.projectId,
+        referenceId,
+        reason: args.reason,
+        notes: args.notes,
+      });
+      updated += 1;
     }
-
-    const useId = await ctx.db.insert("projectReferences", {
-      projectId: args.projectId,
-      referenceId: args.referenceId,
-      ...(args.assetId ? { assetId: args.assetId } : {}),
-      ...(cleanOptional(args.reason, 120)
-        ? { reason: cleanOptional(args.reason, 120) }
-        : {}),
-      ...(cleanOptional(args.notes, 1000)
-        ? { notes: cleanOptional(args.notes, 1000) }
-        : {}),
-      createdAt: now,
-      updatedAt: now,
-    });
-    return await ctx.db.get(useId);
+    return { updated };
   },
 });
 
@@ -177,16 +170,80 @@ export const removeReference = mutation({
     referenceId: v.id("references"),
   },
   handler: async (ctx, args) => {
-    const uses = await ctx.db
-      .query("projectReferences")
-      .withIndex("by_reference", (q) => q.eq("referenceId", args.referenceId))
-      .collect();
-    const use = uses.find((candidate) => candidate.projectId === args.projectId);
-    if (!use) return false;
-    await ctx.db.delete(use._id);
-    return true;
+    return await removeProjectReference(ctx, args.projectId, args.referenceId);
   },
 });
+
+export const removeReferences = mutation({
+  args: {
+    projectId: v.id("projects"),
+    referenceIds: v.array(v.id("references")),
+  },
+  handler: async (ctx, args) => {
+    const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
+    let updated = 0;
+    for (const referenceId of referenceIds) {
+      if (await removeProjectReference(ctx, args.projectId, referenceId)) updated += 1;
+    }
+    return { updated };
+  },
+});
+
+async function upsertProjectReference(
+  ctx: any,
+  args: {
+    projectId: any;
+    referenceId: any;
+    assetId?: any;
+    reason?: string;
+    notes?: string;
+  },
+) {
+  const existing = (
+    await ctx.db
+      .query("projectReferences")
+      .withIndex("by_reference", (q: any) => q.eq("referenceId", args.referenceId))
+      .collect()
+  ).find((use: any) => use.projectId === args.projectId);
+  const now = Date.now();
+  const patch = {
+    ...(args.assetId ? { assetId: args.assetId } : {}),
+    reason: cleanOptional(args.reason, 120),
+    notes: cleanOptional(args.notes, 1000),
+    updatedAt: now,
+  };
+
+  if (existing) {
+    await ctx.db.patch(existing._id, patch);
+    return await ctx.db.get(existing._id);
+  }
+
+  const useId = await ctx.db.insert("projectReferences", {
+    projectId: args.projectId,
+    referenceId: args.referenceId,
+    ...(args.assetId ? { assetId: args.assetId } : {}),
+    ...(cleanOptional(args.reason, 120)
+      ? { reason: cleanOptional(args.reason, 120) }
+      : {}),
+    ...(cleanOptional(args.notes, 1000)
+      ? { notes: cleanOptional(args.notes, 1000) }
+      : {}),
+    createdAt: now,
+    updatedAt: now,
+  });
+  return await ctx.db.get(useId);
+}
+
+async function removeProjectReference(ctx: any, projectId: any, referenceId: any) {
+  const uses = await ctx.db
+    .query("projectReferences")
+    .withIndex("by_reference", (q: any) => q.eq("referenceId", referenceId))
+    .collect();
+  const use = uses.find((candidate: any) => candidate.projectId === projectId);
+  if (!use) return false;
+  await ctx.db.delete(use._id);
+  return true;
+}
 
 export function cleanProjectName(value: string) {
   return value.trim().replace(/\s+/g, " ").slice(0, 100);
