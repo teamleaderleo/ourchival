@@ -38,6 +38,9 @@
 .card-tags, .assigned-tags, .quick-reasons { display: flex; flex-wrap: wrap; gap: 5px; }
 .card-tags { margin-top: 8px; }
 .card-tags span { max-width: 110px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent), transparent 72%); border-radius: 999px; padding: 3px 6px; background: color-mix(in srgb, var(--accent-soft), transparent 45%); color: var(--accent-strong); font-size: 0.58rem; text-overflow: ellipsis; white-space: nowrap; }
+.search-match-reasons { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; }
+.search-match-reasons strong { color: var(--muted); font-size: .57rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.search-match-reasons span { max-width: 126px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--success), transparent 68%); border-radius: 999px; padding: 3px 6px; background: color-mix(in srgb, var(--success), transparent 91%); color: color-mix(in srgb, var(--success), white 16%); font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
 .card-meta { justify-content: space-between; gap: 8px; margin-top: 9px; color: var(--muted); font-size: 0.64rem; text-transform: capitalize; }
 .empty-card { display: grid; width: 100%; min-height: 330px; place-items: center; padding: 42px; text-align: center; break-inside: avoid; }
 .empty-card > * { max-width: 420px; }
