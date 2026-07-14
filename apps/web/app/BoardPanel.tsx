@@ -13,29 +13,15 @@ import {
 export function BoardPanel({
   query,
   onChange,
-  reference,
 }: {
   query: string;
   onChange: (query: string) => void;
-  reference?: SavedReference;
 }) {
   const boards = useAllReferenceBoards();
   const activeBoardId = boardToken(query);
   const [createName, setCreateName] = useState("");
-  const [assignmentBoardId, setAssignmentBoardId] = useState("");
-  const [assignedBoardIds, setAssignedBoardIds] = useState(reference?.boardIds ?? []);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
-
-  useEffect(() => {
-    setAssignedBoardIds(reference?.boardIds ?? []);
-  }, [reference?._id, (reference?.boardIds ?? []).join(",")]);
-
-  const assignedBoards = useMemo(
-    () => boards.filter((board) => assignedBoardIds.includes(board._id)),
-    [assignedBoardIds, boards],
-  );
-  const availableBoards = boards.filter((board) => !assignedBoardIds.includes(board._id));
 
   function applyBoard(boardId: string) {
     const text = stripBoardToken(query);
@@ -55,41 +41,6 @@ export function BoardPanel({
       setStatus(`Created “${name}”.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not create board.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function assignBoard() {
-    if (!reference || !assignmentBoardId) return;
-    setBusy(true);
-    setStatus("Adding to board…");
-    try {
-      const boardIds = await mutateReferenceBoards(reference._id, {
-        addBoardIds: [assignmentBoardId],
-      });
-      setAssignedBoardIds(boardIds);
-      setAssignmentBoardId("");
-      setStatus("Added to board.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not update board membership.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeAssignment(boardId: string) {
-    if (!reference) return;
-    setBusy(true);
-    setStatus("Removing from board…");
-    try {
-      const boardIds = await mutateReferenceBoards(reference._id, {
-        removeBoardIds: [boardId],
-      });
-      setAssignedBoardIds(boardIds);
-      setStatus("Removed from board.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not update board membership.");
     } finally {
       setBusy(false);
     }
@@ -118,7 +69,6 @@ export function BoardPanel({
     setStatus("Deleting board…");
     try {
       const result = await removeReferenceBoard(boardId);
-      setAssignedBoardIds((ids) => ids.filter((id) => id !== boardId));
       if (activeBoardId === boardId) applyBoard("");
       setStatus(
         result.removed
@@ -130,6 +80,32 @@ export function BoardPanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  if (boards.length === 0 && !createName && !status) {
+    return (
+      <section className="board-panel board-panel-empty" aria-label="Boards">
+        <div>
+          <strong>Boards</strong>
+          <span>Group references for a project, study, or reusable pack.</span>
+        </div>
+        <form className="board-create-row" onSubmit={createBoard}>
+          <input
+            value={createName}
+            onChange={(event) => setCreateName(event.target.value)}
+            placeholder="First board name"
+            maxLength={80}
+          />
+          <button
+            type="submit"
+            className="button secondary"
+            disabled={!createName.trim() || busy}
+          >
+            Create board
+          </button>
+        </form>
+      </section>
+    );
   }
 
   return (
@@ -159,58 +135,6 @@ export function BoardPanel({
           ))}
         </div>
       </div>
-
-      {reference ? (
-        <div className="board-assignment">
-          <div>
-            <strong>Selected reference</strong>
-            <span>
-              {assignedBoards.length > 0
-                ? `${assignedBoards.length} ${assignedBoards.length === 1 ? "board" : "boards"}`
-                : "No boards"}
-            </span>
-          </div>
-          {assignedBoards.length > 0 ? (
-            <div className="assigned-boards">
-              {assignedBoards.map((board) => (
-                <button
-                  key={board._id}
-                  type="button"
-                  title={`Remove from ${board.name}`}
-                  onClick={() => void removeAssignment(board._id)}
-                  disabled={busy}
-                >
-                  {board.name} ×
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <div className="board-assign-row">
-            <select
-              value={assignmentBoardId}
-              onChange={(event) => setAssignmentBoardId(event.target.value)}
-              disabled={availableBoards.length === 0 || busy}
-            >
-              <option value="">
-                {availableBoards.length > 0 ? "Choose a board" : "Already in every board"}
-              </option>
-              {availableBoards.map((board) => (
-                <option key={board._id} value={board._id}>
-                  {board.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="button secondary"
-              onClick={() => void assignBoard()}
-              disabled={!assignmentBoardId || busy}
-            >
-              Add selected
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <details className="board-manager">
         <summary>Manage boards</summary>
@@ -256,12 +180,113 @@ export function BoardPanel({
               </div>
             ))}
           </div>
-        ) : (
-          <p className="board-empty">Create a board to group reusable references.</p>
-        )}
+        ) : null}
       </details>
       {status ? <p className="board-status" aria-live="polite">{status}</p> : null}
     </section>
+  );
+}
+
+export function ReferenceBoardAssignment({ reference }: { reference: SavedReference }) {
+  const boards = useAllReferenceBoards();
+  const [assignmentBoardId, setAssignmentBoardId] = useState("");
+  const [assignedBoardIds, setAssignedBoardIds] = useState(reference.boardIds ?? []);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    setAssignedBoardIds(reference.boardIds ?? []);
+  }, [reference._id, (reference.boardIds ?? []).join(",")]);
+
+  const assignedBoards = useMemo(
+    () => boards.filter((board) => assignedBoardIds.includes(board._id)),
+    [assignedBoardIds, boards],
+  );
+  const availableBoards = boards.filter((board) => !assignedBoardIds.includes(board._id));
+
+  async function assignBoard() {
+    if (!assignmentBoardId) return;
+    setBusy(true);
+    setStatus("Adding…");
+    try {
+      const boardIds = await mutateReferenceBoards(reference._id, {
+        addBoardIds: [assignmentBoardId],
+      });
+      setAssignedBoardIds(boardIds);
+      setAssignmentBoardId("");
+      setStatus("Added.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update boards.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeAssignment(boardId: string) {
+    setBusy(true);
+    setStatus("Removing…");
+    try {
+      const boardIds = await mutateReferenceBoards(reference._id, {
+        removeBoardIds: [boardId],
+      });
+      setAssignedBoardIds(boardIds);
+      setStatus("Removed.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update boards.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (boards.length === 0) return null;
+
+  return (
+    <div className="reference-board-assignment" aria-label="Selected reference boards">
+      <div className="reference-board-heading">
+        <strong>Boards</strong>
+        <span>{assignedBoards.length}</span>
+      </div>
+      {assignedBoards.length > 0 ? (
+        <div className="assigned-boards">
+          {assignedBoards.map((board) => (
+            <button
+              key={board._id}
+              type="button"
+              title={`Remove from ${board.name}`}
+              onClick={() => void removeAssignment(board._id)}
+              disabled={busy}
+            >
+              {board.name} ×
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div className="board-assign-row">
+        <select
+          value={assignmentBoardId}
+          onChange={(event) => setAssignmentBoardId(event.target.value)}
+          disabled={availableBoards.length === 0 || busy}
+        >
+          <option value="">
+            {availableBoards.length > 0 ? "Add to board" : "In every board"}
+          </option>
+          {availableBoards.map((board) => (
+            <option key={board._id} value={board._id}>
+              {board.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="button secondary"
+          onClick={() => void assignBoard()}
+          disabled={!assignmentBoardId || busy}
+        >
+          Add
+        </button>
+      </div>
+      {status ? <p aria-live="polite">{status}</p> : null}
+    </div>
   );
 }
 
