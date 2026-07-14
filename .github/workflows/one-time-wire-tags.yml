@@ -1,0 +1,196 @@
+name: Apply tag API patch
+
+on:
+  push:
+    branches:
+      - feat/reference-tags-and-reasons
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/reference-tags-and-reasons
+          fetch-depth: 0
+      - name: Wire tag API and catalog
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          http = Path("convex/http.ts")
+          text = http.read_text()
+          replacements = [
+            (
+              'import { normalizeSourceUrl } from "./lib/urls";',
+              'import { normalizeSourceUrl } from "./lib/urls";\nimport { listTags, updateReferenceTags } from "./lib/tags";',
+            ),
+            (
+              'type StoredRemoteAsset = {',
+              'type UpdateReferenceTagsBody = {\n  addNames?: string[];\n  removeIds?: string[];\n};\n\ntype StoredRemoteAsset = {',
+            ),
+            (
+              '  "/reference-metadata",\n  "/drive-file",',
+              '  "/reference-metadata",\n  "/reference-tags",\n  "/tags",\n  "/drive-file",',
+            ),
+            (
+              'http.route({\n  path: "/reference-metadata",',
+              '''http.route({
+  path: "/tags",
+  method: "GET",
+  handler: httpAction(async (ctx) => {
+    return jsonResponse({ ok: true, tags: await listTags(ctx) });
+  }),
+});
+
+http.route({
+  path: "/reference-tags",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    const referenceId = new URL(request.url).searchParams.get("id");
+    if (!referenceId) return jsonResponse({ ok: false, error: "id is required" }, 400);
+
+    let body: UpdateReferenceTagsBody;
+    try {
+      body = (await request.json()) as UpdateReferenceTagsBody;
+    } catch {
+      return jsonResponse({ ok: false, error: "Invalid JSON" }, 400);
+    }
+
+    const addNames = Array.isArray(body.addNames)
+      ? body.addNames.filter((value): value is string => typeof value === "string").slice(0, 20)
+      : [];
+    const removeIds = Array.isArray(body.removeIds)
+      ? body.removeIds.filter((value): value is string => typeof value === "string").slice(0, 20)
+      : [];
+
+    try {
+      const tags = await updateReferenceTags(ctx, referenceId as any, {
+        addNames,
+        removeIds,
+      });
+      return jsonResponse({ ok: true, tags });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not update tags.";
+      return jsonResponse({ ok: false, error: message }, message === "Reference not found." ? 404 : 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/reference-metadata",''',
+            ),
+          ]
+          for old, new in replacements:
+            if old not in text:
+              raise SystemExit(f"http expected text not found: {old!r}")
+            text = text.replace(old, new, 1)
+          http.write_text(text)
+
+          catalog = Path("convex/lib/referenceCatalog.ts")
+          text = catalog.read_text()
+          replacements = [
+            (
+              'type ReferenceCollection =',
+              'import { getTagsByIds, slugifyTagName } from "./tags";\n\ntype ReferenceCollection =',
+            ),
+            (
+              '  sourceType: string;\n};',
+              '  sourceType: string;\n  tagSlug: string;\n  tagId: any | null;\n};',
+            ),
+            (
+              '  const options = parseReferenceListOptions(url);\n  const origin = url.origin;\n  const references: Array<{ reference: any; snapshot: any | null | undefined }> = [];',
+              '''  const options = parseReferenceListOptions(url);
+  if (options.tagSlug) {
+    const tag = await ctx.db
+      .query("tags")
+      .withIndex("by_slug", (q: any) => q.eq("slug", options.tagSlug))
+      .unique();
+    options.tagId = tag?._id ?? null;
+  }
+  const origin = url.origin;
+  const references: Array<{
+    reference: any;
+    snapshot: any | null | undefined;
+    tags: any[] | undefined;
+  }> = [];''',
+            ),
+            (
+              '          snapshot: undefined,\n        })),',
+              '          snapshot: undefined,\n          tags: undefined,\n        })),',
+            ),
+            (
+              '      candidates.map(async (reference: any) => ({\n        reference,\n        snapshot: await getLatestSnapshot(ctx, reference._id),\n      })),',
+              '''      candidates.map(async (reference: any) => ({
+        reference,
+        snapshot: await getLatestSnapshot(ctx, reference._id),
+        tags: await getTagsByIds(ctx, reference.tagIds),
+      })),''',
+            ),
+            (
+              '      ...searchable.filter(({ reference, snapshot }) =>\n        matchesSearch(reference, snapshot, options.query),\n      ),',
+              '      ...searchable.filter(({ reference, snapshot, tags }) =>\n        matchesSearch(reference, snapshot, tags, options.query),\n      ),',
+            ),
+            (
+              '    references.map(({ reference, snapshot }) =>\n      hydrateReference(ctx, origin, reference, snapshot),\n    ),',
+              '    references.map(({ reference, snapshot, tags }) =>\n      hydrateReference(ctx, origin, reference, snapshot, tags),\n    ),',
+            ),
+            (
+              '  knownSnapshot: any | null | undefined = undefined,\n) {\n  const [assets, snapshot] = await Promise.all([',
+              '  knownSnapshot: any | null | undefined = undefined,\n  knownTags: any[] | undefined = undefined,\n) {\n  const [assets, snapshot, tags] = await Promise.all([',
+            ),
+            (
+              '      : Promise.resolve(knownSnapshot),\n  ]);',
+              '      : Promise.resolve(knownSnapshot),\n    knownTags === undefined\n      ? getTagsByIds(ctx, reference.tagIds)\n      : Promise.resolve(knownTags),\n  ]);',
+            ),
+            (
+              '    assets: assetsWithUrls,\n    ...(snapshot ? { sourceSnapshot: sourceSnapshotPayload(snapshot) } : {}),',
+              '    assets: assetsWithUrls,\n    tags,\n    ...(snapshot ? { sourceSnapshot: sourceSnapshotPayload(snapshot) } : {}),',
+            ),
+            (
+              '    sourceType: normalizeSearchText(\n      url.searchParams.get("sourceType") ?? queryFilters.sourceType,\n    ),\n  };',
+              '    sourceType: normalizeSearchText(\n      url.searchParams.get("sourceType") ?? queryFilters.sourceType,\n    ),\n    tagSlug: slugifyTagName(url.searchParams.get("tag") ?? queryFilters.tag),\n    tagId: null,\n  };',
+            ),
+            (
+              '  let sourceType = "";\n',
+              '  let sourceType = "";\n  let tag = "";\n',
+            ),
+            (
+              '    else if (key === "type" || key === "kind") sourceType = filterValue;\n    else words.push(token);',
+              '    else if (key === "type" || key === "kind") sourceType = filterValue;\n    else if (key === "tag") tag = filterValue;\n    else words.push(token);',
+            ),
+            (
+              '  return { query: words.join(" "), domain, sourceType };',
+              '  return { query: words.join(" "), domain, sourceType, tag };',
+            ),
+            (
+              '  if (options.domain && !matchesDomain(reference.sourceUrl, options.domain)) return false;\n  return true;',
+              '  if (options.domain && !matchesDomain(reference.sourceUrl, options.domain)) return false;\n  if (options.tagSlug && (!options.tagId || !reference.tagIds.some((tagId: any) => String(tagId) === String(options.tagId)))) return false;\n  return true;',
+            ),
+            (
+              'function matchesSearch(reference: any, snapshot: any | null, query: string) {\n  return [',
+              'function matchesSearch(reference: any, snapshot: any | null, tags: any[], query: string) {\n  return [',
+            ),
+            (
+              '    snapshot?.contentType,\n  ]',
+              '    snapshot?.contentType,\n    ...tags.flatMap((tag) => [tag.name, tag.slug]),\n  ]',
+            ),
+          ]
+          for old, new in replacements:
+            if old not in text:
+              raise SystemExit(f"catalog expected text not found: {old!r}")
+            text = text.replace(old, new, 1)
+          catalog.write_text(text)
+
+          Path(".github/workflows/one-time-wire-tags.yml").unlink()
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add convex/http.ts convex/lib/referenceCatalog.ts .github/workflows/one-time-wire-tags.yml
+          git commit -m "Wire reference tag API and catalog search"
+          git push origin HEAD:feat/reference-tags-and-reasons
