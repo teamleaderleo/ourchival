@@ -126,6 +126,60 @@ export async function getReferenceCounts(ctx: any): Promise<ReferenceCounts> {
   return await rebuildReferenceStats(ctx);
 }
 
+export async function hydrateReference(
+  ctx: any,
+  origin: string,
+  reference: any,
+  knownSnapshot: any | null | undefined = undefined,
+) {
+  const [assets, snapshot] = await Promise.all([
+    ctx.db
+      .query("assets")
+      .withIndex("by_reference", (q: any) => q.eq("referenceId", reference._id))
+      .collect(),
+    knownSnapshot === undefined
+      ? getLatestSnapshot(ctx, reference._id)
+      : Promise.resolve(knownSnapshot),
+  ]);
+
+  const assetsWithUrls = await Promise.all(
+    assets.map(async (asset: any) => ({
+      ...asset,
+      storedUrl: asset.driveFileId
+        ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
+        : asset.originalStorageId
+          ? await ctx.storage.getUrl(asset.originalStorageId)
+          : null,
+    })),
+  );
+
+  return {
+    ...reference,
+    assets: assetsWithUrls,
+    ...(snapshot ? { sourceSnapshot: sourceSnapshotPayload(snapshot) } : {}),
+  };
+}
+
+export function sourceSnapshotPayload(snapshot: any) {
+  return {
+    pageTitle: snapshot.pageTitle,
+    postText: snapshot.postText,
+    altText: snapshot.altText,
+    selectedText: snapshot.selectedText,
+    description: snapshot.description,
+    siteName: snapshot.siteName,
+    faviconUrl: snapshot.faviconUrl,
+    previewImageUrl: snapshot.previewImageUrl,
+    pageAuthor: snapshot.pageAuthor,
+    canonicalUrl: snapshot.canonicalUrl,
+    contentType: snapshot.contentType,
+    metadataStatus: snapshot.metadataStatus,
+    httpStatus: snapshot.httpStatus,
+    metadataFetchedAt: snapshot.metadataFetchedAt,
+    createdAt: snapshot.createdAt,
+  };
+}
+
 async function rebuildReferenceStats(ctx: any): Promise<ReferenceCounts> {
   const counts = emptyCounts();
   let cursor: string | null = null;
@@ -158,50 +212,6 @@ async function getReferenceStatsDocument(ctx: any) {
     .query("referenceStats")
     .withIndex("by_key", (q: any) => q.eq("key", statsKey))
     .unique();
-}
-
-async function hydrateReference(
-  ctx: any,
-  origin: string,
-  reference: any,
-  knownSnapshot: any | null | undefined,
-) {
-  const [assets, snapshot] = await Promise.all([
-    ctx.db
-      .query("assets")
-      .withIndex("by_reference", (q: any) => q.eq("referenceId", reference._id))
-      .collect(),
-    knownSnapshot === undefined
-      ? getLatestSnapshot(ctx, reference._id)
-      : Promise.resolve(knownSnapshot),
-  ]);
-
-  const assetsWithUrls = await Promise.all(
-    assets.map(async (asset: any) => ({
-      ...asset,
-      storedUrl: asset.driveFileId
-        ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
-        : asset.originalStorageId
-          ? await ctx.storage.getUrl(asset.originalStorageId)
-          : null,
-    })),
-  );
-
-  return {
-    ...reference,
-    assets: assetsWithUrls,
-    ...(snapshot
-      ? {
-          sourceSnapshot: {
-            pageTitle: snapshot.pageTitle,
-            postText: snapshot.postText,
-            altText: snapshot.altText,
-            selectedText: snapshot.selectedText,
-            createdAt: snapshot.createdAt,
-          },
-        }
-      : {}),
-  };
 }
 
 async function getLatestSnapshot(ctx: any, referenceId: any) {
@@ -253,6 +263,11 @@ function matchesSearch(reference: any, snapshot: any | null, query: string) {
     snapshot?.postText,
     snapshot?.altText,
     snapshot?.selectedText,
+    snapshot?.description,
+    snapshot?.siteName,
+    snapshot?.pageAuthor,
+    snapshot?.canonicalUrl,
+    snapshot?.contentType,
   ]
     .filter((value) => typeof value === "string")
     .some((value) => normalizeSearchText(value).includes(query));

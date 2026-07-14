@@ -1,5 +1,5 @@
 import type { ParsedXSource } from "@ourchival/parsers";
-import type { CapturePayload } from "@ourchival/shared";
+import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
 import {
   getSettings,
@@ -19,6 +19,7 @@ type ImportSource = "url_list" | "bookmarks" | "retry";
 
 type ContextCapture = {
   pageTitle: string;
+  pageSnapshot?: PageSnapshot;
   selectedText?: string;
   clickedAssetUrl?: string;
   parsedSource?: ParsedXSource;
@@ -126,7 +127,9 @@ chrome.runtime.onMessage.addListener(
     if (message?.type === "OURCHIVAL_CAPTURE_TABS") {
       void captureTabs(message.mode)
         .then((state) => sendResponse({ ok: true, state }))
-        .catch((error) => sendResponse({ ok: false, error: errorMessage(error, "Tab capture failed.") }));
+        .catch((error) =>
+          sendResponse({ ok: false, error: errorMessage(error, "Tab capture failed.") }),
+        );
       return true;
     }
 
@@ -136,21 +139,27 @@ chrome.runtime.onMessage.addListener(
         message.entries.map((entry) => ({ url: entry.url, title: entry.title })),
       )
         .then((state) => sendResponse({ ok: true, state }))
-        .catch((error) => sendResponse({ ok: false, error: errorMessage(error, "URL import failed.") }));
+        .catch((error) =>
+          sendResponse({ ok: false, error: errorMessage(error, "URL import failed.") }),
+        );
       return true;
     }
 
     if (message?.type === "OURCHIVAL_CAPTURE_PAYLOADS") {
       void runPayloadBatch(message.payloads, message.source ?? "retry")
         .then((state) => sendResponse({ ok: true, state }))
-        .catch((error) => sendResponse({ ok: false, error: errorMessage(error, "Capture retry failed.") }));
+        .catch((error) =>
+          sendResponse({ ok: false, error: errorMessage(error, "Capture retry failed.") }),
+        );
       return true;
     }
 
     if (message?.type === "OURCHIVAL_CLOSE_SAVED_TABS") {
       void closeSavedTabs(message.tabIds)
         .then((closed) => sendResponse({ ok: true, closed }))
-        .catch((error) => sendResponse({ ok: false, error: errorMessage(error, "Could not close saved tabs.") }));
+        .catch((error) =>
+          sendResponse({ ok: false, error: errorMessage(error, "Could not close saved tabs.") }),
+        );
       return true;
     }
 
@@ -180,8 +189,12 @@ async function captureTabs(mode: TabCaptureMode) {
 }
 
 async function queryTabs(mode: TabCaptureMode) {
-  if (mode === "current") return await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  if (mode === "selected") return await chrome.tabs.query({ highlighted: true, lastFocusedWindow: true });
+  if (mode === "current") {
+    return await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  }
+  if (mode === "selected") {
+    return await chrome.tabs.query({ highlighted: true, lastFocusedWindow: true });
+  }
   const tabs = await chrome.tabs.query({ lastFocusedWindow: true });
   return tabs.sort((left, right) => left.index - right.index);
 }
@@ -224,8 +237,11 @@ async function runBatch(source: BatchCaptureSource, items: BatchCaptureItem[]) {
 }
 
 async function continueBatch(state: BatchCaptureState, endpoint?: string) {
-  if (activeJobId && activeJobId !== state.jobId) throw new Error("Another bulk capture is already running.");
-  const resolvedEndpoint = endpoint ?? normalizeCaptureEndpoint((await getSettings()).captureEndpoint);
+  if (activeJobId && activeJobId !== state.jobId) {
+    throw new Error("Another bulk capture is already running.");
+  }
+  const resolvedEndpoint =
+    endpoint ?? normalizeCaptureEndpoint((await getSettings()).captureEndpoint);
   if (!resolvedEndpoint) {
     state.running = false;
     state.currentLabel = "Reconnect the clipper endpoint, then retry the remaining links.";
@@ -263,7 +279,9 @@ async function continueBatch(state: BatchCaptureState, endpoint?: string) {
 
       try {
         const result = await capturePayload(resolvedEndpoint, payload);
-        if (!result.ok) throw new Error(result.error || `Capture failed with status ${result.status}`);
+        if (!result.ok) {
+          throw new Error(result.error || `Capture failed with status ${result.status}`);
+        }
         if (result.body.alreadySaved) state.duplicates += 1;
         else state.saved += 1;
         if (typeof item.tabId === "number") state.successfulTabIds.push(item.tabId);
@@ -288,8 +306,12 @@ async function continueBatch(state: BatchCaptureState, endpoint?: string) {
     state.currentLabel = undefined;
     await saveBatchState({ ...state });
     const successful = state.saved + state.duplicates;
-    await chrome.action.setBadgeText({ text: successful > 99 ? "99+" : successful > 0 ? String(successful) : state.failed ? "!" : "✓" });
-    await chrome.action.setBadgeBackgroundColor({ color: state.failed ? "#8a5d3d" : "#3d6b3d" });
+    await chrome.action.setBadgeText({
+      text: successful > 99 ? "99+" : successful > 0 ? String(successful) : state.failed ? "!" : "✓",
+    });
+    await chrome.action.setBadgeBackgroundColor({
+      color: state.failed ? "#8a5d3d" : "#3d6b3d",
+    });
     return state;
   } finally {
     if (activeJobId === state.jobId) activeJobId = undefined;
@@ -304,7 +326,14 @@ function advanceCheckpoint(state: BatchCaptureState) {
 async function resumeInterruptedBatch() {
   const stored = await chrome.storage.local.get(LAST_BATCH_KEY);
   const state = stored[LAST_BATCH_KEY] as BatchCaptureState | undefined;
-  if (!state?.running || !Array.isArray(state.items) || typeof state.nextIndex !== "number" || state.nextIndex >= state.items.length) return;
+  if (
+    !state?.running ||
+    !Array.isArray(state.items) ||
+    typeof state.nextIndex !== "number" ||
+    state.nextIndex >= state.items.length
+  ) {
+    return;
+  }
   try {
     await continueBatch(state);
   } catch (error) {
@@ -315,7 +344,9 @@ async function resumeInterruptedBatch() {
 }
 
 async function closeSavedTabs(tabIds: number[]) {
-  const uniqueIds = Array.from(new Set(tabIds.filter((tabId) => Number.isInteger(tabId) && tabId >= 0)));
+  const uniqueIds = Array.from(
+    new Set(tabIds.filter((tabId) => Number.isInteger(tabId) && tabId >= 0)),
+  );
   let closed = 0;
   for (const tabId of uniqueIds) {
     try {
@@ -328,7 +359,9 @@ async function closeSavedTabs(tabIds: number[]) {
   const stored = await chrome.storage.local.get(LAST_BATCH_KEY);
   const state = stored[LAST_BATCH_KEY] as BatchCaptureState | undefined;
   if (state) {
-    state.successfulTabIds = state.successfulTabIds.filter((tabId) => !uniqueIds.includes(tabId));
+    state.successfulTabIds = state.successfulTabIds.filter(
+      (tabId) => !uniqueIds.includes(tabId),
+    );
     await saveBatchState(state);
   }
   return closed;
@@ -382,13 +415,17 @@ function buildCapturePayload(
     });
   }
 
+  const snapshotFields = pageSnapshotFields(context?.pageSnapshot);
+  const selectedText = info.selectionText ?? context?.selectedText;
+
   if (info.srcUrl) {
     return {
       kind: "image",
       sourceUrl: info.pageUrl ?? tab?.url ?? info.srcUrl,
       assetUrl: info.srcUrl,
-      pageTitle: tab?.title,
-      selectedText: info.selectionText,
+      ...snapshotFields,
+      ...(!snapshotFields.pageTitle && tab?.title ? { pageTitle: tab.title } : {}),
+      ...(selectedText ? { selectedText } : {}),
       capturedAt: new Date().toISOString(),
     };
   }
@@ -396,17 +433,31 @@ function buildCapturePayload(
     return {
       kind: "link",
       sourceUrl: info.linkUrl,
-      pageTitle: tab?.title,
-      selectedText: info.selectionText,
+      ...(selectedText ? { selectedText } : {}),
       capturedAt: new Date().toISOString(),
     };
   }
   return {
     kind: "page",
     sourceUrl: info.pageUrl ?? tab?.url ?? "",
-    pageTitle: tab?.title,
-    selectedText: info.selectionText,
+    ...snapshotFields,
+    ...(!snapshotFields.pageTitle && tab?.title ? { pageTitle: tab.title } : {}),
+    ...(selectedText ? { selectedText } : {}),
     capturedAt: new Date().toISOString(),
+  };
+}
+
+function pageSnapshotFields(snapshot: PageSnapshot | undefined): Partial<CapturePayload> {
+  if (!snapshot) return {};
+  return {
+    ...(snapshot.canonicalUrl ? { canonicalUrl: snapshot.canonicalUrl } : {}),
+    ...(snapshot.title ? { pageTitle: snapshot.title } : {}),
+    ...(snapshot.description ? { pageDescription: snapshot.description } : {}),
+    ...(snapshot.siteName ? { siteName: snapshot.siteName } : {}),
+    ...(snapshot.faviconUrl ? { faviconUrl: snapshot.faviconUrl } : {}),
+    ...(snapshot.previewImageUrl ? { previewImageUrl: snapshot.previewImageUrl } : {}),
+    ...(snapshot.author ? { pageAuthor: snapshot.author } : {}),
+    ...(snapshot.contentType ? { contentType: snapshot.contentType } : {}),
   };
 }
 
@@ -435,7 +486,9 @@ function buildXPayload(
 
 function duplicateMessage(existingReference: CaptureResult["existingReference"]) {
   const title = existingReference?.title?.trim();
-  const savedDate = existingReference?.capturedAt ? new Date(existingReference.capturedAt).toLocaleDateString() : undefined;
+  const savedDate = existingReference?.capturedAt
+    ? new Date(existingReference.capturedAt).toLocaleDateString()
+    : undefined;
   const boardNote = existingReference?.boardCount
     ? ` It is already in ${existingReference.boardCount} ${existingReference.boardCount === 1 ? "board" : "boards"}.`
     : "";

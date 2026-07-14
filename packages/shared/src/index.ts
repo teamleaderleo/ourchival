@@ -10,8 +10,16 @@ export type ReferenceKind =
 export type CapturePayload = {
   kind: ReferenceKind;
   sourceUrl: string;
+  canonicalUrl?: string;
   assetUrl?: string;
   pageTitle?: string;
+  pageDescription?: string;
+  siteName?: string;
+  faviconUrl?: string;
+  previewImageUrl?: string;
+  pageAuthor?: string;
+  contentType?: string;
+  deferMetadata?: boolean;
   selectedText?: string;
   authorName?: string;
   authorHandle?: string;
@@ -27,7 +35,14 @@ export type CapturePayload = {
 
 export type PageSnapshot = {
   url: string;
+  canonicalUrl?: string;
   title: string;
+  description?: string;
+  siteName?: string;
+  faviconUrl?: string;
+  previewImageUrl?: string;
+  author?: string;
+  contentType?: string;
   selectedText?: string;
   images: Array<{
     src: string;

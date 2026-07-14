@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import {
+  referenceDisplayTitle,
   referenceKindLabel,
+  referenceMetadataLabel,
   referenceMode,
   type SavedReference,
 } from "./referenceVaultModel";
@@ -19,10 +21,15 @@ export function ReferenceCard({
   onToggleFavorite: () => void;
 }) {
   const asset = reference.assets[0];
-  const imageUrl = asset?.storedUrl ?? asset?.originalUrl;
   const mode = referenceMode(reference.kind);
+  const snapshot = reference.sourceSnapshot;
+  const imageUrl =
+    asset?.storedUrl ?? asset?.originalUrl ?? snapshot?.previewImageUrl;
   const domain = getDomain(reference.sourceUrl);
-  const sourceLabel = reference.authorHandle || reference.authorName || domain;
+  const title = referenceDisplayTitle(reference);
+  const sourceLabel =
+    snapshot?.siteName || reference.authorHandle || reference.authorName || domain;
+  const metadataFailed = snapshot?.metadataStatus === "failed";
 
   return (
     <article
@@ -35,20 +42,37 @@ export function ReferenceCard({
         onClick={onSelect}
       >
         <div className="thumb-wrap">
-          <ThumbImage
-            imageUrl={imageUrl}
-            title={reference.title}
-            kind={reference.kind}
-          />
+          <ThumbImage imageUrl={imageUrl} title={title} kind={reference.kind} />
           <span className="kind-badge">
             {referenceKindLabel(reference.kind)}
           </span>
         </div>
         <div className="card-copy">
-          <h2>{reference.title || sourceLabel || reference.sourceUrl}</h2>
-          <p className="card-domain">{sourceLabel}</p>
+          {mode === "links" ? (
+            <p className="link-source-row">
+              <Favicon imageUrl={snapshot?.faviconUrl} label={sourceLabel} />
+              <span>{sourceLabel}</span>
+              <span
+                className={`metadata-dot ${metadataFailed ? "failed" : snapshot?.metadataStatus ?? "pending"}`}
+                title={referenceMetadataLabel(reference)}
+                aria-label={referenceMetadataLabel(reference)}
+              />
+            </p>
+          ) : null}
+          <h2>{title}</h2>
+          {mode === "links" && snapshot?.description ? (
+            <p className="card-description">{snapshot.description}</p>
+          ) : mode !== "links" ? (
+            <p className="card-domain">{sourceLabel}</p>
+          ) : null}
           <p className="card-meta">
-            <span>{reference.platform}</span>
+            <span>
+              {mode === "links"
+                ? reference.lastOpenedAt
+                  ? "Opened"
+                  : "Unread"
+                : reference.platform}
+            </span>
             <span>{formatCaptureDate(reference.capturedAt)}</span>
           </p>
         </div>
@@ -101,6 +125,29 @@ export function ThumbImage({
   );
 }
 
+function Favicon({
+  imageUrl,
+  label,
+}: {
+  imageUrl?: string;
+  label?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!imageUrl || failed) {
+    return <span className="favicon-placeholder">{getInitial(label)}</span>;
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className="favicon"
+      src={imageUrl}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export function getDomain(url: string) {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -116,8 +163,9 @@ export function getInitial(value?: string) {
 function formatCaptureDate(value: number) {
   const date = new Date(value);
   const now = new Date();
-  if (date.toDateString() === now.toDateString())
+  if (date.toDateString() === now.toDateString()) {
     return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
   return date.toLocaleDateString([], {
     month: "short",
     day: "numeric",

@@ -8,7 +8,8 @@
 .thumb-wrap { position: relative; overflow: hidden; background: #0d1016; }
 .thumb { display: block; width: 100%; height: auto; max-height: 420px; object-fit: cover; background: linear-gradient(145deg, rgba(173, 151, 255, 0.09), rgba(255, 255, 255, 0.01)), var(--panel); }
 .thumb.placeholder { display: grid; min-height: 170px; place-items: center; }
-.link-card .thumb.placeholder { min-height: 108px; }
+.link-card .thumb { width: 100%; height: 138px; max-height: 138px; object-fit: cover; }
+.link-card .thumb.placeholder { min-height: 108px; height: 108px; }
 .link-placeholder { background: radial-gradient(circle at 35% 20%, rgba(173, 151, 255, 0.2), transparent 60%), linear-gradient(145deg, #151927, #0e1118); }
 .link-placeholder span { display: grid; width: 52px; height: 52px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent), transparent 60%); border-radius: 15px; background: rgba(10, 11, 17, 0.48); color: var(--accent-strong); font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; font-weight: 700; }
 .kind-badge { position: absolute; bottom: 8px; left: 8px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 999px; padding: 4px 7px; background: rgba(8, 10, 15, 0.72); color: #c1c7d1; font-size: 0.61rem; font-weight: 760; letter-spacing: 0.04em; text-transform: uppercase; backdrop-filter: blur(8px); }
@@ -18,6 +19,15 @@
 .card-copy { padding: 11px; }
 .card-copy h2 { display: -webkit-box; overflow: hidden; margin: 0; color: var(--text); font-size: 0.86rem; font-weight: 700; line-height: 1.35; letter-spacing: -0.012em; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .card-domain { overflow: hidden; margin-top: 5px; color: var(--muted-strong); font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
+.link-source-row { display: flex; min-width: 0; align-items: center; gap: 7px; margin: 0 38px 8px 0; color: var(--muted-strong); font-size: 0.67rem; }
+.link-source-row > span:nth-child(2) { overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
+.favicon, .favicon-placeholder { display: grid; width: 18px; height: 18px; flex: none; place-items: center; border: 1px solid var(--line); border-radius: 5px; background: #0c0f15; object-fit: contain; }
+.favicon-placeholder { color: var(--accent-strong); font-family: Georgia, "Times New Roman", serif; font-size: 0.66rem; font-weight: 700; }
+.metadata-dot { width: 7px; height: 7px; flex: none; border-radius: 999px; background: var(--muted); box-shadow: 0 0 0 3px rgba(145, 154, 169, 0.1); }
+.metadata-dot.ready { background: var(--success); box-shadow: 0 0 0 3px rgba(115, 214, 160, 0.1); }
+.metadata-dot.missing { background: var(--warning); box-shadow: 0 0 0 3px rgba(230, 188, 104, 0.1); }
+.metadata-dot.failed { background: var(--danger); box-shadow: 0 0 0 3px rgba(239, 132, 145, 0.1); }
+.card-description { display: -webkit-box; overflow: hidden; margin: 6px 0 0; color: var(--muted); font-size: 0.7rem; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .card-meta { justify-content: space-between; gap: 8px; margin-top: 9px; color: var(--muted); font-size: 0.64rem; text-transform: capitalize; }
 .empty-card { display: grid; width: 100%; min-height: 330px; place-items: center; padding: 42px; text-align: center; break-inside: avoid; }
 .empty-card > * { max-width: 420px; }

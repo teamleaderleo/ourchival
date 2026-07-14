@@ -2,8 +2,13 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
 import {
+  fetchLinkMetadata,
+  type LinkMetadata,
+} from "./lib/linkMetadata";
+import {
   applyReferenceStatsDelta,
   listReferencePage,
+  sourceSnapshotPayload,
 } from "./lib/referenceCatalog";
 import { detectPlatform } from "./lib/platform";
 import { normalizeSourceUrl } from "./lib/urls";
@@ -20,8 +25,15 @@ const corsHeaders = {
 type CaptureBody = {
   kind?: "image" | "post" | "page" | "link" | "article" | "video_frame" | "file";
   sourceUrl?: string;
+  canonicalUrl?: string;
   assetUrl?: string;
   pageTitle?: string;
+  pageDescription?: string;
+  siteName?: string;
+  faviconUrl?: string;
+  previewImageUrl?: string;
+  pageAuthor?: string;
+  contentType?: string;
   selectedText?: string;
   authorName?: string;
   authorHandle?: string;
@@ -66,7 +78,13 @@ type DuplicateCapture = {
   reason: "asset_url" | "canonical_url" | "source_url";
 };
 
-for (const path of ["/capture", "/references", "/reference", "/drive-file"]) {
+for (const path of [
+  "/capture",
+  "/references",
+  "/reference",
+  "/reference-metadata",
+  "/drive-file",
+]) {
   http.route({
     path,
     method: "OPTIONS",
@@ -122,6 +140,57 @@ http.route({
         500,
       );
     }
+  }),
+});
+
+http.route({
+  path: "/reference-metadata",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const referenceId = new URL(request.url).searchParams.get("id");
+    if (!referenceId) return jsonResponse({ ok: false, error: "id is required" }, 400);
+
+    const reference = await ctx.db.get(referenceId as any);
+    if (!reference) return jsonResponse({ ok: false, error: "Reference not found" }, 404);
+
+    const metadata = await fetchLinkMetadata(reference.sourceUrl);
+    const snapshotId = await insertSourceSnapshot(ctx, {
+      referenceId: reference._id,
+      metadata,
+      jsonMetadata: {
+        refresh: true,
+        error: metadata.error,
+      },
+    });
+    const snapshot = await ctx.db.get(snapshotId);
+    const patch: Record<string, unknown> = {};
+
+    if (!reference.title && metadata.title) patch.title = metadata.title;
+    if (!reference.authorName && metadata.author) patch.authorName = metadata.author;
+    const refreshedCanonical = cleanUrl(metadata.canonicalUrl);
+    if (refreshedCanonical) {
+      const normalizedCanonical = normalizeSourceUrl(refreshedCanonical);
+      if (normalizedCanonical !== reference.canonicalUrl) {
+        const matches = await ctx.db
+          .query("references")
+          .withIndex("by_canonical_url", (q: any) =>
+            q.eq("canonicalUrl", normalizedCanonical),
+          )
+          .collect();
+        if (!matches.some((item: any) => item._id !== reference._id && !item.deleted)) {
+          patch.canonicalUrl = normalizedCanonical;
+        }
+      }
+    }
+
+    if (Object.keys(patch).length > 0) await ctx.db.patch(reference._id, patch);
+
+    return jsonResponse({
+      ok: true,
+      reference: patch,
+      sourceSnapshot: snapshot ? sourceSnapshotPayload(snapshot) : undefined,
+      status: metadata.metadataStatus,
+    });
   }),
 });
 
@@ -201,7 +270,7 @@ http.route({
     const assetUrl = cleanString(body.assetUrl);
     const pageTitle = cleanString(body.pageTitle);
     const selectedText = cleanString(body.selectedText);
-    const authorName = cleanString(body.authorName);
+    const explicitAuthorName = cleanString(body.authorName);
     const authorHandle = cleanString(body.authorHandle);
     const authorUrl = cleanString(body.authorUrl);
     const postId = cleanString(body.postId);
@@ -215,72 +284,82 @@ http.route({
       return jsonResponse({ ok: false, error: "sourceUrl is required" }, 400);
     }
 
-    const canonicalUrl = normalizeSourceUrl(sourceUrl);
-    const duplicate = await findDuplicateCapture(ctx, {
+    const kind = body.kind ?? (assetUrl ? "image" : "link");
+    const clientMetadata = linkMetadataFromBody(body);
+    let canonicalUrl = normalizeSourceUrl(
+      cleanUrl(clientMetadata.canonicalUrl) ?? sourceUrl,
+    );
+    let duplicate = await findDuplicateCapture(ctx, {
       sourceUrl,
       canonicalUrl,
       assetUrl,
     });
 
     if (duplicate) {
-      const patch = {
-        ...(!duplicate.reference.canonicalUrl ? { canonicalUrl } : {}),
-        ...(!duplicate.reference.authorName && authorName ? { authorName } : {}),
-        ...(!duplicate.reference.authorHandle && authorHandle
-          ? { authorHandle }
-          : {}),
-        ...(!duplicate.reference.authorUrl && authorUrl ? { authorUrl } : {}),
-        ...(!duplicate.reference.postId && postId ? { postId } : {}),
-        ...(!duplicate.reference.publishedAt && publishedAt
-          ? { publishedAt }
-          : {}),
-        ...(!duplicate.reference.captureSessionId && captureSessionId
-          ? { captureSessionId }
-          : {}),
-      };
-      if (Object.keys(patch).length > 0) {
-        await ctx.db.patch(duplicate.reference._id, patch);
-      }
-      if (postText || altText || selectedText || rawMetadata) {
-        await ctx.db.insert("sourceSnapshots", {
-          referenceId: duplicate.reference._id,
-          ...(pageTitle ? { pageTitle } : {}),
-          ...(postText ? { postText } : {}),
-          ...(altText ? { altText } : {}),
-          ...(selectedText ? { selectedText } : {}),
-          jsonMetadata: JSON.stringify({
-            ...body,
-            canonicalUrl,
-            duplicateReason: duplicate.reason,
-          }),
-          createdAt: Date.now(),
-        });
-      }
-
-      return jsonResponse({
-        ok: true,
-        alreadySaved: true,
-        duplicateReason: duplicate.reason,
-        referenceId: duplicate.reference._id,
-        assetId: duplicate.assetId,
-        storageStatus: "already saved",
-        existingReference: {
-          title: duplicate.reference.title,
-          sourceUrl: duplicate.reference.sourceUrl,
-          capturedAt: duplicate.reference.capturedAt,
-          favorite: duplicate.reference.favorite,
-          boardCount: duplicate.reference.boardIds.length,
-        },
+      await enrichDuplicateReference(ctx, duplicate, {
+        body,
+        canonicalUrl,
+        pageTitle,
+        postText,
+        altText,
+        selectedText,
+        rawMetadata,
+        explicitAuthorName,
+        authorHandle,
+        authorUrl,
+        postId,
+        publishedAt,
+        captureSessionId,
+        metadata: hasClientLinkMetadata(clientMetadata) ? clientMetadata : undefined,
       });
+      return duplicateResponse(duplicate);
+    }
+
+    let linkMetadata: LinkMetadata | undefined;
+    if (isLinkKind(kind) && !assetUrl) {
+      linkMetadata = mergeLinkMetadata(
+        await fetchLinkMetadata(sourceUrl),
+        clientMetadata,
+      );
+      const enrichedCanonical = cleanUrl(linkMetadata.canonicalUrl);
+      if (enrichedCanonical) canonicalUrl = normalizeSourceUrl(enrichedCanonical);
+
+      duplicate = await findDuplicateCapture(ctx, {
+        sourceUrl,
+        canonicalUrl,
+        assetUrl,
+      });
+      if (duplicate) {
+        await enrichDuplicateReference(ctx, duplicate, {
+          body,
+          canonicalUrl,
+          pageTitle,
+          postText,
+          altText,
+          selectedText,
+          rawMetadata,
+          explicitAuthorName,
+          authorHandle,
+          authorUrl,
+          postId,
+          publishedAt,
+          captureSessionId,
+          metadata: linkMetadata,
+        });
+        return duplicateResponse(duplicate);
+      }
+    } else if (hasClientLinkMetadata(clientMetadata)) {
+      linkMetadata = clientMetadata;
     }
 
     const capturedAt = parseCapturedAt(body.capturedAt);
-    const kind = body.kind ?? (assetUrl ? "image" : "link");
     const platform = detectPlatform(sourceUrl);
+    const title = pageTitle ?? linkMetadata?.title;
+    const authorName = explicitAuthorName ?? linkMetadata?.author;
 
     const referenceId = await ctx.db.insert("references", {
       kind,
-      ...(pageTitle ? { title: pageTitle } : {}),
+      ...(title ? { title } : {}),
       sourceUrl,
       canonicalUrl,
       platform,
@@ -303,13 +382,17 @@ http.route({
     await applyReferenceStatsDelta(ctx, null, insertedReference);
 
     let assetId = null;
-    let storageStatus = assetUrl ? "asset pending" : "link only";
+    let storageStatus = linkMetadata
+      ? metadataStorageStatus(linkMetadata)
+      : assetUrl
+        ? "asset pending"
+        : "link only";
 
     if (assetUrl) {
       const storedAsset = await fetchAndStoreRemoteAsset(ctx, {
         assetUrl,
         sourceUrl,
-        title: pageTitle,
+        title,
       });
       storageStatus = storedAsset.status;
       assetId = await ctx.db.insert("assets", {
@@ -343,19 +426,20 @@ http.route({
       });
     }
 
-    await ctx.db.insert("sourceSnapshots", {
+    await insertSourceSnapshot(ctx, {
       referenceId,
-      ...(pageTitle ? { pageTitle } : {}),
-      ...(postText ? { postText } : {}),
-      ...(altText ? { altText } : {}),
-      ...(selectedText ? { selectedText } : {}),
-      jsonMetadata: JSON.stringify({
+      pageTitle: title,
+      postText,
+      altText,
+      selectedText,
+      metadata: linkMetadata,
+      jsonMetadata: {
         ...body,
         ...(rawMetadata ? { rawMetadata: safeJsonValue(rawMetadata) } : {}),
         canonicalUrl,
         storageStatus,
-      }),
-      createdAt: Date.now(),
+        metadataError: linkMetadata?.error,
+      },
     });
 
     return jsonResponse(
@@ -370,6 +454,221 @@ http.route({
     );
   }),
 });
+
+async function enrichDuplicateReference(
+  ctx: any,
+  duplicate: DuplicateCapture,
+  args: {
+    body: CaptureBody;
+    canonicalUrl: string;
+    pageTitle?: string;
+    postText?: string;
+    altText?: string;
+    selectedText?: string;
+    rawMetadata?: string;
+    explicitAuthorName?: string;
+    authorHandle?: string;
+    authorUrl?: string;
+    postId?: string;
+    publishedAt?: number;
+    captureSessionId?: string;
+    metadata?: LinkMetadata;
+  },
+) {
+  const authorName = args.explicitAuthorName ?? args.metadata?.author;
+  const patch = {
+    ...(!duplicate.reference.canonicalUrl ? { canonicalUrl: args.canonicalUrl } : {}),
+    ...(!duplicate.reference.title && (args.pageTitle ?? args.metadata?.title)
+      ? { title: args.pageTitle ?? args.metadata?.title }
+      : {}),
+    ...(!duplicate.reference.authorName && authorName ? { authorName } : {}),
+    ...(!duplicate.reference.authorHandle && args.authorHandle
+      ? { authorHandle: args.authorHandle }
+      : {}),
+    ...(!duplicate.reference.authorUrl && args.authorUrl
+      ? { authorUrl: args.authorUrl }
+      : {}),
+    ...(!duplicate.reference.postId && args.postId ? { postId: args.postId } : {}),
+    ...(!duplicate.reference.publishedAt && args.publishedAt
+      ? { publishedAt: args.publishedAt }
+      : {}),
+    ...(!duplicate.reference.captureSessionId && args.captureSessionId
+      ? { captureSessionId: args.captureSessionId }
+      : {}),
+  };
+  if (Object.keys(patch).length > 0) await ctx.db.patch(duplicate.reference._id, patch);
+
+  if (
+    args.postText ||
+    args.altText ||
+    args.selectedText ||
+    args.rawMetadata ||
+    args.metadata
+  ) {
+    await insertSourceSnapshot(ctx, {
+      referenceId: duplicate.reference._id,
+      pageTitle: args.pageTitle ?? args.metadata?.title,
+      postText: args.postText,
+      altText: args.altText,
+      selectedText: args.selectedText,
+      metadata: args.metadata,
+      jsonMetadata: {
+        ...args.body,
+        canonicalUrl: args.canonicalUrl,
+        duplicateReason: duplicate.reason,
+        ...(args.rawMetadata ? { rawMetadata: safeJsonValue(args.rawMetadata) } : {}),
+        metadataError: args.metadata?.error,
+      },
+    });
+  }
+}
+
+async function insertSourceSnapshot(
+  ctx: any,
+  args: {
+    referenceId: any;
+    pageTitle?: string;
+    postText?: string;
+    altText?: string;
+    selectedText?: string;
+    metadata?: LinkMetadata;
+    jsonMetadata?: unknown;
+  },
+) {
+  return await ctx.db.insert("sourceSnapshots", {
+    referenceId: args.referenceId,
+    ...(args.pageTitle ? { pageTitle: args.pageTitle } : {}),
+    ...(args.postText ? { postText: args.postText } : {}),
+    ...(args.altText ? { altText: args.altText } : {}),
+    ...(args.selectedText ? { selectedText: args.selectedText } : {}),
+    ...(args.metadata?.description
+      ? { description: args.metadata.description }
+      : {}),
+    ...(args.metadata?.siteName ? { siteName: args.metadata.siteName } : {}),
+    ...(args.metadata?.faviconUrl ? { faviconUrl: args.metadata.faviconUrl } : {}),
+    ...(args.metadata?.previewImageUrl
+      ? { previewImageUrl: args.metadata.previewImageUrl }
+      : {}),
+    ...(args.metadata?.author ? { pageAuthor: args.metadata.author } : {}),
+    ...(args.metadata?.canonicalUrl
+      ? { canonicalUrl: args.metadata.canonicalUrl }
+      : {}),
+    ...(args.metadata?.contentType
+      ? { contentType: args.metadata.contentType }
+      : {}),
+    ...(args.metadata?.metadataStatus
+      ? { metadataStatus: args.metadata.metadataStatus }
+      : {}),
+    ...(typeof args.metadata?.httpStatus === "number"
+      ? { httpStatus: args.metadata.httpStatus }
+      : {}),
+    ...(typeof args.metadata?.metadataFetchedAt === "number"
+      ? { metadataFetchedAt: args.metadata.metadataFetchedAt }
+      : {}),
+    ...(args.jsonMetadata !== undefined
+      ? { jsonMetadata: JSON.stringify(args.jsonMetadata) }
+      : {}),
+    createdAt: Date.now(),
+  });
+}
+
+function duplicateResponse(duplicate: DuplicateCapture) {
+  return jsonResponse({
+    ok: true,
+    alreadySaved: true,
+    duplicateReason: duplicate.reason,
+    referenceId: duplicate.reference._id,
+    assetId: duplicate.assetId,
+    storageStatus: "already saved",
+    existingReference: {
+      title: duplicate.reference.title,
+      sourceUrl: duplicate.reference.sourceUrl,
+      capturedAt: duplicate.reference.capturedAt,
+      favorite: duplicate.reference.favorite,
+      boardCount: duplicate.reference.boardIds.length,
+    },
+  });
+}
+
+function linkMetadataFromBody(body: CaptureBody): LinkMetadata {
+  const canonicalUrl = cleanUrl(body.canonicalUrl);
+  const faviconUrl = cleanUrl(body.faviconUrl);
+  const previewImageUrl = cleanUrl(body.previewImageUrl);
+  const title = cleanString(body.pageTitle);
+  const description = cleanString(body.pageDescription);
+  const siteName = cleanString(body.siteName);
+  const author = cleanString(body.pageAuthor);
+  const contentType = cleanString(body.contentType);
+  const hasMetadata = Boolean(
+    title || description || siteName || faviconUrl || previewImageUrl || author,
+  );
+
+  return {
+    ...(canonicalUrl ? { canonicalUrl } : {}),
+    ...(title ? { title } : {}),
+    ...(description ? { description } : {}),
+    ...(siteName ? { siteName } : {}),
+    ...(faviconUrl ? { faviconUrl } : {}),
+    ...(previewImageUrl ? { previewImageUrl } : {}),
+    ...(author ? { author } : {}),
+    ...(contentType ? { contentType } : {}),
+    metadataStatus: hasMetadata ? "ready" : "missing",
+    metadataFetchedAt: Date.now(),
+  };
+}
+
+function mergeLinkMetadata(remote: LinkMetadata, client: LinkMetadata): LinkMetadata {
+  const merged = {
+    ...remote,
+    ...(client.canonicalUrl ? { canonicalUrl: client.canonicalUrl } : {}),
+    ...(client.title ? { title: client.title } : {}),
+    ...(client.description ? { description: client.description } : {}),
+    ...(client.siteName ? { siteName: client.siteName } : {}),
+    ...(client.faviconUrl ? { faviconUrl: client.faviconUrl } : {}),
+    ...(client.previewImageUrl
+      ? { previewImageUrl: client.previewImageUrl }
+      : {}),
+    ...(client.author ? { author: client.author } : {}),
+    ...(client.contentType ? { contentType: client.contentType } : {}),
+  };
+  const hasUsefulMetadata = Boolean(
+    merged.title ||
+      merged.description ||
+      merged.siteName ||
+      merged.faviconUrl ||
+      merged.previewImageUrl ||
+      merged.author,
+  );
+
+  return {
+    ...merged,
+    metadataStatus: hasUsefulMetadata ? "ready" : remote.metadataStatus,
+    metadataFetchedAt: remote.metadataFetchedAt,
+  };
+}
+
+function hasClientLinkMetadata(metadata: LinkMetadata) {
+  return Boolean(
+    metadata.canonicalUrl ||
+      metadata.title ||
+      metadata.description ||
+      metadata.siteName ||
+      metadata.faviconUrl ||
+      metadata.previewImageUrl ||
+      metadata.author ||
+      metadata.contentType,
+  );
+}
+
+function metadataStorageStatus(metadata: LinkMetadata) {
+  if (metadata.metadataStatus === "ready") return "link metadata ready";
+  if (metadata.metadataStatus === "missing") return "link saved; metadata sparse";
+  return `link saved; ${metadata.error ?? "metadata fetch failed"}`;
+}
+
+function isLinkKind(kind: string) {
+  return kind === "link" || kind === "page" || kind === "article";
+}
 
 async function findDuplicateCapture(
   ctx: { db: any },
@@ -504,6 +803,19 @@ function cleanString(value: unknown) {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function cleanUrl(value: unknown) {
+  const text = cleanString(value);
+  if (!text) return undefined;
+  try {
+    const url = new URL(text);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function parseCapturedAt(value: unknown) {

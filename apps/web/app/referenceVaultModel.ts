@@ -12,6 +12,16 @@ export type ReferenceSourceSnapshot = {
   postText?: string;
   altText?: string;
   selectedText?: string;
+  description?: string;
+  siteName?: string;
+  faviconUrl?: string;
+  previewImageUrl?: string;
+  pageAuthor?: string;
+  canonicalUrl?: string;
+  contentType?: string;
+  metadataStatus?: "ready" | "missing" | "failed";
+  httpStatus?: number;
+  metadataFetchedAt?: number;
   createdAt: number;
 };
 
@@ -25,6 +35,7 @@ export type SavedReference = {
   notes?: string;
   favorite?: boolean;
   sourceUrl: string;
+  canonicalUrl?: string;
   platform: string;
   authorName?: string;
   authorHandle?: string;
@@ -79,6 +90,7 @@ export function filterReferences(
       reference.title,
       reference.notes,
       reference.sourceUrl,
+      reference.canonicalUrl,
       reference.platform,
       reference.kind,
       reference.authorName,
@@ -88,6 +100,11 @@ export function filterReferences(
       reference.sourceSnapshot?.postText,
       reference.sourceSnapshot?.altText,
       reference.sourceSnapshot?.selectedText,
+      reference.sourceSnapshot?.description,
+      reference.sourceSnapshot?.siteName,
+      reference.sourceSnapshot?.pageAuthor,
+      reference.sourceSnapshot?.canonicalUrl,
+      reference.sourceSnapshot?.contentType,
     ]
       .filter(Boolean)
       .some((value) => value?.toLowerCase().includes(needle)),
@@ -118,6 +135,25 @@ export function referenceCollectionLabel(reference: SavedReference) {
   if (collection === "archive") return "Archived";
   if (collection === "trash") return "Trash";
   return "Library";
+}
+
+export function referenceDisplayTitle(reference: SavedReference) {
+  return (
+    reference.title?.trim() ||
+    reference.sourceSnapshot?.pageTitle?.trim() ||
+    reference.sourceSnapshot?.siteName?.trim() ||
+    reference.sourceUrl
+  );
+}
+
+export function referenceMetadataLabel(reference: SavedReference) {
+  const snapshot = reference.sourceSnapshot;
+  if (snapshot?.metadataStatus === "failed") {
+    return snapshot.httpStatus ? `HTTP ${snapshot.httpStatus}` : "Metadata failed";
+  }
+  if (snapshot?.metadataStatus === "missing") return "Sparse metadata";
+  if (snapshot?.metadataStatus === "ready") return "Metadata ready";
+  return "Metadata pending";
 }
 
 export function assetLabel(asset: ReferenceAsset | undefined, kind?: string) {
