@@ -131,6 +131,23 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_reference", ["referenceId"]),
 
+  savedSearches: defineTable({
+    name: v.string(),
+    query: v.string(),
+    view: v.union(
+      v.literal("inbox"),
+      v.literal("all"),
+      v.literal("images"),
+      v.literal("links"),
+      v.literal("favorites"),
+      v.literal("later"),
+      v.literal("archive"),
+      v.literal("trash"),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_name", ["name"]),
+
   exports: defineTable({
     referenceId: v.id("references"),
     assetId: v.optional(v.id("assets")),
