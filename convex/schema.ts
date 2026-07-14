@@ -148,6 +148,37 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_name", ["name"]),
 
+  enrichmentJobs: defineTable({
+    referenceId: v.id("references"),
+    type: v.union(
+      v.literal("source_metadata"),
+      v.literal("ocr"),
+      v.literal("description"),
+      v.literal("suggested_tags"),
+      v.literal("dominant_colors"),
+      v.literal("perceptual_hash"),
+    ),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("dismissed"),
+    ),
+    attempts: v.number(),
+    requestedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+    resultSummary: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_reference", ["referenceId"])
+    .index("by_status", ["status"])
+    .index("by_reference_type", ["referenceId", "type"])
+    .index("by_updated_at", ["updatedAt"]),
+
   exports: defineTable({
     referenceId: v.id("references"),
     assetId: v.optional(v.id("assets")),
