@@ -1,3 +1,5 @@
+import { slugifyTagName } from "./tags";
+
 type ReferenceCollection = "inbox" | "library" | "later" | "archive" | "trash";
 type ReferenceLane = "all" | "images" | "links";
 type ReferenceCountKey =
@@ -21,6 +23,8 @@ type ReferenceListOptions = {
   query: string;
   domain: string;
   sourceType: string;
+  tagSlug: string;
+  tagId: any | null;
 };
 
 const statsKey = "global";
@@ -29,6 +33,14 @@ const linkKinds = new Set(["link", "article", "page"]);
 export async function listReferencePage(ctx: any, request: Request) {
   const url = new URL(request.url);
   const options = parseReferenceListOptions(url);
+  if (options.tagSlug) {
+    const tag = await ctx.db
+      .query("tags")
+      .withIndex("by_slug", (q: any) => q.eq("slug", options.tagSlug))
+      .unique();
+    options.tagId = tag?._id ?? null;
+  }
+
   const origin = url.origin;
   const references: Array<{ reference: any; snapshot: any | null | undefined }> = [];
   let cursor = options.cursor;
@@ -228,7 +240,7 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
   const requestedPageSize = Number(url.searchParams.get("limit") ?? 48);
   const collection = url.searchParams.get("collection");
   const lane = url.searchParams.get("lane");
-  const queryFilters = parseQueryFilters(url.searchParams.get("query") ?? "");
+  const queryFilters = parseReferenceFilterTokens(url.searchParams.get("query") ?? "");
 
   return {
     cursor: url.searchParams.get("cursor") || null,
@@ -243,13 +255,16 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
     sourceType: normalizeSearchText(
       url.searchParams.get("sourceType") ?? queryFilters.sourceType,
     ),
+    tagSlug: slugifyTagName(url.searchParams.get("tag") ?? queryFilters.tag),
+    tagId: null,
   };
 }
 
-function parseQueryFilters(value: string) {
+export function parseReferenceFilterTokens(value: string) {
   const words: string[] = [];
   let domain = "";
   let sourceType = "";
+  let tag = "";
 
   for (const token of value.trim().split(/\s+/).filter(Boolean)) {
     const separator = token.indexOf(":");
@@ -264,10 +279,11 @@ function parseQueryFilters(value: string) {
 
     if (key === "site" || key === "domain") domain = filterValue;
     else if (key === "type" || key === "kind") sourceType = filterValue;
+    else if (key === "tag") tag = filterValue;
     else words.push(token);
   }
 
-  return { query: words.join(" "), domain, sourceType };
+  return { query: words.join(" "), domain, sourceType, tag };
 }
 
 function matchesReferenceFilters(reference: any, options: ReferenceListOptions) {
@@ -280,6 +296,13 @@ function matchesReferenceFilters(reference: any, options: ReferenceListOptions) 
     return false;
   }
   if (options.domain && !matchesDomain(reference.sourceUrl, options.domain)) return false;
+  if (
+    options.tagSlug &&
+    (!options.tagId ||
+      !reference.tagIds.some((tagId: any) => String(tagId) === String(options.tagId)))
+  ) {
+    return false;
+  }
   return true;
 }
 

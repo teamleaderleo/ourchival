@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ReferenceCard } from "./ReferenceCards";
 import { SelectedReference } from "./SelectedReference";
+import { TagFilterBar } from "./TagFilterBar";
 import { VaultSidebar, viewLabels } from "./VaultNavigation";
 import { referenceKindLabel } from "./referenceVaultModel";
 import { useReferenceVault } from "./useReferenceVault";
@@ -245,6 +246,8 @@ export function ReferenceVault() {
               </button>
             </form>
           ) : null}
+
+          <TagFilterBar query={vault.query} onChange={vault.setQuery} />
 
           {isReviewView && vault.selectedReference ? (
             <div className="review-strip">
