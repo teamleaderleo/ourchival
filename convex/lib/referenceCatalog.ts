@@ -26,6 +26,8 @@ type ReferenceListOptions = {
   tagSlug: string;
   tagId: any | null;
   boardId: string;
+  projectId: string;
+  projectReferenceIds: Set<string> | null;
 };
 
 const statsKey = "global";
@@ -40,6 +42,21 @@ export async function listReferencePage(ctx: any, request: Request) {
       .withIndex("by_slug", (q: any) => q.eq("slug", options.tagSlug))
       .unique();
     options.tagId = tag?._id ?? null;
+  }
+  if (options.projectId) {
+    const projects = await ctx.db.query("projects").collect();
+    const project = projects.find((candidate: any) => String(candidate._id) === options.projectId);
+    if (project) {
+      const uses = await ctx.db
+        .query("projectReferences")
+        .withIndex("by_project", (q: any) => q.eq("projectId", project._id))
+        .collect();
+      options.projectReferenceIds = new Set(
+        uses.map((use: any) => String(use.referenceId)),
+      );
+    } else {
+      options.projectReferenceIds = new Set();
+    }
   }
 
   const origin = url.origin;
@@ -259,6 +276,8 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
     tagSlug: slugifyTagName(url.searchParams.get("tag") ?? queryFilters.tag),
     tagId: null,
     boardId: (url.searchParams.get("board") ?? queryFilters.board).trim(),
+    projectId: (url.searchParams.get("project") ?? queryFilters.project).trim(),
+    projectReferenceIds: null,
   };
 }
 
@@ -268,6 +287,7 @@ export function parseReferenceFilterTokens(value: string) {
   let sourceType = "";
   let tag = "";
   let board = "";
+  let project = "";
 
   for (const token of value.trim().split(/\s+/).filter(Boolean)) {
     const separator = token.indexOf(":");
@@ -284,10 +304,11 @@ export function parseReferenceFilterTokens(value: string) {
     else if (key === "type" || key === "kind") sourceType = filterValue;
     else if (key === "tag") tag = filterValue;
     else if (key === "board") board = filterValue;
+    else if (key === "project") project = filterValue;
     else words.push(token);
   }
 
-  return { query: words.join(" "), domain, sourceType, tag, board };
+  return { query: words.join(" "), domain, sourceType, tag, board, project };
 }
 
 function matchesReferenceFilters(reference: any, options: ReferenceListOptions) {
@@ -310,6 +331,12 @@ function matchesReferenceFilters(reference: any, options: ReferenceListOptions) 
   if (
     options.boardId &&
     !reference.boardIds.some((boardId: any) => String(boardId) === options.boardId)
+  ) {
+    return false;
+  }
+  if (
+    options.projectId &&
+    !options.projectReferenceIds?.has(String(reference._id))
   ) {
     return false;
   }
