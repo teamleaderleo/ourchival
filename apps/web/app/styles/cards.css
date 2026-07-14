@@ -28,6 +28,9 @@
 .metadata-dot.missing { background: var(--warning); box-shadow: 0 0 0 3px rgba(230, 188, 104, 0.1); }
 .metadata-dot.failed { background: var(--danger); box-shadow: 0 0 0 3px rgba(239, 132, 145, 0.1); }
 .card-description { display: -webkit-box; overflow: hidden; margin: 6px 0 0; color: var(--muted); font-size: 0.7rem; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.card-tags, .assigned-tags, .quick-reasons { display: flex; flex-wrap: wrap; gap: 5px; }
+.card-tags { margin-top: 8px; }
+.card-tags span { max-width: 110px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent), transparent 72%); border-radius: 999px; padding: 3px 6px; background: color-mix(in srgb, var(--accent-soft), transparent 45%); color: var(--accent-strong); font-size: 0.58rem; text-overflow: ellipsis; white-space: nowrap; }
 .card-meta { justify-content: space-between; gap: 8px; margin-top: 9px; color: var(--muted); font-size: 0.64rem; text-transform: capitalize; }
 .empty-card { display: grid; width: 100%; min-height: 330px; place-items: center; padding: 42px; text-align: center; break-inside: avoid; }
 .empty-card > * { max-width: 420px; }
@@ -51,7 +54,7 @@
 .reference-facts dd { overflow-wrap: anywhere; color: var(--muted-strong); text-align: right; }
 .metadata-refresh { display: grid; gap: 6px; margin: -4px 0 16px; }
 .metadata-refresh p { margin: 0; color: var(--muted); font-size: 0.68rem; line-height: 1.4; text-align: center; }
-.source-context { display: grid; gap: 7px; margin: 0 0 16px; border: 1px solid var(--line); border-radius: 12px; padding: 11px; background: color-mix(in srgb, var(--panel-raised), transparent 22%); }
+.source-context, .tag-editor { display: grid; gap: 7px; margin: 0 0 16px; border: 1px solid var(--line); border-radius: 12px; padding: 11px; background: color-mix(in srgb, var(--panel-raised), transparent 22%); }
 .source-context > .eyebrow { margin-bottom: 1px; }
 .source-context details { border-top: 1px solid color-mix(in srgb, var(--line), transparent 26%); padding-top: 7px; }
 .source-context details:first-of-type { border-top: 0; padding-top: 0; }
@@ -59,6 +62,18 @@
 .source-context details[open] summary { margin-bottom: 7px; color: var(--accent-strong); }
 .source-context p, .source-context blockquote { max-height: 180px; overflow: auto; margin: 0; color: #c5cbd5; font-size: 0.73rem; line-height: 1.55; white-space: pre-wrap; }
 .source-context blockquote { border-left: 2px solid color-mix(in srgb, var(--accent), transparent 35%); padding-left: 9px; font-style: italic; }
+.tag-editor { gap: 10px; }
+.tag-editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.tag-editor-heading p:last-child, .tag-empty, .tag-message { margin: 3px 0 0; color: var(--muted); font-size: 0.67rem; line-height: 1.4; }
+.tag-editor-heading > span { border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px; color: var(--muted); font-size: 0.61rem; }
+.assigned-tags button, .quick-reasons button { border: 1px solid var(--line); border-radius: 999px; padding: 5px 8px; background: var(--panel); color: var(--muted-strong); cursor: pointer; font-size: 0.65rem; }
+.assigned-tags button { border-color: color-mix(in srgb, var(--accent), transparent 58%); background: var(--accent-soft); color: var(--accent-strong); }
+.assigned-tags button:hover { border-color: var(--danger); color: var(--danger); }
+.quick-reasons button:hover, .quick-reasons button.active { border-color: color-mix(in srgb, var(--accent), transparent 45%); color: var(--accent-strong); }
+.custom-tag-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.custom-tag-form input { min-height: 36px; padding: 7px 9px; font-size: 0.75rem; }
+.custom-tag-form .button { min-height: 36px; padding: 7px 11px; }
+.tag-message { text-align: center; }
 .triage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; border-bottom: 1px solid var(--line); padding: 0 0 16px; }
 .triage-actions .button { flex: 1 1 82px; min-height: 36px; padding: 8px 10px; font-size: 0.76rem; }
 .inspector-fields { display: grid; gap: 11px; }
