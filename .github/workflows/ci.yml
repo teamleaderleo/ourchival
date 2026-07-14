@@ -56,7 +56,16 @@ jobs:
         run: pnpm test
 
       - name: Typecheck workspace
-        run: pnpm typecheck
+        run: pnpm typecheck 2>&1 | tee typecheck.log
+
+      - name: Upload typecheck diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.log
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Build browser extension
         run: pnpm extension:build
