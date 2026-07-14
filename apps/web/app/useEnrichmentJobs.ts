@@ -34,19 +34,41 @@ export type EnrichmentJob = {
   updatedAt: number;
 };
 
+export type RecentEnrichmentJob = EnrichmentJob & {
+  reference?: {
+    _id: string;
+    title?: string;
+    sourceUrl: string;
+    kind: string;
+    deleted?: boolean;
+  } | null;
+};
+
 type ReferenceIdArgs = { referenceId: string };
+type ReferenceIdsArgs = { referenceIds: string[] };
 type JobIdArgs = { jobId: string };
+type RecentArgs = { limit?: number };
 
 const listForReference = makeFunctionReference<
   "query",
   ReferenceIdArgs,
   EnrichmentJob[]
 >("enrichmentJobs:listForReference");
+const listRecent = makeFunctionReference<
+  "query",
+  RecentArgs,
+  RecentEnrichmentJob[]
+>("enrichmentJobs:listRecent");
 const enqueueSourceMetadata = makeFunctionReference<
   "mutation",
   ReferenceIdArgs,
   EnrichmentJob
 >("enrichmentJobs:enqueueSourceMetadata");
+const enqueueSourceMetadataMany = makeFunctionReference<
+  "mutation",
+  ReferenceIdsArgs,
+  { queued: number; existing: number; skipped: number }
+>("enrichmentBatch:enqueueSourceMetadataMany");
 const retryJob = makeFunctionReference<"mutation", JobIdArgs, EnrichmentJob>(
   "enrichmentJobs:retry",
 );
@@ -94,8 +116,50 @@ export function useEnrichmentJobs(referenceId: string) {
   return { jobs, loading, refresh };
 }
 
+export function useRecentEnrichmentJobs(limit = 30) {
+  const [jobs, setJobs] = useState<RecentEnrichmentJob[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    const nextJobs = await getClient().query(listRecent, { limit });
+    setJobs(nextJobs);
+    setLoading(false);
+    return nextJobs;
+  }, [limit]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    async function load() {
+      try {
+        const nextJobs = await getClient().query(listRecent, { limit });
+        if (!cancelled) {
+          setJobs(nextJobs);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void load();
+    const timer = window.setInterval(() => void load(), 2200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [limit]);
+
+  return { jobs, loading, refresh };
+}
+
 export async function enqueueMetadataJob(referenceId: string) {
   return await getClient().mutation(enqueueSourceMetadata, { referenceId });
+}
+
+export async function enqueueMetadataJobs(referenceIds: string[]) {
+  return await getClient().mutation(enqueueSourceMetadataMany, { referenceIds });
 }
 
 export async function retryEnrichmentJob(jobId: string) {
