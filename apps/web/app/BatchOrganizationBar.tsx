@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useBatchSelection } from "./batchSelection";
 import {
   mutateReferencesBoards,
@@ -35,6 +35,10 @@ export function BatchOrganizationBar() {
   const [status, setStatus] = useState("");
 
   const selectedCount = selectedIds.length;
+  const availableProjects =
+    projectAction === "add"
+      ? projects.filter((project) => project.status !== "archived")
+      : projects;
 
   async function applyTags(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -172,7 +176,7 @@ export function BatchOrganizationBar() {
                 value={tagName}
                 onChange={(event) => setTagName(event.target.value)}
                 placeholder={tagAction === "add" ? "Tag name" : "Existing tag"}
-                maxLength={80}
+                maxLength={48}
                 disabled={busy}
               />
               <datalist id="batch-tag-options">
@@ -228,7 +232,10 @@ export function BatchOrganizationBar() {
             <div className="batch-form-row project-row">
               <select
                 value={projectAction}
-                onChange={(event) => setProjectAction(event.target.value as AddRemove)}
+                onChange={(event) => {
+                  setProjectAction(event.target.value as AddRemove);
+                  setProjectId("");
+                }}
                 disabled={busy}
               >
                 <option value="add">Save reuse</option>
@@ -240,7 +247,7 @@ export function BatchOrganizationBar() {
                 disabled={busy}
               >
                 <option value="">Choose project</option>
-                {projects.map((project) => (
+                {availableProjects.map((project) => (
                   <option key={project._id} value={project._id}>
                     {project.name}
                   </option>
@@ -276,7 +283,11 @@ export function BatchOrganizationBar() {
         </div>
       ) : null}
 
-      {status ? <p className="batch-status" aria-live="polite">{status}</p> : null}
+      {status ? (
+        <p className="batch-status" aria-live="polite">
+          {status}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -284,9 +295,15 @@ export function BatchOrganizationBar() {
 function slugify(value: string) {
   return value
     .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 48)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase()
+    .replace(/['’]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }
 
 function referenceCountLabel(count: number) {
