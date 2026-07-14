@@ -97,8 +97,8 @@ export function VaultSidebar({
 
       <div className="planned-nav" aria-label="Planned organization areas">
         <p className="nav-label">Organization</p>
-        <div className="planned-nav-item" title="Boards are planned for the next organization slice">
-          <span>Boards</span>
+        <div className="planned-nav-item" title="Projects are planned for a later organization slice">
+          <span>Projects</span>
           <span>Soon</span>
         </div>
       </div>
