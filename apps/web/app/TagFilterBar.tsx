@@ -1,6 +1,7 @@
 "use client";
 
 import { BoardPanel } from "./BoardPanel";
+import { ProjectPanel } from "./ProjectPanel";
 import { useAllReferenceTags } from "./useReferenceTags";
 
 export function TagFilterBar({
@@ -51,6 +52,7 @@ export function TagFilterBar({
         </div>
       ) : null}
       <BoardPanel query={query} onChange={onChange} />
+      <ProjectPanel query={query} onChange={onChange} />
     </>
   );
 }
