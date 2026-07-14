@@ -48,7 +48,14 @@ type UpsertReferenceArgs = {
   reason?: string;
   notes?: string;
 };
+type UpsertReferencesArgs = {
+  projectId: string;
+  referenceIds: string[];
+  reason?: string;
+  notes?: string;
+};
 type ProjectReferenceArgs = { projectId: string; referenceId: string };
+type ProjectReferencesArgs = { projectId: string; referenceIds: string[] };
 
 const listProjectsReference = makeFunctionReference<"query", {}, ReferenceProject[]>(
   "projects:list",
@@ -78,11 +85,21 @@ const upsertReferenceReference = makeFunctionReference<
   UpsertReferenceArgs,
   ProjectReferenceUse
 >("projects:upsertReference");
+const upsertReferencesReference = makeFunctionReference<
+  "mutation",
+  UpsertReferencesArgs,
+  { updated: number }
+>("projects:upsertReferences");
 const removeReferenceReference = makeFunctionReference<
   "mutation",
   ProjectReferenceArgs,
   boolean
 >("projects:removeReference");
+const removeReferencesReference = makeFunctionReference<
+  "mutation",
+  ProjectReferencesArgs,
+  { updated: number }
+>("projects:removeReferences");
 
 let client: ConvexHttpClient | undefined;
 let projectsPromise: Promise<ReferenceProject[]> | undefined;
@@ -153,10 +170,25 @@ export async function saveProjectUse(args: UpsertReferenceArgs) {
   return result;
 }
 
+export async function saveProjectUses(args: UpsertReferencesArgs) {
+  const result = await getClient().mutation(upsertReferencesReference, args);
+  await refreshProjects();
+  return result;
+}
+
 export async function removeProjectUse(projectId: string, referenceId: string) {
   const result = await getClient().mutation(removeReferenceReference, {
     projectId,
     referenceId,
+  });
+  await refreshProjects();
+  return result;
+}
+
+export async function removeProjectUses(projectId: string, referenceIds: string[]) {
+  const result = await getClient().mutation(removeReferencesReference, {
+    projectId,
+    referenceIds,
   });
   await refreshProjects();
   return result;
