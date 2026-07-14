@@ -82,7 +82,7 @@ export function BoardPanel({
     }
   }
 
-  if (boards.length === 0 && !createName && !status) {
+  if (boards.length === 0) {
     return (
       <section className="board-panel board-panel-empty" aria-label="Boards">
         <div>
@@ -104,6 +104,7 @@ export function BoardPanel({
             Create board
           </button>
         </form>
+        {status ? <p className="board-status" aria-live="polite">{status}</p> : null}
       </section>
     );
   }
@@ -153,34 +154,32 @@ export function BoardPanel({
             Create
           </button>
         </form>
-        {boards.length > 0 ? (
-          <div className="board-manager-list">
-            {boards.map((board) => (
-              <div key={board._id}>
-                <button type="button" onClick={() => applyBoard(board._id)}>
-                  <strong>{board.name}</strong>
-                  <span>{board.referenceCount}</span>
-                </button>
-                <button
-                  type="button"
-                  className="button ghost"
-                  onClick={() => void renameBoard(board._id, board.name, board.description)}
-                  disabled={busy}
-                >
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  className="button danger"
-                  onClick={() => void deleteBoard(board._id, board.name)}
-                  disabled={busy}
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <div className="board-manager-list">
+          {boards.map((board) => (
+            <div key={board._id}>
+              <button type="button" onClick={() => applyBoard(board._id)}>
+                <strong>{board.name}</strong>
+                <span>{board.referenceCount}</span>
+              </button>
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => void renameBoard(board._id, board.name, board.description)}
+                disabled={busy}
+              >
+                Rename
+              </button>
+              <button
+                type="button"
+                className="button danger"
+                onClick={() => void deleteBoard(board._id, board.name)}
+                disabled={busy}
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+        </div>
       </details>
       {status ? <p className="board-status" aria-live="polite">{status}</p> : null}
     </section>
