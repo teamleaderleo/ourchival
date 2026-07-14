@@ -25,6 +25,7 @@ type ReferenceListOptions = {
   sourceType: string;
   tagSlug: string;
   tagId: any | null;
+  boardId: string;
 };
 
 const statsKey = "global";
@@ -257,6 +258,7 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
     ),
     tagSlug: slugifyTagName(url.searchParams.get("tag") ?? queryFilters.tag),
     tagId: null,
+    boardId: (url.searchParams.get("board") ?? queryFilters.board).trim(),
   };
 }
 
@@ -265,6 +267,7 @@ export function parseReferenceFilterTokens(value: string) {
   let domain = "";
   let sourceType = "";
   let tag = "";
+  let board = "";
 
   for (const token of value.trim().split(/\s+/).filter(Boolean)) {
     const separator = token.indexOf(":");
@@ -280,10 +283,11 @@ export function parseReferenceFilterTokens(value: string) {
     if (key === "site" || key === "domain") domain = filterValue;
     else if (key === "type" || key === "kind") sourceType = filterValue;
     else if (key === "tag") tag = filterValue;
+    else if (key === "board") board = filterValue;
     else words.push(token);
   }
 
-  return { query: words.join(" "), domain, sourceType, tag };
+  return { query: words.join(" "), domain, sourceType, tag, board };
 }
 
 function matchesReferenceFilters(reference: any, options: ReferenceListOptions) {
@@ -300,6 +304,12 @@ function matchesReferenceFilters(reference: any, options: ReferenceListOptions) 
     options.tagSlug &&
     (!options.tagId ||
       !reference.tagIds.some((tagId: any) => String(tagId) === String(options.tagId)))
+  ) {
+    return false;
+  }
+  if (
+    options.boardId &&
+    !reference.boardIds.some((boardId: any) => String(boardId) === options.boardId)
   ) {
     return false;
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ReferenceBoardAssignment } from "./BoardPanel";
 import {
   referenceDisplayTitle,
   referenceKindLabel,
@@ -100,6 +101,7 @@ export function ReferenceCard({
       >
         {reference.favorite ? "★" : "☆"}
       </button>
+      {selected ? <ReferenceBoardAssignment reference={reference} /> : null}
     </article>
   );
 }
