@@ -53,6 +53,12 @@
 .link-filter-bar label { display: grid; gap: 5px; color: var(--muted); font-size: 0.65rem; font-weight: 700; }
 .link-filter-bar input, .link-filter-bar select { min-height: 36px; padding: 7px 9px; font-size: 0.76rem; }
 .link-filter-bar .button { min-height: 36px; padding: 8px 10px; white-space: nowrap; }
+.tag-filter-bar { display: grid; grid-template-columns: minmax(145px, 0.4fr) minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 9px 10px; background: color-mix(in srgb, var(--panel-raised), transparent 28%); }
+.tag-filter-bar label { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; color: var(--muted); font-size: 0.65rem; font-weight: 700; }
+.tag-filter-bar select { min-height: 34px; padding: 6px 8px; font-size: 0.73rem; }
+.tag-filter-chips { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; }
+.tag-filter-chips button { max-width: 130px; overflow: hidden; border: 1px solid var(--line); border-radius: 999px; padding: 5px 8px; background: var(--panel); color: var(--muted-strong); cursor: pointer; font-size: 0.62rem; text-overflow: ellipsis; white-space: nowrap; }
+.tag-filter-chips button:hover, .tag-filter-chips button.active { border-color: color-mix(in srgb, var(--accent), transparent 42%); background: var(--accent-soft); color: var(--accent-strong); }
 .review-strip { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; border: 1px solid color-mix(in srgb, var(--accent), transparent 62%); border-radius: 13px; padding: 10px 11px; background: color-mix(in srgb, var(--accent-soft), transparent 18%); }
 .review-strip > div:first-child { display: grid; gap: 3px; }
 .review-strip strong { color: var(--accent-strong); font-size: 0.78rem; }
@@ -67,6 +73,6 @@
 .pagination-bar p, .pagination-bar span { margin: 0; color: var(--muted); font-size: 0.72rem; }
 .pagination-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pagination-actions .button { min-width: 92px; }
-@media (max-width: 900px) { .link-filter-bar { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 620px) { .link-filter-bar { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .link-filter-bar, .tag-filter-bar { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) { .link-filter-bar, .tag-filter-bar { grid-template-columns: 1fr; } }
 @keyframes pagination-pulse { from { opacity: 0.35; transform: scale(0.92); } to { opacity: 1; transform: scale(1.05); } }
