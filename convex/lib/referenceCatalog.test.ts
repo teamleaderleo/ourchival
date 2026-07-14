@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { parseReferenceFilterTokens } from "./referenceCatalog";
 
 describe("parseReferenceFilterTokens", () => {
-  it("extracts tag, board, domain, and kind filters from free text", () => {
+  it("extracts project, tag, board, domain, and kind filters from free text", () => {
     expect(
       parseReferenceFilterTokens(
-        "rim light tag:artist-study board:board-123 site:example.com type:article",
+        "rim light project:project-9 tag:artist-study board:board-123 site:example.com type:article",
       ),
     ).toEqual({
       query: "rim light",
@@ -13,6 +13,7 @@ describe("parseReferenceFilterTokens", () => {
       sourceType: "article",
       tag: "artist-study",
       board: "board-123",
+      project: "project-9",
     });
   });
 
@@ -23,6 +24,7 @@ describe("parseReferenceFilterTokens", () => {
       sourceType: "",
       tag: "color",
       board: "",
+      project: "",
     });
   });
 });
