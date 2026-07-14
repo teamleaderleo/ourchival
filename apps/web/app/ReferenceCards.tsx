@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useBatchSelectionItem } from "./batchSelection";
 import { ReferenceBoardAssignment } from "./BoardPanel";
 import { ReferenceProjectAssignment } from "./ProjectPanel";
 import {
@@ -27,6 +28,7 @@ export function ReferenceCard({
   const mode = referenceMode(reference.kind);
   const snapshot = reference.sourceSnapshot;
   const [tags] = useReferenceTags(reference.tagIds, reference.tags);
+  const batch = useBatchSelectionItem(reference._id);
   const imageUrl =
     asset?.storedUrl ?? asset?.originalUrl ?? snapshot?.previewImageUrl;
   const domain = getDomain(reference.sourceUrl);
@@ -39,7 +41,7 @@ export function ReferenceCard({
 
   return (
     <article
-      className={`reference-card ${mode === "links" ? "link-card" : ""} ${selected ? "selected" : ""}`}
+      className={`reference-card ${mode === "links" ? "link-card" : ""} ${selected ? "selected" : ""} ${batch.selected ? "batch-selected" : ""}`}
     >
       <button
         type="button"
@@ -90,6 +92,15 @@ export function ReferenceCard({
             <span>{formatCaptureDate(reference.capturedAt)}</span>
           </p>
         </div>
+      </button>
+      <button
+        type="button"
+        className={`batch-select-toggle ${batch.selected ? "active" : ""}`}
+        aria-label={batch.selected ? "Remove from batch selection" : "Add to batch selection"}
+        aria-pressed={batch.selected}
+        onClick={batch.toggle}
+      >
+        {batch.selected ? "✓" : ""}
       </button>
       <button
         type="button"
