@@ -82,7 +82,7 @@ export function filterReferences(
     list = list.filter((reference) => reference.favorite);
   }
 
-  const needle = options.query?.trim().toLowerCase();
+  const needle = searchTextOnly(options.query ?? "");
   if (!needle) return list;
 
   return list.filter((reference) =>
@@ -109,6 +109,15 @@ export function filterReferences(
       .filter(Boolean)
       .some((value) => value?.toLowerCase().includes(needle)),
   );
+}
+
+export function searchTextOnly(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => !/^(site|domain|type|kind):/.test(token))
+    .join(" ");
 }
 
 export function getSelectedReference(
