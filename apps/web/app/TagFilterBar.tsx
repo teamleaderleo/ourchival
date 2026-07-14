@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useAllReferenceTags } from "./useReferenceTags";
 
 export function TagFilterBar({
@@ -11,11 +10,9 @@ export function TagFilterBar({
   onChange: (query: string) => void;
 }) {
   const tags = useAllReferenceTags();
-  const [selectedSlug, setSelectedSlug] = useState(tagToken(query));
   const activeSlug = tagToken(query);
 
   function applyTag(slug: string) {
-    setSelectedSlug(slug);
     const text = stripTagToken(query);
     onChange([text, slug ? `tag:${slug}` : ""].filter(Boolean).join(" "));
   }
@@ -27,7 +24,7 @@ export function TagFilterBar({
       <label>
         <span>Tag</span>
         <select
-          value={selectedSlug || activeSlug}
+          value={activeSlug}
           onChange={(event) => applyTag(event.target.value)}
         >
           <option value="">All tags</option>
