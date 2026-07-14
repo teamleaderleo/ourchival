@@ -10,12 +10,15 @@ import {
   useRecentEnrichmentJobs,
   type RecentEnrichmentJob,
 } from "./useEnrichmentJobs";
+import { enqueueSuggestedTagsMany } from "./useSuggestedTags";
+
+type QueueType = "metadata" | "suggested_tags";
 
 export function EnrichmentQueuePanel() {
   const { selectedIds } = useBatchSelection();
   const { jobs, loading, refresh } = useRecentEnrichmentJobs(40);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
-  const [queueing, setQueueing] = useState(false);
+  const [queueing, setQueueing] = useState<QueueType | null>(null);
   const [message, setMessage] = useState("");
   const visibleJobs = jobs.filter((job) => job.status !== "dismissed").slice(0, 10);
   const activeCount = jobs.filter(
@@ -23,12 +26,19 @@ export function EnrichmentQueuePanel() {
   ).length;
   const failedCount = jobs.filter((job) => job.status === "failed").length;
 
-  async function queueSelected() {
+  async function queueSelected(type: QueueType) {
     if (selectedIds.length === 0) return;
-    setQueueing(true);
-    setMessage("Queueing selected links…");
+    setQueueing(type);
+    setMessage(
+      type === "metadata"
+        ? "Queueing selected links…"
+        : "Queueing tag suggestions…",
+    );
     try {
-      const result = await enqueueMetadataJobs(selectedIds);
+      const result =
+        type === "metadata"
+          ? await enqueueMetadataJobs(selectedIds)
+          : await enqueueSuggestedTagsMany(selectedIds);
       setMessage(
         [
           `${result.queued} queued`,
@@ -40,9 +50,9 @@ export function EnrichmentQueuePanel() {
       );
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not queue metadata jobs.");
+      setMessage(error instanceof Error ? error.message : "Could not queue enrichment jobs.");
     } finally {
-      setQueueing(false);
+      setQueueing(null);
     }
   }
 
@@ -87,13 +97,31 @@ export function EnrichmentQueuePanel() {
         <button
           type="button"
           className="button secondary"
-          onClick={() => void queueSelected()}
-          disabled={queueing || selectedIds.length === 0}
+          onClick={() => void queueSelected("metadata")}
+          disabled={Boolean(queueing) || selectedIds.length === 0}
         >
-          {queueing
+          {queueing === "metadata"
             ? "Queueing…"
             : selectedIds.length > 0
               ? `Queue ${selectedIds.length} selected`
+              : "Select cards first"}
+        </button>
+      </div>
+      <div className="enrichment-queue-actions">
+        <div>
+          <strong>Suggested tags</strong>
+          <span>Derive editable art-reference tags from saved context.</span>
+        </div>
+        <button
+          type="button"
+          className="button secondary"
+          onClick={() => void queueSelected("suggested_tags")}
+          disabled={Boolean(queueing) || selectedIds.length === 0}
+        >
+          {queueing === "suggested_tags"
+            ? "Queueing…"
+            : selectedIds.length > 0
+              ? `Suggest for ${selectedIds.length}`
               : "Select cards first"}
         </button>
       </div>
@@ -108,7 +136,9 @@ export function EnrichmentQueuePanel() {
                 <span className="enrichment-status-dot" aria-hidden="true" />
                 <div>
                   <strong>{referenceTitle(job)}</strong>
-                  <span>{jobStatusLabel(job)} · attempt {job.attempts}</span>
+                  <span>
+                    {jobTypeLabel(job)} · {jobStatusLabel(job)} · attempt {job.attempts}
+                  </span>
                 </div>
                 <time dateTime={new Date(job.updatedAt).toISOString()}>
                   {formatJobTime(job.updatedAt)}
@@ -157,10 +187,27 @@ function referenceTitle(job: RecentEnrichmentJob) {
   return job.reference?.title?.trim() || job.reference?.sourceUrl || "Deleted reference";
 }
 
+function jobTypeLabel(job: RecentEnrichmentJob) {
+  if (job.type === "source_metadata") return "Metadata";
+  if (job.type === "suggested_tags") return "Suggested tags";
+  if (job.type === "ocr") return "OCR";
+  if (job.type === "description") return "Description";
+  if (job.type === "dominant_colors") return "Colors";
+  return "Perceptual hash";
+}
+
 function progressLabel(job: RecentEnrichmentJob) {
   if (job.status === "queued") return "Waiting for a processor.";
-  if (job.status === "running") return "Fetching and storing source metadata.";
-  if (job.status === "succeeded") return "Source metadata stored.";
+  if (job.status === "running") {
+    return job.type === "suggested_tags"
+      ? "Deriving suggestions from saved context."
+      : "Fetching and storing source metadata.";
+  }
+  if (job.status === "succeeded") {
+    return job.type === "suggested_tags"
+      ? "Tag suggestions stored."
+      : "Source metadata stored.";
+  }
   return "The processor recorded a failure.";
 }
 
