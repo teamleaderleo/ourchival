@@ -8,6 +8,7 @@ import {
   referenceKindLabel,
   referenceMetadataLabel,
   referenceMode,
+  searchTextOnly,
   type SavedReference,
 } from "./referenceVaultModel";
 
@@ -117,6 +118,21 @@ describe("filterReferences", () => {
         "color-article",
       ]);
     }
+  });
+
+  it("ignores site and type tokens after the server applies them", () => {
+    expect(searchTextOnly("site:example.com type:article")).toBe("");
+    expect(
+      filterReferences([references[1]!], {
+        query: "site:example.com type:article",
+      }).map((item) => item._id),
+    ).toEqual(["color-article"]);
+    expect(searchTextOnly("site:example.com type:article palette")).toBe("palette");
+    expect(
+      filterReferences(references, {
+        query: "site:example.com type:article palette",
+      }).map((item) => item._id),
+    ).toEqual(["color-article", "pose-study"]);
   });
 
   it("filters favorites without losing search behavior", () => {
