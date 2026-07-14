@@ -57,6 +57,7 @@ export type SavedReference = {
   archived?: boolean;
   deleted?: boolean;
   assets: ReferenceAsset[];
+  boardIds?: string[];
   tagIds?: string[];
   tags?: ReferenceTag[];
   sourceSnapshot?: ReferenceSourceSnapshot;
@@ -126,7 +127,7 @@ export function searchTextOnly(value: string) {
     .trim()
     .toLowerCase()
     .split(/\s+/)
-    .filter((token) => !/^(site|domain|type|kind|tag):/.test(token))
+    .filter((token) => !/^(site|domain|type|kind|tag|board):/.test(token))
     .join(" ");
 }
 
