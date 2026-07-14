@@ -228,6 +228,7 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
   const requestedPageSize = Number(url.searchParams.get("limit") ?? 48);
   const collection = url.searchParams.get("collection");
   const lane = url.searchParams.get("lane");
+  const queryFilters = parseQueryFilters(url.searchParams.get("query") ?? "");
 
   return {
     cursor: url.searchParams.get("cursor") || null,
@@ -237,10 +238,36 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
     collection: isCollection(collection) ? collection : "inbox",
     lane: isLane(lane) ? lane : "all",
     favoritesOnly: url.searchParams.get("favorites") === "true",
-    query: normalizeSearchText(url.searchParams.get("query") ?? ""),
-    domain: normalizeDomain(url.searchParams.get("domain") ?? ""),
-    sourceType: normalizeSearchText(url.searchParams.get("sourceType") ?? ""),
+    query: normalizeSearchText(queryFilters.query),
+    domain: normalizeDomain(url.searchParams.get("domain") ?? queryFilters.domain),
+    sourceType: normalizeSearchText(
+      url.searchParams.get("sourceType") ?? queryFilters.sourceType,
+    ),
   };
+}
+
+function parseQueryFilters(value: string) {
+  const words: string[] = [];
+  let domain = "";
+  let sourceType = "";
+
+  for (const token of value.trim().split(/\s+/).filter(Boolean)) {
+    const separator = token.indexOf(":");
+    if (separator <= 0) {
+      words.push(token);
+      continue;
+    }
+
+    const key = token.slice(0, separator).toLocaleLowerCase();
+    const filterValue = token.slice(separator + 1).trim();
+    if (!filterValue) continue;
+
+    if (key === "site" || key === "domain") domain = filterValue;
+    else if (key === "type" || key === "kind") sourceType = filterValue;
+    else words.push(token);
+  }
+
+  return { query: words.join(" "), domain, sourceType };
 }
 
 function matchesReferenceFilters(reference: any, options: ReferenceListOptions) {
