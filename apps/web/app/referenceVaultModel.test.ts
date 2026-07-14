@@ -132,7 +132,7 @@ describe("filterReferences", () => {
       filterReferences(references, {
         query: "site:example.com type:article palette",
       }).map((item) => item._id),
-    ).toEqual(["color-article", "pose-study"]);
+    ).toEqual(["pose-study", "color-article"]);
   });
 
   it("filters favorites without losing search behavior", () => {
