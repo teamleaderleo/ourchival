@@ -1,5 +1,6 @@
 "use client";
 
+import { BoardPanel } from "./BoardPanel";
 import { useAllReferenceTags } from "./useReferenceTags";
 
 export function TagFilterBar({
@@ -17,37 +18,40 @@ export function TagFilterBar({
     onChange([text, slug ? `tag:${slug}` : ""].filter(Boolean).join(" "));
   }
 
-  if (tags.length === 0) return null;
-
   return (
-    <div className="tag-filter-bar" aria-label="Filter by tag">
-      <label>
-        <span>Tag</span>
-        <select
-          value={activeSlug}
-          onChange={(event) => applyTag(event.target.value)}
-        >
-          <option value="">All tags</option>
-          {tags.map((tag) => (
-            <option key={tag._id} value={tag.slug}>
-              {tag.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="tag-filter-chips" aria-label="Recent tag choices">
-        {tags.slice(0, 8).map((tag) => (
-          <button
-            key={tag._id}
-            type="button"
-            className={activeSlug === tag.slug ? "active" : ""}
-            onClick={() => applyTag(activeSlug === tag.slug ? "" : tag.slug)}
-          >
-            #{tag.name}
-          </button>
-        ))}
-      </div>
-    </div>
+    <>
+      {tags.length > 0 ? (
+        <div className="tag-filter-bar" aria-label="Filter by tag">
+          <label>
+            <span>Tag</span>
+            <select
+              value={activeSlug}
+              onChange={(event) => applyTag(event.target.value)}
+            >
+              <option value="">All tags</option>
+              {tags.map((tag) => (
+                <option key={tag._id} value={tag.slug}>
+                  {tag.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="tag-filter-chips" aria-label="Recent tag choices">
+            {tags.slice(0, 8).map((tag) => (
+              <button
+                key={tag._id}
+                type="button"
+                className={activeSlug === tag.slug ? "active" : ""}
+                onClick={() => applyTag(activeSlug === tag.slug ? "" : tag.slug)}
+              >
+                #{tag.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <BoardPanel query={query} onChange={onChange} />
+    </>
   );
 }
 
