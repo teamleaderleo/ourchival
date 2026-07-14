@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useBatchSelectionItem } from "./batchSelection";
 import { ReferenceBoardAssignment } from "./BoardPanel";
+import { ReferenceEnrichmentPanel } from "./ReferenceEnrichmentPanel";
 import { ReferenceProjectAssignment } from "./ProjectPanel";
 import {
   referenceDisplayTitle,
@@ -133,6 +134,10 @@ export function ReferenceCard({
         <div className="selected-card-organization">
           <ReferenceBoardAssignment reference={reference} />
           <ReferenceProjectAssignment reference={reference} />
+          <ReferenceEnrichmentPanel
+            referenceId={reference._id}
+            enabled={mode === "links"}
+          />
         </div>
       ) : null}
     </article>
