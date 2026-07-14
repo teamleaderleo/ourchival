@@ -108,17 +108,61 @@ export const updateReference = mutation({
     const reference = await ctx.db.get(args.referenceId);
     if (!reference) throw new Error("Reference not found.");
 
-    const removals = new Set(args.removeBoardIds.map(String));
-    const nextBoardIds = Array.from(
-      new Set([
-        ...reference.boardIds.filter((boardId) => !removals.has(String(boardId))),
-        ...args.addBoardIds,
-      ]),
+    const nextBoardIds = updateBoardIds(
+      reference.boardIds,
+      args.addBoardIds,
+      args.removeBoardIds,
     );
     await ctx.db.patch(reference._id, { boardIds: nextBoardIds });
     return nextBoardIds;
   },
 });
+
+export const updateReferences = mutation({
+  args: {
+    referenceIds: v.array(v.id("references")),
+    boardId: v.id("boards"),
+    mode: v.union(v.literal("add"), v.literal("remove")),
+  },
+  handler: async (ctx, args) => {
+    const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
+    if (args.mode === "add" && !(await ctx.db.get(args.boardId))) {
+      throw new Error("Board not found.");
+    }
+
+    let updated = 0;
+    for (const referenceId of referenceIds) {
+      const reference = await ctx.db.get(referenceId);
+      if (!reference) continue;
+      const nextBoardIds = updateBoardIds(
+        reference.boardIds,
+        args.mode === "add" ? [args.boardId] : [],
+        args.mode === "remove" ? [args.boardId] : [],
+      );
+      if (nextBoardIds.length === reference.boardIds.length &&
+          nextBoardIds.every((boardId, index) => boardId === reference.boardIds[index])) {
+        continue;
+      }
+      await ctx.db.patch(referenceId, { boardIds: nextBoardIds });
+      updated += 1;
+    }
+    return { updated };
+  },
+});
+
+function updateBoardIds(
+  currentBoardIds: any[],
+  addBoardIds: any[],
+  removeBoardIds: any[],
+) {
+  const removals = new Set(removeBoardIds.map(String));
+  return Array.from(
+    new Set([
+      ...currentBoardIds.filter((boardId) => !removals.has(String(boardId))),
+      ...addBoardIds,
+    ]),
+  );
+}
 
 async function countBoardReferences(ctx: any) {
   const counts = new Map<string, number>();
