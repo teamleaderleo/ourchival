@@ -9,10 +9,10 @@
 .enrichment-job > div:first-child strong { color: var(--text); font-size: .66rem; }
 .enrichment-job > div:first-child span:last-child { margin-left: auto; color: var(--muted); font-size: .58rem; }
 .enrichment-status-dot { width: 7px; height: 7px; flex: none; border-radius: 999px; background: var(--muted); box-shadow: 0 0 0 3px color-mix(in srgb, var(--muted), transparent 88%); }
-.enrichment-job.status-queued .enrichment-status-dot { background: var(--warning); }
-.enrichment-job.status-running .enrichment-status-dot { background: var(--accent); animation: enrichment-pulse 800ms ease-in-out infinite alternate; }
-.enrichment-job.status-succeeded .enrichment-status-dot { background: var(--success); }
-.enrichment-job.status-failed .enrichment-status-dot { background: var(--danger); }
+.enrichment-job.status-queued .enrichment-status-dot, .enrichment-queue-list .status-queued .enrichment-status-dot { background: var(--warning); }
+.enrichment-job.status-running .enrichment-status-dot, .enrichment-queue-list .status-running .enrichment-status-dot { background: var(--accent); animation: enrichment-pulse 800ms ease-in-out infinite alternate; }
+.enrichment-job.status-succeeded .enrichment-status-dot, .enrichment-queue-list .status-succeeded .enrichment-status-dot { background: var(--success); }
+.enrichment-job.status-failed .enrichment-status-dot, .enrichment-queue-list .status-failed .enrichment-status-dot { background: var(--danger); }
 .enrichment-job.status-dismissed { opacity: .66; }
 .enrichment-job > p, .enrichment-empty, .enrichment-message { margin: 0; color: var(--muted); font-size: .62rem; line-height: 1.42; }
 .enrichment-job-actions { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -22,4 +22,26 @@
 .enrichment-history > div { display: grid; gap: 4px; margin-top: 6px; }
 .enrichment-history p { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; color: var(--muted); font-size: .58rem; }
 .enrichment-message { text-align: center; }
+.enrichment-queue-panel { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel-raised), transparent 28%); }
+.enrichment-queue-panel summary { display: flex; min-height: 40px; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; color: var(--muted-strong); cursor: pointer; font-size: .68rem; font-weight: 700; list-style: none; }
+.enrichment-queue-panel summary::-webkit-details-marker { display: none; }
+.enrichment-queue-panel summary span:last-child { color: var(--muted); font-size: .61rem; font-weight: 600; }
+.enrichment-queue-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid color-mix(in srgb, var(--line), transparent 22%); padding: 9px 10px; }
+.enrichment-queue-actions > div { display: grid; gap: 2px; min-width: 0; }
+.enrichment-queue-actions strong { color: var(--text); font-size: .69rem; }
+.enrichment-queue-actions span { color: var(--muted); font-size: .61rem; }
+.enrichment-queue-actions .button { min-height: 34px; padding: 7px 9px; font-size: .65rem; white-space: nowrap; }
+.enrichment-queue-list { display: grid; gap: 6px; border-top: 1px solid color-mix(in srgb, var(--line), transparent 22%); padding: 9px 10px; }
+.enrichment-queue-list article { display: grid; gap: 5px; border: 1px solid var(--line); border-radius: 9px; padding: 8px; background: var(--panel); }
+.enrichment-queue-job-heading { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.enrichment-queue-job-heading > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.enrichment-queue-job-heading strong, .enrichment-queue-job-heading span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.enrichment-queue-job-heading strong { color: var(--text); font-size: .66rem; }
+.enrichment-queue-job-heading span { color: var(--muted); font-size: .59rem; }
+.enrichment-queue-job-heading time { color: var(--muted); font-size: .57rem; white-space: nowrap; }
+.enrichment-queue-list article > p { margin: 0; color: var(--muted); font-size: .61rem; line-height: 1.4; }
+.enrichment-queue-job-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.enrichment-queue-job-actions .button { min-height: 29px; padding: 5px 7px; font-size: .6rem; }
+.enrichment-queue-empty, .enrichment-queue-message { margin: 0; border-top: 1px solid color-mix(in srgb, var(--line), transparent 22%); padding: 9px 10px; color: var(--muted); font-size: .62rem; line-height: 1.4; text-align: center; }
+@media (max-width: 620px) { .enrichment-queue-actions { align-items: flex-start; flex-direction: column; } }
 @keyframes enrichment-pulse { from { opacity: .45; transform: scale(.9); } to { opacity: 1; transform: scale(1.08); } }
