@@ -7,6 +7,13 @@ export type ReferenceAsset = {
   driveWebViewLink?: string;
 };
 
+export type ReferenceTag = {
+  _id: string;
+  name: string;
+  slug: string;
+  createdAt: number;
+};
+
 export type ReferenceSourceSnapshot = {
   pageTitle?: string;
   postText?: string;
@@ -50,6 +57,7 @@ export type SavedReference = {
   archived?: boolean;
   deleted?: boolean;
   assets: ReferenceAsset[];
+  tags?: ReferenceTag[];
   sourceSnapshot?: ReferenceSourceSnapshot;
 };
 
@@ -105,6 +113,7 @@ export function filterReferences(
       reference.sourceSnapshot?.pageAuthor,
       reference.sourceSnapshot?.canonicalUrl,
       reference.sourceSnapshot?.contentType,
+      ...(reference.tags ?? []).flatMap((tag) => [tag.name, tag.slug]),
     ]
       .filter(Boolean)
       .some((value) => value?.toLowerCase().includes(needle)),
@@ -116,7 +125,7 @@ export function searchTextOnly(value: string) {
     .trim()
     .toLowerCase()
     .split(/\s+/)
-    .filter((token) => !/^(site|domain|type|kind):/.test(token))
+    .filter((token) => !/^(site|domain|type|kind|tag):/.test(token))
     .join(" ");
 }
 
