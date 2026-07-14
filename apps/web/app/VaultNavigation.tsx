@@ -95,14 +95,6 @@ export function VaultSidebar({
         />
       </nav>
 
-      <div className="planned-nav" aria-label="Planned organization areas">
-        <p className="nav-label">Organization</p>
-        <div className="planned-nav-item" title="Projects are planned for a later organization slice">
-          <span>Projects</span>
-          <span>Soon</span>
-        </div>
-      </div>
-
       <div className="sidebar-note">
         <p className="eyebrow">Capture loop</p>
         <p>New saves land in Inbox. Keep them, defer them, archive them, or send them to Trash.</p>
