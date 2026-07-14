@@ -2,6 +2,7 @@
 
 import { BatchOrganizationBar } from "./BatchOrganizationBar";
 import { BoardPanel } from "./BoardPanel";
+import { EnrichmentQueuePanel } from "./EnrichmentQueuePanel";
 import { ProjectPanel } from "./ProjectPanel";
 import { useAllReferenceTags } from "./useReferenceTags";
 
@@ -55,6 +56,7 @@ export function TagFilterBar({
       <BoardPanel query={query} onChange={onChange} />
       <ProjectPanel query={query} onChange={onChange} />
       <BatchOrganizationBar />
+      <EnrichmentQueuePanel />
     </>
   );
 }
