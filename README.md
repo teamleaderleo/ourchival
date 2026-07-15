@@ -8,7 +8,7 @@ Ourchival is the overall project. **Reliquary** is the vault experience inside i
 
 - `apps/web` — the vault web app
 - `apps/extension` — browser extension / clipper
-- `convex` — Convex backend and HTTP capture endpoints
+- `convex` — Convex backend, capture endpoints, and asynchronous media processing
 - `packages/shared` — shared metadata types and helpers
 - `packages/parsers` — platform-specific source parsers
 
@@ -40,7 +40,8 @@ Save a reference through any path:
 Saved items appear in the Reliquary gallery with:
 
 - All / Images / Links lanes
-- image URL or proxied Drive original when available
+- generated WebP thumbnails when a stored original is available
+- image URL or proxied Drive original as a fallback
 - source URL
 - page title when available
 - platform detection
@@ -66,6 +67,8 @@ pnpm dev
 For full local instructions, see [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md).
 
 For Google Drive storage, see [`docs/GOOGLE_DRIVE.md`](docs/GOOGLE_DRIVE.md).
+
+For generated previews, thumbnails, hashes, and palettes, see [`docs/MEDIA_PIPELINE.md`](docs/MEDIA_PIPELINE.md).
 
 For the links vault direction, see [`docs/LINKS_VAULT.md`](docs/LINKS_VAULT.md).
 
@@ -109,4 +112,4 @@ Ourchival keeps files portable:
   metadata.json
 ```
 
-The database tracks source, tags, boards, projects, notes, Drive file IDs, links, and generated metadata.
+Google Drive remains the preferred home for originals. Convex Storage holds generated WebP derivatives so the gallery can load small private files directly. The database tracks source, tags, boards, projects, notes, file IDs, hashes, palettes, dimensions, links, and generated metadata.
