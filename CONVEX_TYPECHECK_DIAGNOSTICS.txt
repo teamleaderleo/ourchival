@@ -19,6 +19,8 @@ convex/http.ts(368,35): error TS2339: Property 'db' does not exist on type 'Gene
 convex/http.ts(389,41): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
 convex/http.ts(406,27): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
 convex/lib/referenceCatalog.ts(317,11): error TS7022: 'page' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+convex/mediaDerivatives.ts(13,33): error TS2352: Conversion of type 'FunctionReference<"action", "public", ProcessMediaArgs, unknown, string | undefined>' to type 'FunctionReference<"action", "internal", ProcessMediaArgs, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '"public"' is not comparable to type '"internal"'.
 convex/suggestedTags.ts(222,14): error TS7022: 'process' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
 convex/suggestedTags.ts(226,3): error TS7023: 'handler' implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.
 convex/visualEnrichment.ts(264,28): error TS2339: Property 'deleted' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; } | { _id: Id<"tags">; _creationTime: number; name: string; createdAt: number; slug: string; } | ... 9 more ... | { ...; }'.
