@@ -26,7 +26,7 @@ jobs:
           corepack enable
           corepack prepare pnpm@9.15.0 --activate
       - name: Refresh lockfile
-        run: pnpm install --lockfile-only
+        run: pnpm install --lockfile-only --no-frozen-lockfile
       - name: Commit lockfile
         run: |
           if git diff --quiet -- pnpm-lock.yaml; then
