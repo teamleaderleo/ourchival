@@ -1,46 +1,14 @@
-convex/boards.ts(173,11): error TS7022: 'page' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
 convex/crons.ts(7,27): error TS2352: Conversion of type 'FunctionReference<"mutation", "public", { limit?: number | undefined; }, { queued: number; active: number; skipped: number; }, string | undefined>' to type 'FunctionReference<"mutation", "internal", { limit?: number | undefined; }, { queued: number; active: number; skipped: number; }>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
   Type '"public"' is not comparable to type '"internal"'.
-convex/enrichmentJobs.ts(240,14): error TS7022: 'processSourceMetadata' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
-convex/enrichmentJobs.ts(244,3): error TS7023: 'handler' implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.
-convex/http.ts(154,33): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(166,32): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(175,35): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(187,50): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(212,30): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(232,15): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(245,30): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(253,15): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(294,48): error TS2345: Argument of type 'GenericActionCtx<any>' is not assignable to parameter of type '{ db: any; }'.
-  Property 'db' is missing in type 'GenericActionCtx<any>' but required in type '{ db: any; }'.
-convex/http.ts(329,46): error TS2345: Argument of type 'GenericActionCtx<any>' is not assignable to parameter of type '{ db: any; }'.
-  Property 'db' is missing in type 'GenericActionCtx<any>' but required in type '{ db: any; }'.
-convex/http.ts(368,35): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(389,41): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/http.ts(406,27): error TS2339: Property 'db' does not exist on type 'GenericActionCtx<any>'.
-convex/lib/referenceCatalog.ts(317,11): error TS7022: 'page' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
 convex/mediaDerivatives.ts(13,33): error TS2352: Conversion of type 'FunctionReference<"action", "public", ProcessMediaArgs, unknown, string | undefined>' to type 'FunctionReference<"action", "internal", ProcessMediaArgs, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
   Type '"public"' is not comparable to type '"internal"'.
-convex/suggestedTags.ts(222,14): error TS7022: 'process' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
-convex/suggestedTags.ts(226,3): error TS7023: 'handler' implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.
-convex/visualEnrichment.ts(264,28): error TS2339: Property 'deleted' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; } | { _id: Id<"tags">; _creationTime: number; name: string; createdAt: number; slug: string; } | ... 9 more ... | { ...; }'.
-  Property 'deleted' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; }'.
-convex/visualEnrichment.ts(265,28): error TS2339: Property 'archived' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; } | { _id: Id<"tags">; _creationTime: number; name: string; createdAt: number; slug: string; } | ... 9 more ... | { ...; }'.
-  Property 'archived' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; }'.
-convex/visualEnrichment.ts(272,31): error TS2345: Argument of type 'Id<"boards"> | Id<"tags"> | Id<"references"> | Id<"projects"> | Id<"assets"> | Id<"enrichmentJobs"> | Id<"referenceStats"> | Id<"projectReferences"> | Id<...> | Id<...> | Id<...> | Id<...>' is not assignable to parameter of type 'Id<"references">'.
-  Type 'Id<"boards">' is not assignable to type 'Id<"references">'.
-    Type 'Id<"boards">' is not assignable to type '{ __tableName: "references"; }'.
-      Types of property '__tableName' are incompatible.
-        Type '"boards"' is not assignable to type '"references"'.
-convex/visualEnrichment.ts(282,37): error TS2339: Property 'title' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; } | { _id: Id<"tags">; _creationTime: number; name: string; createdAt: number; slug: string; } | ... 9 more ... | { ...; }'.
-  Property 'title' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; }'.
-convex/visualEnrichment.ts(283,41): error TS2339: Property 'sourceUrl' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; } | { _id: Id<"tags">; _creationTime: number; name: string; createdAt: number; slug: string; } | ... 9 more ... | { ...; }'.
-  Property 'sourceUrl' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; }'.
-convex/visualEnrichment.ts(284,36): error TS2339: Property 'kind' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; } | { _id: Id<"tags">; _creationTime: number; name: string; createdAt: number; slug: string; } | ... 9 more ... | { ...; }'.
-  Property 'kind' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; }'.
-convex/visualEnrichment.ts(285,40): error TS2339: Property 'platform' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; } | { _id: Id<"tags">; _creationTime: number; name: string; createdAt: number; slug: string; } | ... 9 more ... | { ...; }'.
-  Property 'platform' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; }'.
-convex/visualEnrichment.ts(286,42): error TS2339: Property 'capturedAt' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; } | { _id: Id<"tags">; _creationTime: number; name: string; createdAt: number; slug: string; } | ... 9 more ... | { ...; }'.
-  Property 'capturedAt' does not exist on type '{ _id: Id<"boards">; _creationTime: number; description?: string | undefined; updatedAt: number; name: string; createdAt: number; }'.
+convex/mediaDerivativesNode.ts(45,23): error TS2352: Conversion of type 'FunctionReference<"query", "public", JobArgs, JobContext | null, string | undefined>' to type 'FunctionReference<"query", "internal", JobArgs, JobContext | null>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '"public"' is not comparable to type '"internal"'.
+convex/mediaDerivativesNode.ts(55,18): error TS2352: Conversion of type 'FunctionReference<"mutation", "public", JobArgs, boolean, string | undefined>' to type 'FunctionReference<"mutation", "internal", JobArgs, boolean>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '"public"' is not comparable to type '"internal"'.
+convex/mediaDerivativesNode.ts(58,21): error TS2352: Conversion of type 'FunctionReference<"mutation", "public", CompleteArgs, { status: "succeeded"; }, string | undefined>' to type 'FunctionReference<"mutation", "internal", CompleteArgs, { status: "succeeded"; }>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '"public"' is not comparable to type '"internal"'.
+convex/mediaDerivativesNode.ts(68,17): error TS2352: Conversion of type 'FunctionReference<"mutation", "public", FailArgs, boolean, string | undefined>' to type 'FunctionReference<"mutation", "internal", FailArgs, boolean>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '"public"' is not comparable to type '"internal"'.
 
 exit_status=2
