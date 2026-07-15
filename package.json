@@ -9,7 +9,7 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "vitest --run",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p convex/tsconfig.json",
     "extension:dev": "pnpm --filter @ourchival/extension dev",
     "extension:build": "pnpm --filter @ourchival/extension build",
     "convex:dev": "convex dev",
