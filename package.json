@@ -16,6 +16,9 @@
     "convex:deploy": "convex deploy",
     "google:drive-auth": "node scripts/google-drive-auth.mjs"
   },
+  "dependencies": {
+    "sharp": "0.34.1"
+  },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "convex": "^1.17.4",
