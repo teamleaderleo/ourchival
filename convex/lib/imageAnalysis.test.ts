@@ -25,12 +25,12 @@ describe("dominantColorsFromRgba", () => {
   it("ranks opaque color bins by frequency", () => {
     const pixels = new Uint8Array([
       250, 10, 10, 255,
-      240, 20, 20, 255,
-      245, 15, 15, 255,
+      244, 12, 12, 255,
+      246, 14, 14, 255,
       10, 20, 250, 255,
       255, 255, 255, 0,
     ]);
 
-    expect(dominantColorsFromRgba(pixels, 2)).toEqual(["#f51212", "#0a14fa"]);
+    expect(dominantColorsFromRgba(pixels, 2)).toEqual(["#f70c0c", "#0a14fa"]);
   });
 });
