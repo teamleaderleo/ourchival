@@ -11,6 +11,12 @@
     "strict": true,
     "target": "ES2022"
   },
-  "include": ["./**/*.ts"],
-  "exclude": ["./_generated"]
+  "files": [
+    "./crons.ts",
+    "./mediaDerivatives.ts",
+    "./mediaDerivativesNode.ts",
+    "./schema.ts",
+    "./lib/drive.ts",
+    "./lib/imageAnalysis.ts"
+  ]
 }
