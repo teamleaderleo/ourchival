@@ -1,9 +1,25 @@
 import { internalMutation, internalQuery, mutation } from "./_generated/server";
-import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import {
+  makeFunctionReference,
+  type FunctionReference,
+} from "convex/server";
 import { v } from "convex/values";
 
 const defaultBatchSize = 4;
 const maxBatchSize = 12;
+
+type ProcessMediaArgs = { jobId: Id<"enrichmentJobs"> };
+const processMediaDerivatives = makeFunctionReference<
+  "action",
+  ProcessMediaArgs,
+  unknown
+>("mediaDerivativesNode:process") as FunctionReference<
+  "action",
+  "internal",
+  ProcessMediaArgs,
+  unknown
+>;
 
 export const enqueue = mutation({
   args: {
@@ -222,7 +238,7 @@ async function queueAsset(ctx: any, asset: any, force: boolean) {
     updatedAt: now,
   });
   await ctx.db.patch(asset._id, { derivativeStatus: "processing" });
-  await ctx.scheduler.runAfter(0, internal.mediaDerivativesNode.process, { jobId });
+  await ctx.scheduler.runAfter(0, processMediaDerivatives, { jobId });
   const job = await ctx.db.get(jobId);
   if (!job) throw new Error("Could not create media derivative job.");
   return job;
