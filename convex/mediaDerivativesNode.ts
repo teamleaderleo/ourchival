@@ -3,7 +3,11 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { internalAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import {
+  makeFunctionReference,
+  type FunctionReference,
+} from "convex/server";
 import { v } from "convex/values";
 import { fetchDriveFile } from "./lib/drive";
 import {
@@ -16,6 +20,55 @@ const maxInputPixels = 80_000_000;
 const previewMaxPixels = 1600;
 const thumbMaxPixels = 384;
 
+type JobArgs = { jobId: Id<"enrichmentJobs"> };
+type JobContext = {
+  job: Doc<"enrichmentJobs">;
+  asset: Doc<"assets">;
+  reference: Doc<"references">;
+  originalStorageUrl: string | null;
+};
+type CompleteArgs = {
+  jobId: Id<"enrichmentJobs">;
+  assetId: Id<"assets">;
+  previewStorageId: Id<"_storage">;
+  thumbStorageId: Id<"_storage">;
+  width: number;
+  height: number;
+  contentHash: string;
+  perceptualHash: string;
+  dominantColors: string[];
+  previewFileSize: number;
+  thumbFileSize: number;
+};
+type FailArgs = JobArgs & { error: string };
+
+const getJobContext = makeFunctionReference<
+  "query",
+  JobArgs,
+  JobContext | null
+>("mediaDerivatives:getJobContext") as FunctionReference<
+  "query",
+  "internal",
+  JobArgs,
+  JobContext | null
+>;
+const claimJob = makeFunctionReference<"mutation", JobArgs, boolean>(
+  "enrichmentJobs:claim",
+) as FunctionReference<"mutation", "internal", JobArgs, boolean>;
+const completeJob = makeFunctionReference<
+  "mutation",
+  CompleteArgs,
+  { status: "succeeded" }
+>("mediaDerivatives:complete") as FunctionReference<
+  "mutation",
+  "internal",
+  CompleteArgs,
+  { status: "succeeded" }
+>;
+const failJob = makeFunctionReference<"mutation", FailArgs, boolean>(
+  "mediaDerivatives:fail",
+) as FunctionReference<"mutation", "internal", FailArgs, boolean>;
+
 sharp.cache({ files: 0, items: 64, memory: 32 });
 sharp.concurrency(1);
 
@@ -27,13 +80,10 @@ export const process = internalAction({
     ctx,
     args,
   ): Promise<{ status: "succeeded" | "failed"; summary?: string } | null> => {
-    const jobContext = await ctx.runQuery(
-      internal.mediaDerivatives.getJobContext,
-      args,
-    );
+    const jobContext = await ctx.runQuery(getJobContext, args);
     if (!jobContext || jobContext.job.status !== "queued") return null;
 
-    const claimed = await ctx.runMutation(internal.enrichmentJobs.claim, args);
+    const claimed = await ctx.runMutation(claimJob, args);
     if (!claimed) return null;
 
     try {
@@ -66,7 +116,7 @@ export const process = internalAction({
         new Blob([new Uint8Array(thumb)], { type: "image/webp" }),
       );
 
-      await ctx.runMutation(internal.mediaDerivatives.complete, {
+      await ctx.runMutation(completeJob, {
         jobId: args.jobId,
         assetId: jobContext.asset._id,
         previewStorageId,
@@ -84,7 +134,7 @@ export const process = internalAction({
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Media derivative processor failed.";
-      await ctx.runMutation(internal.mediaDerivatives.fail, {
+      await ctx.runMutation(failJob, {
         jobId: args.jobId,
         error: message,
       });
@@ -93,13 +143,7 @@ export const process = internalAction({
   },
 });
 
-async function loadOriginal(jobContext: {
-  asset: {
-    driveFileId?: string;
-    mimeType?: string;
-  };
-  originalStorageUrl?: string | null;
-}) {
+async function loadOriginal(jobContext: JobContext) {
   const response = jobContext.asset.driveFileId
     ? await fetchDriveFile(jobContext.asset.driveFileId)
     : jobContext.originalStorageUrl
