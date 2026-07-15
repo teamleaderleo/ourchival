@@ -1,12 +1,26 @@
-import { cronJobs } from "convex/server";
-import { internal } from "./_generated/api";
+import {
+  cronJobs,
+  makeFunctionReference,
+  type FunctionReference,
+} from "convex/server";
+
+const queueMissingMedia = makeFunctionReference<
+  "mutation",
+  { limit?: number },
+  { queued: number; active: number; skipped: number }
+>("mediaDerivatives:queueMissing") as FunctionReference<
+  "mutation",
+  "internal",
+  { limit?: number },
+  { queued: number; active: number; skipped: number }
+>;
 
 const crons = cronJobs();
 
 crons.interval(
   "queue missing media derivatives",
   { minutes: 1 },
-  internal.mediaDerivatives.queueMissing,
+  queueMissingMedia,
   { limit: 4 },
 );
 
