@@ -14,7 +14,7 @@ const processMediaDerivatives = makeFunctionReference<
   "action",
   ProcessMediaArgs,
   unknown
->("mediaDerivativesNode:process") as FunctionReference<
+>("mediaDerivativesNode:process") as unknown as FunctionReference<
   "action",
   "internal",
   ProcessMediaArgs,
