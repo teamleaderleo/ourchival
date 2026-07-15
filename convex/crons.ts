@@ -8,7 +8,7 @@ const queueMissingMedia = makeFunctionReference<
   "mutation",
   { limit?: number },
   { queued: number; active: number; skipped: number }
->("mediaDerivatives:queueMissing") as FunctionReference<
+>("mediaDerivatives:queueMissing") as unknown as FunctionReference<
   "mutation",
   "internal",
   { limit?: number },
