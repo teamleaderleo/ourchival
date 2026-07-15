@@ -46,7 +46,7 @@ const getJobContext = makeFunctionReference<
   "query",
   JobArgs,
   JobContext | null
->("mediaDerivatives:getJobContext") as FunctionReference<
+>("mediaDerivatives:getJobContext") as unknown as FunctionReference<
   "query",
   "internal",
   JobArgs,
@@ -54,12 +54,12 @@ const getJobContext = makeFunctionReference<
 >;
 const claimJob = makeFunctionReference<"mutation", JobArgs, boolean>(
   "enrichmentJobs:claim",
-) as FunctionReference<"mutation", "internal", JobArgs, boolean>;
+) as unknown as FunctionReference<"mutation", "internal", JobArgs, boolean>;
 const completeJob = makeFunctionReference<
   "mutation",
   CompleteArgs,
   { status: "succeeded" }
->("mediaDerivatives:complete") as FunctionReference<
+>("mediaDerivatives:complete") as unknown as FunctionReference<
   "mutation",
   "internal",
   CompleteArgs,
@@ -67,7 +67,7 @@ const completeJob = makeFunctionReference<
 >;
 const failJob = makeFunctionReference<"mutation", FailArgs, boolean>(
   "mediaDerivatives:fail",
-) as FunctionReference<"mutation", "internal", FailArgs, boolean>;
+) as unknown as FunctionReference<"mutation", "internal", FailArgs, boolean>;
 
 sharp.cache({ files: 0, items: 64, memory: 32 });
 sharp.concurrency(1);
