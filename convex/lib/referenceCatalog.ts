@@ -203,14 +203,22 @@ export async function hydrateReference(
   ]);
 
   const assetsWithUrls = await Promise.all(
-    assets.map(async (asset: any) => ({
-      ...asset,
-      storedUrl: asset.driveFileId
-        ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
-        : asset.originalStorageId
-          ? await ctx.storage.getUrl(asset.originalStorageId)
-          : null,
-    })),
+    assets.map(async (asset: any) => {
+      const [originalStorageUrl, previewUrl, thumbUrl] = await Promise.all([
+        asset.originalStorageId ? ctx.storage.getUrl(asset.originalStorageId) : null,
+        asset.previewStorageId ? ctx.storage.getUrl(asset.previewStorageId) : null,
+        asset.thumbStorageId ? ctx.storage.getUrl(asset.thumbStorageId) : null,
+      ]);
+
+      return {
+        ...asset,
+        storedUrl: asset.driveFileId
+          ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
+          : originalStorageUrl,
+        previewUrl,
+        thumbUrl,
+      };
+    }),
   );
 
   return {

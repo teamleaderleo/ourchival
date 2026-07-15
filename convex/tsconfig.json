@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2022"
+  },
+  "files": [
+    "./crons.ts",
+    "./mediaDerivatives.ts",
+    "./mediaDerivativesNode.ts",
+    "./schema.ts",
+    "./lib/drive.ts",
+    "./lib/imageAnalysis.ts"
+  ]
+}

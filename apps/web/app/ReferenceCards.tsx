@@ -33,7 +33,11 @@ export function ReferenceCard({
   const [tags] = useReferenceTags(reference.tagIds, reference.tags);
   const batch = useBatchSelectionItem(reference._id);
   const imageUrl =
-    asset?.storedUrl ?? asset?.originalUrl ?? snapshot?.previewImageUrl;
+    asset?.thumbUrl ??
+    asset?.previewUrl ??
+    asset?.storedUrl ??
+    asset?.originalUrl ??
+    snapshot?.previewImageUrl;
   const domain = getDomain(reference.sourceUrl);
   const title = referenceDisplayTitle(reference);
   const sourceLabel =

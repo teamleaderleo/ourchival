@@ -2,9 +2,17 @@ export type ReferenceAsset = {
   _id: string;
   originalUrl?: string;
   storedUrl?: string | null;
+  previewUrl?: string | null;
+  thumbUrl?: string | null;
   storageProvider?: "google_drive" | "convex" | "linked";
   driveFileId?: string;
   driveWebViewLink?: string;
+  width?: number;
+  height?: number;
+  contentHash?: string;
+  perceptualHash?: string;
+  dominantColors?: string[];
+  derivativeStatus?: "processing" | "ready" | "failed";
 };
 
 export type ReferenceTag = {
@@ -145,7 +153,6 @@ export function getSelectedReference(
   selectedId: string | null,
 ) {
   if (!visibleReferences.length) return undefined;
-
   return visibleReferences.find((reference) => reference._id === selectedId) ?? visibleReferences[0];
 }
 

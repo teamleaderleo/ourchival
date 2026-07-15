@@ -92,10 +92,18 @@ export default defineSchema({
     contentHash: v.optional(v.string()),
     perceptualHash: v.optional(v.string()),
     dominantColors: v.array(v.string()),
+    derivativeStatus: v.optional(
+      v.union(
+        v.literal("processing"),
+        v.literal("ready"),
+        v.literal("failed"),
+      ),
+    ),
   })
     .index("by_reference", ["referenceId"])
     .index("by_original_url", ["originalUrl"])
-    .index("by_drive_file_id", ["driveFileId"]),
+    .index("by_drive_file_id", ["driveFileId"])
+    .index("by_derivative_status", ["derivativeStatus"]),
 
   boards: defineTable({
     name: v.string(),
@@ -150,6 +158,7 @@ export default defineSchema({
 
   enrichmentJobs: defineTable({
     referenceId: v.id("references"),
+    assetId: v.optional(v.id("assets")),
     type: v.union(
       v.literal("source_metadata"),
       v.literal("ocr"),
@@ -157,6 +166,7 @@ export default defineSchema({
       v.literal("suggested_tags"),
       v.literal("dominant_colors"),
       v.literal("perceptual_hash"),
+      v.literal("media_derivatives"),
     ),
     status: v.union(
       v.literal("queued"),
