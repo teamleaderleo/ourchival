@@ -58,7 +58,7 @@ export function resolveConvexSiteUrl() {
 
 function installPrivateFetchInterceptor() {
   if (typeof window === "undefined") return;
-  const markedWindow = window as Window & Record<string, unknown>;
+  const markedWindow = window as unknown as Window & Record<string, unknown>;
   if (markedWindow[interceptorMarker]) return;
 
   const originalFetch = window.fetch.bind(window);
