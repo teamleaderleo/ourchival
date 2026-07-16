@@ -11,6 +11,7 @@ export function getOwnerAccessKey() {
 export function saveOwnerAccessKey(value: string) {
   if (typeof window === "undefined") return;
   const key = value.trim();
+  if (getOwnerAccessKey() === key) return;
   if (key) window.localStorage.setItem(accessKeyStorageKey, key);
   else window.localStorage.removeItem(accessKeyStorageKey);
   window.dispatchEvent(new Event(accessChangedEvent));
