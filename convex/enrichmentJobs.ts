@@ -8,6 +8,7 @@ import {
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { fetchLinkMetadata } from "./lib/linkMetadata";
+import { requireOwnerAccess } from "./lib/privateAccess";
 import { applySourceMetadata } from "./lib/sourceMetadata";
 
 const metadataStatus = v.union(
@@ -33,9 +34,11 @@ const metadataValue = v.object({
 
 export const listRecent = query({
   args: {
+    accessKey: v.string(),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const limit = Math.min(100, Math.max(1, Math.floor(args.limit ?? 30)));
     const jobs = await ctx.db
       .query("enrichmentJobs")
@@ -53,9 +56,11 @@ export const listRecent = query({
 
 export const listForReference = query({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     return await ctx.db
       .query("enrichmentJobs")
       .withIndex("by_reference", (q) => q.eq("referenceId", args.referenceId))
@@ -66,9 +71,11 @@ export const listForReference = query({
 
 export const enqueueSourceMetadata = mutation({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const reference = await ctx.db.get(args.referenceId);
     if (!reference) throw new Error("Reference not found.");
 
@@ -103,9 +110,11 @@ export const enqueueSourceMetadata = mutation({
 
 export const retry = mutation({
   args: {
+    accessKey: v.string(),
     jobId: v.id("enrichmentJobs"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Enrichment job not found.");
     if (job.status === "queued" || job.status === "running") return job;
@@ -135,9 +144,11 @@ export const retry = mutation({
 
 export const dismiss = mutation({
   args: {
+    accessKey: v.string(),
     jobId: v.id("enrichmentJobs"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const job = await ctx.db.get(args.jobId);
     if (!job) return false;
     if (job.status === "running") {
