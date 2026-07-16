@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import type { VaultView } from "./VaultNavigation";
+import { withOwnerAccess } from "./privateAccess";
 
 export type SavedSearch = {
   _id: string;
@@ -14,17 +15,18 @@ export type SavedSearch = {
   updatedAt: number;
 };
 
-type SaveSearchArgs = {
+type AccessArgs = { accessKey: string };
+type SaveSearchArgs = AccessArgs & {
   name: string;
   query: string;
   view: VaultView;
 };
 type UpdateSavedSearchArgs = SaveSearchArgs & { savedSearchId: string };
-type SavedSearchIdArgs = { savedSearchId: string };
+type SavedSearchIdArgs = AccessArgs & { savedSearchId: string };
 
 const listSavedSearchesReference = makeFunctionReference<
   "query",
-  {},
+  AccessArgs,
   SavedSearch[]
 >("savedSearches:list");
 const createSavedSearchReference = makeFunctionReference<
@@ -62,20 +64,25 @@ export function useSavedSearches() {
   return searches;
 }
 
-export async function createSavedSearch(args: SaveSearchArgs) {
-  await getClient().mutation(createSavedSearchReference, args);
+export async function createSavedSearch(
+  args: Omit<SaveSearchArgs, "accessKey">,
+) {
+  await getClient().mutation(createSavedSearchReference, withOwnerAccess(args));
   return await refreshSearches();
 }
 
-export async function updateSavedSearch(args: UpdateSavedSearchArgs) {
-  await getClient().mutation(updateSavedSearchReference, args);
+export async function updateSavedSearch(
+  args: Omit<UpdateSavedSearchArgs, "accessKey">,
+) {
+  await getClient().mutation(updateSavedSearchReference, withOwnerAccess(args));
   return await refreshSearches();
 }
 
 export async function removeSavedSearch(savedSearchId: string) {
-  const result = await getClient().mutation(removeSavedSearchReference, {
-    savedSearchId,
-  });
+  const result = await getClient().mutation(
+    removeSavedSearchReference,
+    withOwnerAccess({ savedSearchId }),
+  );
   await refreshSearches();
   return result;
 }
@@ -92,7 +99,7 @@ async function loadSearches() {
   if (searchesCache) return searchesCache;
   if (!searchesPromise) {
     searchesPromise = getClient()
-      .query(listSavedSearchesReference, {})
+      .query(listSavedSearchesReference, withOwnerAccess({}))
       .then((searches) => {
         searchesCache = searches;
         return searches;
