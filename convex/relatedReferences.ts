@@ -1,5 +1,6 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireOwnerAccess } from "./lib/privateAccess";
 import {
   scoreRelatedReference,
   type RelatedReferenceInput,
@@ -8,10 +9,12 @@ import {
 
 export const find = query({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const target = await ctx.db.get(args.referenceId);
     if (!target) throw new Error("Reference not found.");
     const limit = Math.min(16, Math.max(1, Math.floor(args.limit ?? 8)));
