@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireOwnerAccess } from "./lib/privateAccess";
 
 const vaultView = v.union(
   v.literal("inbox"),
@@ -13,8 +14,9 @@ const vaultView = v.union(
 );
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { accessKey: v.string() },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const searches = await ctx.db.query("savedSearches").collect();
     return searches.sort((left, right) => right.updatedAt - left.updatedAt);
   },
@@ -22,11 +24,13 @@ export const list = query({
 
 export const create = mutation({
   args: {
+    accessKey: v.string(),
     name: v.string(),
     query: v.string(),
     view: vaultView,
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const name = cleanSavedSearchName(args.name);
     const searchQuery = cleanSavedSearchQuery(args.query);
     if (!name) throw new Error("Saved search name is required.");
@@ -49,12 +53,14 @@ export const create = mutation({
 
 export const update = mutation({
   args: {
+    accessKey: v.string(),
     savedSearchId: v.id("savedSearches"),
     name: v.string(),
     query: v.string(),
     view: vaultView,
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const search = await ctx.db.get(args.savedSearchId);
     if (!search) throw new Error("Saved search not found.");
 
@@ -78,9 +84,11 @@ export const update = mutation({
 
 export const remove = mutation({
   args: {
+    accessKey: v.string(),
     savedSearchId: v.id("savedSearches"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const search = await ctx.db.get(args.savedSearchId);
     if (!search) return false;
     await ctx.db.delete(args.savedSearchId);
