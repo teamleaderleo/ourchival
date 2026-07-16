@@ -247,4 +247,24 @@ export default defineSchema({
     jsonMetadata: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_reference", ["referenceId"]),
+
+  clipperPairingGrants: defineTable({
+    codeHash: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+  })
+    .index("by_code_hash", ["codeHash"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  clipperDevices: defineTable({
+    name: v.string(),
+    tokenHash: v.string(),
+    createdAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    extensionVersion: v.optional(v.string()),
+  })
+    .index("by_token_hash", ["tokenHash"])
+    .index("by_created_at", ["createdAt"]),
 });
