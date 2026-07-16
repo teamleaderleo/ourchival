@@ -2,6 +2,7 @@
 
 const accessKeyStorageKey = "ourchivalOwnerAccessKey";
 const accessChangedEvent = "ourchival-access-changed";
+const interceptorMarker = "__ourchivalPrivateFetchInstalled";
 
 export function getOwnerAccessKey() {
   if (typeof window === "undefined") return "";
@@ -42,7 +43,7 @@ export function withOwnerAccess<T extends Record<string, unknown>>(args: T) {
 }
 
 export async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  const headers = new Headers(init.headers);
+  const headers = mergedHeaders(input, init.headers);
   headers.set("Authorization", `Bearer ${requireOwnerAccessKey()}`);
   return await fetch(input, { ...init, headers });
 }
@@ -54,3 +55,39 @@ export function resolveConvexSiteUrl() {
   if (!convexUrl) return undefined;
   return convexUrl.replace(/\.convex\.cloud\/?$/, ".convex.site");
 }
+
+function installPrivateFetchInterceptor() {
+  if (typeof window === "undefined") return;
+  const markedWindow = window as Window & Record<string, unknown>;
+  if (markedWindow[interceptorMarker]) return;
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (input, init = {}) => {
+    const siteUrl = resolveConvexSiteUrl();
+    const accessKey = getOwnerAccessKey();
+    if (!siteUrl || !accessKey || !requestUrl(input).startsWith(siteUrl)) {
+      return await originalFetch(input, init);
+    }
+
+    const headers = mergedHeaders(input, init.headers);
+    if (!headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${accessKey}`);
+    }
+    return await originalFetch(input, { ...init, headers });
+  };
+  markedWindow[interceptorMarker] = true;
+}
+
+function mergedHeaders(input: RequestInfo | URL, initHeaders?: HeadersInit) {
+  const headers = new Headers(input instanceof Request ? input.headers : undefined);
+  new Headers(initHeaders).forEach((value, key) => headers.set(key, value));
+  return headers;
+}
+
+function requestUrl(input: RequestInfo | URL) {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
+installPrivateFetchInterceptor();
