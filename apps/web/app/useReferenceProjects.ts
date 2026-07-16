@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
+import { withOwnerAccess } from "./privateAccess";
 
 export type ProjectStatus = "active" | "paused" | "finished" | "archived";
 
@@ -28,38 +29,47 @@ export type ProjectReferenceUse = {
   project: ReferenceProject;
 };
 
-type CreateProjectArgs = {
+type AccessArgs = { accessKey: string };
+type CreateProjectArgs = AccessArgs & {
   name: string;
   description?: string;
   status?: ProjectStatus;
 };
-type UpdateProjectArgs = {
+type UpdateProjectArgs = AccessArgs & {
   projectId: string;
   name: string;
   description?: string;
   status: ProjectStatus;
 };
-type ProjectIdArgs = { projectId: string };
-type ReferenceIdArgs = { referenceId: string };
-type UpsertReferenceArgs = {
+type ProjectIdArgs = AccessArgs & { projectId: string };
+type ReferenceIdArgs = AccessArgs & { referenceId: string };
+type UpsertReferenceArgs = AccessArgs & {
   projectId: string;
   referenceId: string;
   assetId?: string;
   reason?: string;
   notes?: string;
 };
-type UpsertReferencesArgs = {
+type UpsertReferencesArgs = AccessArgs & {
   projectId: string;
   referenceIds: string[];
   reason?: string;
   notes?: string;
 };
-type ProjectReferenceArgs = { projectId: string; referenceId: string };
-type ProjectReferencesArgs = { projectId: string; referenceIds: string[] };
+type ProjectReferenceArgs = AccessArgs & {
+  projectId: string;
+  referenceId: string;
+};
+type ProjectReferencesArgs = AccessArgs & {
+  projectId: string;
+  referenceIds: string[];
+};
 
-const listProjectsReference = makeFunctionReference<"query", {}, ReferenceProject[]>(
-  "projects:list",
-);
+const listProjectsReference = makeFunctionReference<
+  "query",
+  AccessArgs,
+  ReferenceProject[]
+>("projects:list");
 const createProjectReference = makeFunctionReference<
   "mutation",
   CreateProjectArgs,
@@ -126,7 +136,7 @@ export function useProjectUses(referenceId: string) {
   useEffect(() => {
     let cancelled = false;
     void getClient()
-      .query(listForReferenceReference, { referenceId })
+      .query(listForReferenceReference, withOwnerAccess({ referenceId }))
       .then((items) => {
         if (!cancelled) setUses(items);
       })
@@ -146,7 +156,10 @@ export async function createReferenceProject(
   description?: string,
   status: ProjectStatus = "active",
 ) {
-  await getClient().mutation(createProjectReference, { name, description, status });
+  await getClient().mutation(
+    createProjectReference,
+    withOwnerAccess({ name, description, status }),
+  );
   return await refreshProjects();
 }
 
@@ -154,42 +167,54 @@ export async function updateReferenceProject(
   projectId: string,
   args: { name: string; description?: string; status: ProjectStatus },
 ) {
-  await getClient().mutation(updateProjectReference, { projectId, ...args });
+  await getClient().mutation(
+    updateProjectReference,
+    withOwnerAccess({ projectId, ...args }),
+  );
   return await refreshProjects();
 }
 
 export async function removeReferenceProject(projectId: string) {
-  const result = await getClient().mutation(removeProjectReference, { projectId });
+  const result = await getClient().mutation(
+    removeProjectReference,
+    withOwnerAccess({ projectId }),
+  );
   await refreshProjects();
   return result;
 }
 
-export async function saveProjectUse(args: UpsertReferenceArgs) {
-  const result = await getClient().mutation(upsertReferenceReference, args);
+export async function saveProjectUse(args: Omit<UpsertReferenceArgs, "accessKey">) {
+  const result = await getClient().mutation(
+    upsertReferenceReference,
+    withOwnerAccess(args),
+  );
   await refreshProjects();
   return result;
 }
 
-export async function saveProjectUses(args: UpsertReferencesArgs) {
-  const result = await getClient().mutation(upsertReferencesReference, args);
+export async function saveProjectUses(args: Omit<UpsertReferencesArgs, "accessKey">) {
+  const result = await getClient().mutation(
+    upsertReferencesReference,
+    withOwnerAccess(args),
+  );
   await refreshProjects();
   return result;
 }
 
 export async function removeProjectUse(projectId: string, referenceId: string) {
-  const result = await getClient().mutation(removeReferenceReference, {
-    projectId,
-    referenceId,
-  });
+  const result = await getClient().mutation(
+    removeReferenceReference,
+    withOwnerAccess({ projectId, referenceId }),
+  );
   await refreshProjects();
   return result;
 }
 
 export async function removeProjectUses(projectId: string, referenceIds: string[]) {
-  const result = await getClient().mutation(removeReferencesReference, {
-    projectId,
-    referenceIds,
-  });
+  const result = await getClient().mutation(
+    removeReferencesReference,
+    withOwnerAccess({ projectId, referenceIds }),
+  );
   await refreshProjects();
   return result;
 }
@@ -205,10 +230,12 @@ async function refreshProjects() {
 async function loadProjects() {
   if (projectsCache) return projectsCache;
   if (!projectsPromise) {
-    projectsPromise = getClient().query(listProjectsReference, {}).then((projects) => {
-      projectsCache = projects;
-      return projects;
-    });
+    projectsPromise = getClient()
+      .query(listProjectsReference, withOwnerAccess({}))
+      .then((projects) => {
+        projectsCache = projects;
+        return projects;
+      });
   }
   return await projectsPromise;
 }
