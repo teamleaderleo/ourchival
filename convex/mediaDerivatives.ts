@@ -5,6 +5,7 @@ import {
   type FunctionReference,
 } from "convex/server";
 import { v } from "convex/values";
+import { requireOwnerAccess } from "./lib/privateAccess";
 
 const defaultBatchSize = 4;
 const maxBatchSize = 12;
@@ -23,10 +24,12 @@ const processMediaDerivatives = makeFunctionReference<
 
 export const enqueue = mutation({
   args: {
+    accessKey: v.string(),
     assetId: v.id("assets"),
     force: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const asset = await ctx.db.get(args.assetId);
     if (!asset) throw new Error("Asset not found.");
     if (!hasStoredOriginal(asset)) {
@@ -52,9 +55,11 @@ export const enqueue = mutation({
 
 export const enqueueMissing = mutation({
   args: {
+    accessKey: v.string(),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     return await queueMissingAssets(ctx, normalizedLimit(args.limit));
   },
 });
