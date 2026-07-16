@@ -6,6 +6,8 @@ import {
   LAST_CAPTURE_KEY,
   LAST_RESULT_KEY,
   normalizeCaptureEndpoint,
+  normalizePairingEndpoint,
+  normalizeSiteRoot,
   saveSettings,
   SETTINGS_KEY,
   type BatchCaptureSource,
@@ -20,6 +22,14 @@ type RuntimeResponse = {
   closed?: number;
 };
 
+type PairingResponse = {
+  ok?: boolean;
+  error?: string;
+  token?: string;
+  deviceId?: string;
+  deviceName?: string;
+};
+
 let transientMessage = "";
 
 async function render() {
@@ -32,9 +42,9 @@ async function render() {
   const result = state[LAST_RESULT_KEY] as CaptureResult | undefined;
   const batch = state[LAST_BATCH_KEY] as BatchCaptureState | undefined;
   const normalizedEndpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
-  const endpointReady = Boolean(normalizedEndpoint);
+  const connected = Boolean(normalizedEndpoint && settings.deviceToken);
   const batchRunning = Boolean(batch?.running);
-  const disabled = !endpointReady || batchRunning ? "disabled" : "";
+  const disabled = !connected || batchRunning ? "disabled" : "";
 
   root.innerHTML = `
     <main>
@@ -52,8 +62,8 @@ async function render() {
             <p class="eyebrow">Tab dump</p>
             <h2>Clear browser backlog</h2>
           </div>
-          <span class="endpoint-state ${endpointReady ? "ready" : ""}">
-            ${endpointReady ? "Connected" : "Setup needed"}
+          <span class="endpoint-state ${connected ? "ready" : ""}">
+            ${connected ? "Paired" : "Pairing needed"}
           </span>
         </div>
         <div class="action-grid">
@@ -96,22 +106,44 @@ async function render() {
           <h2>${result?.alreadySaved ? "Already in Reliquary" : result?.ok ? "Last capture worked" : "Capture status"}</h2>
           ${result?.savedAt ? `<time>${escapeHtml(formatTime(result.savedAt))}</time>` : ""}
         </div>
-        <p>${escapeHtml(transientMessage || result?.message || "Right-click an image or use a dump action above.")}</p>
+        <p>${escapeHtml(transientMessage || result?.message || (connected ? "Right-click an image or use a dump action above." : "Create a pairing code in Ourchival, then connect this browser."))}</p>
       </section>
 
-      <details class="settings-panel" ${endpointReady ? "" : "open"}>
-        <summary>Clipper setup</summary>
-        <form id="settings-form">
-          <label for="endpoint">Convex site URL</label>
-          <input
-            id="endpoint"
-            name="endpoint"
-            placeholder="https://your-deployment.convex.site"
-            value="${escapeHtml(settings.captureEndpoint ?? "")}"
-          />
-          <button type="submit">Save endpoint</button>
-          <p class="hint">Using: ${escapeHtml(normalizedEndpoint ?? "missing endpoint")}</p>
-        </form>
+      <details class="settings-panel" ${connected ? "" : "open"}>
+        <summary>${connected ? "Clipper connection" : "Pair this Clipper"}</summary>
+        ${connected ? `
+          <div class="connected-device">
+            <p><strong>${escapeHtml(settings.deviceName || "Ourchival Clipper")}</strong></p>
+            <p class="hint">Captures are authorized with a revocable device credential.</p>
+            <button id="disconnect-device" type="button">Disconnect this browser</button>
+          </div>
+        ` : `
+          <form id="pairing-form">
+            <label for="endpoint">Convex site URL</label>
+            <input
+              id="endpoint"
+              name="endpoint"
+              placeholder="https://your-deployment.convex.site"
+              value="${escapeHtml(normalizeSiteRoot(settings.captureEndpoint) ?? "")}"
+            />
+            <label for="device-name">Device name</label>
+            <input
+              id="device-name"
+              name="device-name"
+              placeholder="Leo's Edge"
+              value="${escapeHtml(settings.deviceName ?? defaultDeviceName())}"
+            />
+            <label for="pairing-code">One-time pairing code</label>
+            <input
+              id="pairing-code"
+              name="pairing-code"
+              placeholder="ABCDE-23456"
+              autocomplete="one-time-code"
+            />
+            <button type="submit">Pair Clipper</button>
+            <p class="hint">Codes expire after ten minutes and work once.</p>
+          </form>
+        `}
       </details>
 
       <details class="capture-details">
@@ -135,12 +167,10 @@ async function render() {
     const form = event.currentTarget as HTMLFormElement;
     const entries = parseUrlList(String(new FormData(form).get("url-list") ?? ""));
     const feedback = document.getElementById("import-feedback");
-
     if (entries.length === 0) {
       if (feedback) feedback.textContent = "Paste at least one HTTP or HTTPS URL.";
       return;
     }
-
     transientMessage = `Starting import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
     void sendRuntimeMessage({ type: "OURCHIVAL_CAPTURE_URLS", source: "url_list", entries });
   });
@@ -150,14 +180,12 @@ async function render() {
     const file = input.files?.[0];
     const feedback = document.getElementById("import-feedback");
     if (!file) return;
-
     try {
       const entries = parseBookmarksHtml(await file.text());
       if (entries.length === 0) {
         if (feedback) feedback.textContent = "The file contained no HTTP or HTTPS bookmarks.";
         return;
       }
-
       transientMessage = `Starting bookmark import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
       void sendRuntimeMessage({ type: "OURCHIVAL_CAPTURE_URLS", source: "bookmarks", entries });
     } catch (error) {
@@ -179,11 +207,9 @@ async function render() {
   document.getElementById("retry-failures")?.addEventListener("click", () => {
     if (!batch?.failures.length) return;
     transientMessage = `Retrying ${batch.failures.length} failed ${batch.failures.length === 1 ? "capture" : "captures"}…`;
-
     const richPayloads = batch.failures
       .map((failure) => failure.payload)
       .filter((payload): payload is CapturePayload => Boolean(payload));
-
     if (richPayloads.length === batch.failures.length) {
       void sendRuntimeMessage({
         type: "OURCHIVAL_CAPTURE_PAYLOADS",
@@ -192,7 +218,6 @@ async function render() {
       });
       return;
     }
-
     void sendRuntimeMessage({
       type: "OURCHIVAL_CAPTURE_URLS",
       source: "retry",
@@ -203,21 +228,61 @@ async function render() {
     });
   });
 
-  document.getElementById("settings-form")?.addEventListener("submit", async (event) => {
+  document.getElementById("pairing-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
-    const captureEndpoint = String(new FormData(form).get("endpoint") ?? "");
+    const data = new FormData(form);
+    const captureEndpoint = String(data.get("endpoint") ?? "");
+    const pairingEndpoint = normalizePairingEndpoint(captureEndpoint);
+    const code = String(data.get("pairing-code") ?? "").trim();
+    const deviceName = String(data.get("device-name") ?? "").trim();
+    if (!pairingEndpoint || !code) {
+      transientMessage = "Enter the Convex site URL and pairing code.";
+      await render();
+      return;
+    }
 
-    await saveSettings({ captureEndpoint });
+    transientMessage = "Pairing this browser…";
+    try {
+      const response = await fetch(pairingEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          deviceName,
+          extensionVersion: chrome.runtime.getManifest().version,
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as PairingResponse;
+      if (!response.ok || body.ok === false || !body.token) {
+        throw new Error(body.error || response.statusText);
+      }
+      await saveSettings({
+        captureEndpoint: normalizeSiteRoot(captureEndpoint),
+        deviceToken: body.token,
+        deviceName: body.deviceName || deviceName || defaultDeviceName(),
+      });
+      await chrome.action.setBadgeText({ text: "" });
+      transientMessage = "Clipper paired.";
+    } catch (error) {
+      transientMessage = error instanceof Error ? error.message : "Pairing failed.";
+    }
+    await render();
+  });
+
+  document.getElementById("disconnect-device")?.addEventListener("click", async () => {
+    await saveSettings({
+      captureEndpoint: normalizeSiteRoot(settings.captureEndpoint),
+      deviceName: settings.deviceName,
+    });
     await chrome.action.setBadgeText({ text: "" });
-    transientMessage = "Endpoint saved.";
+    transientMessage = "This browser is disconnected. Revoke it in Ourchival as well if it was lost.";
     await render();
   });
 }
 
 function renderBatch(batch: BatchCaptureState | undefined) {
   if (!batch) return "";
-
   const progress = batch.total
     ? Math.round((batch.completed / batch.total) * 100)
     : batch.running
@@ -294,6 +359,11 @@ function batchSourceLabel(source: BatchCaptureSource) {
   return "Pasted links";
 }
 
+function defaultDeviceName() {
+  const platform = navigator.platform?.trim();
+  return platform ? `Ourchival on ${platform}` : "Ourchival Clipper";
+}
+
 function formatTime(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
@@ -310,7 +380,6 @@ function escapeHtml(value: string) {
       '"': "&quot;",
       "'": "&#039;",
     };
-
     return entities[char] ?? char;
   });
 }
