@@ -1,9 +1,11 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireOwnerAccess } from "./lib/privateAccess";
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { accessKey: v.string() },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const [boards, counts] = await Promise.all([
       ctx.db.query("boards").order("desc").collect(),
       countBoardReferences(ctx),
@@ -18,10 +20,12 @@ export const list = query({
 
 export const create = mutation({
   args: {
+    accessKey: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const name = cleanName(args.name);
     if (!name) throw new Error("Board name is required.");
     await assertUniqueName(ctx, name);
@@ -41,11 +45,13 @@ export const create = mutation({
 
 export const update = mutation({
   args: {
+    accessKey: v.string(),
     boardId: v.id("boards"),
     name: v.string(),
     description: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const board = await ctx.db.get(args.boardId);
     if (!board) throw new Error("Board not found.");
 
@@ -66,9 +72,11 @@ export const update = mutation({
 
 export const remove = mutation({
   args: {
+    accessKey: v.string(),
     boardId: v.id("boards"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const board = await ctx.db.get(args.boardId);
     if (!board) return { removed: false, referencesUpdated: 0 };
 
@@ -100,11 +108,13 @@ export const remove = mutation({
 
 export const updateReference = mutation({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
     addBoardIds: v.array(v.id("boards")),
     removeBoardIds: v.array(v.id("boards")),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const reference = await ctx.db.get(args.referenceId);
     if (!reference) throw new Error("Reference not found.");
 
@@ -120,11 +130,13 @@ export const updateReference = mutation({
 
 export const updateReferences = mutation({
   args: {
+    accessKey: v.string(),
     referenceIds: v.array(v.id("references")),
     boardId: v.id("boards"),
     mode: v.union(v.literal("add"), v.literal("remove")),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
     if (args.mode === "add" && !(await ctx.db.get(args.boardId))) {
       throw new Error("Board not found.");
@@ -139,8 +151,10 @@ export const updateReferences = mutation({
         args.mode === "add" ? [args.boardId] : [],
         args.mode === "remove" ? [args.boardId] : [],
       );
-      if (nextBoardIds.length === reference.boardIds.length &&
-          nextBoardIds.every((boardId, index) => boardId === reference.boardIds[index])) {
+      if (
+        nextBoardIds.length === reference.boardIds.length &&
+        nextBoardIds.every((boardId, index) => boardId === reference.boardIds[index])
+      ) {
         continue;
       }
       await ctx.db.patch(referenceId, { boardIds: nextBoardIds });
