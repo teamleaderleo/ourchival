@@ -63,6 +63,8 @@ export type BatchCaptureState = {
 
 export type ExtensionSettings = {
   captureEndpoint?: string;
+  deviceToken?: string;
+  deviceName?: string;
 };
 
 export const SETTINGS_KEY = "ourchivalSettings";
@@ -101,10 +103,19 @@ export async function getPopupState() {
 }
 
 export function normalizeCaptureEndpoint(value: string | undefined) {
+  const root = normalizeSiteRoot(value);
+  return root ? `${root}/capture` : undefined;
+}
+
+export function normalizePairingEndpoint(value: string | undefined) {
+  const root = normalizeSiteRoot(value);
+  return root ? `${root}/clipper-exchange` : undefined;
+}
+
+export function normalizeSiteRoot(value: string | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
-
-  return trimmed.endsWith("/capture")
-    ? trimmed
-    : `${trimmed.replace(/\/$/, "")}/capture`;
+  return trimmed
+    .replace(/\/(capture|clipper-exchange)\/?$/i, "")
+    .replace(/\/$/, "");
 }
