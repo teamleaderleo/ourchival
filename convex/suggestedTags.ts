@@ -7,6 +7,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { requireOwnerAccess } from "./lib/privateAccess";
 import { getTagsByIds, slugifyTagName, updateReferenceTags } from "./lib/tags";
 import {
   deriveSuggestedTags,
@@ -15,9 +16,11 @@ import {
 
 export const listForReference = query({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     return await ctx.db
       .query("enrichmentSuggestions")
       .withIndex("by_reference", (q) => q.eq("referenceId", args.referenceId))
@@ -28,9 +31,11 @@ export const listForReference = query({
 
 export const enqueue = mutation({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const reference = await ctx.db.get(args.referenceId);
     if (!reference || reference.deleted) throw new Error("Reference not found.");
     const result = await enqueueOne(ctx, args.referenceId);
@@ -40,9 +45,11 @@ export const enqueue = mutation({
 
 export const enqueueMany = mutation({
   args: {
+    accessKey: v.string(),
     referenceIds: v.array(v.id("references")),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
     let queued = 0;
     let existing = 0;
@@ -65,10 +72,12 @@ export const enqueueMany = mutation({
 
 export const accept = mutation({
   args: {
+    accessKey: v.string(),
     suggestionId: v.id("enrichmentSuggestions"),
     value: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const suggestion = await ctx.db.get(args.suggestionId);
     if (!suggestion) throw new Error("Suggestion not found.");
     const value = cleanSuggestionValue(args.value ?? suggestion.value);
@@ -90,9 +99,11 @@ export const accept = mutation({
 
 export const acceptAll = mutation({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const suggestions = await ctx.db
       .query("enrichmentSuggestions")
       .withIndex("by_reference_status", (q) =>
@@ -118,9 +129,11 @@ export const acceptAll = mutation({
 
 export const dismiss = mutation({
   args: {
+    accessKey: v.string(),
     suggestionId: v.id("enrichmentSuggestions"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const suggestion = await ctx.db.get(args.suggestionId);
     if (!suggestion) return false;
     await ctx.db.patch(suggestion._id, {
