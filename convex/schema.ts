@@ -248,6 +248,37 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_reference", ["referenceId"]),
 
+  captureSessions: defineTable({
+    sessionKey: v.string(),
+    source: v.string(),
+    kind: v.union(v.literal("bundle"), v.literal("import")),
+    label: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    expectedCount: v.number(),
+    completedCount: v.number(),
+    savedCount: v.number(),
+    duplicateCount: v.number(),
+    skippedCount: v.number(),
+    failedCount: v.number(),
+    status: v.union(
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("interrupted"),
+    ),
+    reviewState: v.union(
+      v.literal("unreviewed"),
+      v.literal("reviewing"),
+      v.literal("completed"),
+      v.literal("deferred"),
+    ),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_session_key", ["sessionKey"])
+    .index("by_updated_at", ["updatedAt"]),
+
   clipperPairingGrants: defineTable({
     codeHash: v.string(),
     createdAt: v.number(),
