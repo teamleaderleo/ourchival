@@ -66,7 +66,9 @@ pnpm dev
 
 For full local instructions, see [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md).
 
-For private owner access and revocable Clipper pairing, see [`docs/PRIVATE_ACCESS.md`](docs/PRIVATE_ACCESS.md).
+For Google sign-in through WorkOS AuthKit, see [`docs/WORKOS_AUTH.md`](docs/WORKOS_AUTH.md).
+
+For the complete private-access and revocable Clipper model, see [`docs/PRIVATE_ACCESS.md`](docs/PRIVATE_ACCESS.md).
 
 For Google Drive storage, see [`docs/GOOGLE_DRIVE.md`](docs/GOOGLE_DRIVE.md).
 
@@ -74,7 +76,7 @@ For generated previews, thumbnails, hashes, and palettes, see [`docs/MEDIA_PIPEL
 
 For the links vault direction, see [`docs/LINKS_VAULT.md`](docs/LINKS_VAULT.md).
 
-Copy `.env.example` to `.env.local` and fill in your Convex values.
+Copy `.env.example` to `.env.local` and fill in your Convex and WorkOS values.
 
 ## Scripts
 
@@ -106,7 +108,7 @@ GET    /clipper-devices
 DELETE /clipper-devices?id=...
 ```
 
-The web vault sends the owner access key through the `Authorization` header. Ourchival Clipper uses a separate paired device credential for `/capture`. Drive-backed images render through `/drive-file` so originals can stay private. Link-only captures save metadata without creating a Drive file.
+The web vault normally sends a short-lived signed Ourchival session created from an allowlisted WorkOS identity. The recovery key remains a break-glass alternative. Ourchival Clipper uses a separate paired device credential for `/capture`. Drive-backed images render through `/drive-file` so originals can stay private. Link-only captures save metadata without creating a Drive file.
 
 ## Storage principle
 
