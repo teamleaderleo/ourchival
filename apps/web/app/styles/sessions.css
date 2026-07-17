@@ -1,0 +1,266 @@
+.capture-session-launcher {
+  position: fixed;
+  z-index: 60;
+  left: 20px;
+  bottom: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel), transparent 4%);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.capture-session-launcher > span {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 760;
+}
+
+.capture-session-drawer {
+  position: fixed;
+  z-index: 70;
+  left: 20px;
+  bottom: 74px;
+  display: grid;
+  width: min(620px, calc(100vw - 40px));
+  max-height: min(760px, calc(100vh - 100px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--panel), transparent 1%);
+  box-shadow: var(--shadow);
+}
+
+.capture-session-drawer > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 16px 18px;
+}
+
+.capture-session-drawer > header h2 {
+  margin: 3px 0 0;
+  font-size: 1.08rem;
+}
+
+.capture-session-drawer > header > div:last-child {
+  display: flex;
+  gap: 7px;
+}
+
+.capture-session-list,
+.capture-session-detail {
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.capture-session-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 2px 8px;
+}
+
+.capture-session-list-heading p {
+  max-width: 390px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.capture-session-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 11px;
+  background: var(--panel-raised);
+  color: inherit;
+  text-align: left;
+}
+
+.capture-session-row:hover {
+  border-color: color-mix(in srgb, var(--accent), transparent 48%);
+  background: color-mix(in srgb, var(--accent-soft), var(--panel-raised) 60%);
+}
+
+.capture-session-kind {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 1.15rem;
+}
+
+.capture-session-kind.import {
+  background: color-mix(in srgb, var(--success-soft), var(--panel) 36%);
+  color: var(--success);
+}
+
+.capture-session-row-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.capture-session-row-copy strong,
+.capture-session-reference-list strong {
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capture-session-row-copy small,
+.capture-session-row-copy > span,
+.capture-session-reference-list article > div > span,
+.capture-session-summary span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.capture-session-review {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 730;
+}
+
+.capture-session-review.unreviewed { background: var(--accent-soft); color: var(--accent-strong); }
+.capture-session-review.completed { background: var(--success-soft); color: var(--success); }
+.capture-session-review.deferred { background: var(--warning-soft); color: var(--warning); }
+
+.capture-session-summary {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 13px;
+  background: var(--panel-raised);
+}
+
+.capture-session-summary > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.capture-session-summary > div:first-child > div {
+  display: grid;
+  gap: 3px;
+}
+
+.capture-session-summary dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.capture-session-summary dl > div {
+  display: grid;
+  gap: 3px;
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--panel-soft);
+}
+
+.capture-session-summary dt { color: var(--muted); font-size: 0.66rem; }
+.capture-session-summary dd { margin: 0; color: var(--text); font-weight: 740; }
+
+.capture-session-review-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.capture-session-reference-list {
+  display: grid;
+  gap: 8px;
+}
+
+.capture-session-reference-list article {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 9px;
+  background: var(--panel-raised);
+}
+
+.capture-session-reference-list .thumb {
+  width: 58px;
+  height: 58px;
+  border-radius: 9px;
+  object-fit: cover;
+}
+
+.capture-session-reference-list article > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.capture-session-reference-list p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.capture-session-message,
+.capture-session-empty {
+  margin: 0;
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.capture-session-message.error { color: var(--danger); }
+
+@media (max-width: 680px) {
+  .capture-session-launcher { left: 12px; bottom: 12px; }
+  .capture-session-drawer {
+    left: 12px;
+    bottom: 66px;
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 86px);
+  }
+  .capture-session-review-actions { grid-template-columns: 1fr; }
+  .capture-session-summary dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .capture-session-reference-list article { grid-template-columns: 50px minmax(0, 1fr); }
+  .capture-session-reference-list article > a { grid-column: 1 / -1; }
+  .capture-session-reference-list .thumb { width: 50px; height: 50px; }
+}
