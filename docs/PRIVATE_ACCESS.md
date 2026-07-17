@@ -16,19 +16,15 @@ Allow the web app origins that should call Convex HTTP actions:
 npx convex env set OURCHIVAL_ALLOWED_ORIGINS "http://localhost:3000,https://app.ourchival.com"
 ```
 
+Set the variables separately for development and production deployments. Add `--prod` to the commands when configuring production.
+
 The owner key belongs only in the Convex environment and the owner's browser. Do not put its value in `NEXT_PUBLIC_*` variables, extension source, commits, logs, or screenshots.
 
 ## Unlock the web vault
 
 Open the web app and enter the owner key. The browser stores it in local storage until **Lock** is selected. The vault verifies the key against `/auth-check` before rendering references.
 
-The access key currently protects the HTTP archive surface:
-
-- `/references`
-- `/reference`
-- `/reference-metadata`
-- `/drive-file`
-- owner-side Clipper pairing and device management
+The owner key protects the HTTP archive, private Drive proxy, organization panels, saved searches, enrichment controls, related-reference browsing, visual similarity, capture-session records, and owner-side Clipper management.
 
 ## Pair Ourchival Clipper
 
@@ -37,6 +33,13 @@ The access key currently protects the HTTP archive surface:
 3. Create a pairing code.
 4. Open the Ourchival Clipper popup.
 5. Enter the Convex site URL, a recognizable browser name, and the pairing code.
+6. Select **Pair browser**.
+
+Use the Convex HTTP Actions site URL without `/capture`, for example:
+
+```txt
+https://your-deployment.convex.site
+```
 
 Pairing codes expire after ten minutes and work once. The extension exchanges the code for a random device token. Only a SHA-256 digest of that token is stored in Convex.
 
@@ -50,15 +53,13 @@ Open **Clipper access** in the web vault and revoke the device. Its next capture
 
 `OURCHIVAL_ALLOWED_ORIGINS` controls web origins. Chrome extension origins and local development origins are accepted by the private HTTP helper. Responses vary by Origin and allow the `Authorization` header.
 
-## Current migration boundary
+## Current release boundary
 
-This is the first security slice. HTTP reads, edits, metadata refreshes, Drive-file proxying, captures, pairing, and revocation use private credentials.
-
-Several web panels still call public Convex query and mutation functions directly. Those functions need an owner access argument or a future authenticated Convex identity before this issue can be considered complete. Keep the pull request in draft until those calls are covered and the production smoke test passes.
+This release establishes one private owner principal and separately revocable Clipper devices. Records do not yet carry multiple user identities because the current product is a personal vault. A future collaboration phase can replace the owner key with authenticated accounts and owner-scoped data without changing the pairing model's core separation between web access and capture devices.
 
 ## Release verification
 
-Before deployment:
+Before using a deployment:
 
 1. Run tests, workspace typechecking, extension build, and web build.
 2. Set both Convex environment variables above.
@@ -66,5 +67,6 @@ Before deployment:
 4. Unlock with the correct key and load references.
 5. Create a pairing code and pair the extension.
 6. Capture an image and confirm it appears in Inbox.
-7. Revoke the device and confirm the next capture is rejected.
-8. Lock the vault and confirm archive requests stop succeeding from the web UI.
+7. Open a private Drive-backed original when Drive is configured.
+8. Revoke the device and confirm the next capture is rejected.
+9. Lock the vault and confirm archive requests stop succeeding from the web UI.
