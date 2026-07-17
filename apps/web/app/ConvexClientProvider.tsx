@@ -6,8 +6,7 @@ import {
   useAccessToken,
   useAuth,
 } from "@workos-inc/authkit-nextjs/components";
-import { ConvexReactClient } from "convex/browser";
-import { ConvexProviderWithAuth } from "convex/react";
+import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 
 const fallbackConvexUrl = "https://placeholder.convex.cloud";
 
