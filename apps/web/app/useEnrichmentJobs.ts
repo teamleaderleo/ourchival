@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
+import { withOwnerAccess } from "./privateAccess";
 
 export type EnrichmentJobType =
   | "source_metadata"
@@ -44,10 +45,11 @@ export type RecentEnrichmentJob = EnrichmentJob & {
   } | null;
 };
 
-type ReferenceIdArgs = { referenceId: string };
-type ReferenceIdsArgs = { referenceIds: string[] };
-type JobIdArgs = { jobId: string };
-type RecentArgs = { limit?: number };
+type AccessArgs = { accessKey: string };
+type ReferenceIdArgs = AccessArgs & { referenceId: string };
+type ReferenceIdsArgs = AccessArgs & { referenceIds: string[] };
+type JobIdArgs = AccessArgs & { jobId: string };
+type RecentArgs = AccessArgs & { limit?: number };
 
 const listForReference = makeFunctionReference<
   "query",
@@ -83,7 +85,10 @@ export function useEnrichmentJobs(referenceId: string) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const nextJobs = await getClient().query(listForReference, { referenceId });
+    const nextJobs = await getClient().query(
+      listForReference,
+      withOwnerAccess({ referenceId }),
+    );
     setJobs(nextJobs);
     setLoading(false);
     return nextJobs;
@@ -95,7 +100,10 @@ export function useEnrichmentJobs(referenceId: string) {
 
     async function load() {
       try {
-        const nextJobs = await getClient().query(listForReference, { referenceId });
+        const nextJobs = await getClient().query(
+          listForReference,
+          withOwnerAccess({ referenceId }),
+        );
         if (!cancelled) {
           setJobs(nextJobs);
           setLoading(false);
@@ -121,7 +129,10 @@ export function useRecentEnrichmentJobs(limit = 30) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const nextJobs = await getClient().query(listRecent, { limit });
+    const nextJobs = await getClient().query(
+      listRecent,
+      withOwnerAccess({ limit }),
+    );
     setJobs(nextJobs);
     setLoading(false);
     return nextJobs;
@@ -133,7 +144,10 @@ export function useRecentEnrichmentJobs(limit = 30) {
 
     async function load() {
       try {
-        const nextJobs = await getClient().query(listRecent, { limit });
+        const nextJobs = await getClient().query(
+          listRecent,
+          withOwnerAccess({ limit }),
+        );
         if (!cancelled) {
           setJobs(nextJobs);
           setLoading(false);
@@ -155,19 +169,25 @@ export function useRecentEnrichmentJobs(limit = 30) {
 }
 
 export async function enqueueMetadataJob(referenceId: string) {
-  return await getClient().mutation(enqueueSourceMetadata, { referenceId });
+  return await getClient().mutation(
+    enqueueSourceMetadata,
+    withOwnerAccess({ referenceId }),
+  );
 }
 
 export async function enqueueMetadataJobs(referenceIds: string[]) {
-  return await getClient().mutation(enqueueSourceMetadataMany, { referenceIds });
+  return await getClient().mutation(
+    enqueueSourceMetadataMany,
+    withOwnerAccess({ referenceIds }),
+  );
 }
 
 export async function retryEnrichmentJob(jobId: string) {
-  return await getClient().mutation(retryJob, { jobId });
+  return await getClient().mutation(retryJob, withOwnerAccess({ jobId }));
 }
 
 export async function dismissEnrichmentJob(jobId: string) {
-  return await getClient().mutation(dismissJob, { jobId });
+  return await getClient().mutation(dismissJob, withOwnerAccess({ jobId }));
 }
 
 function getClient() {

@@ -66,6 +66,8 @@ pnpm dev
 
 For full local instructions, see [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md).
 
+For private owner access and revocable Clipper pairing, see [`docs/PRIVATE_ACCESS.md`](docs/PRIVATE_ACCESS.md).
+
 For Google Drive storage, see [`docs/GOOGLE_DRIVE.md`](docs/GOOGLE_DRIVE.md).
 
 For generated previews, thumbnails, hashes, and palettes, see [`docs/MEDIA_PIPELINE.md`](docs/MEDIA_PIPELINE.md).
@@ -91,14 +93,20 @@ pnpm convex:dev         # start Convex dev
 ## HTTP endpoints
 
 ```txt
+GET    /auth-check
 GET    /references
 GET    /drive-file?id=...
 PATCH  /reference?id=...
 DELETE /reference?id=...
+POST   /reference-metadata?id=...
 POST   /capture
+POST   /clipper-pairing
+POST   /clipper-exchange
+GET    /clipper-devices
+DELETE /clipper-devices?id=...
 ```
 
-The extension and manual web form both write through `/capture`. Drive-backed images render through `/drive-file` so originals can stay private. Link-only captures save metadata without creating a Drive file.
+The web vault sends the owner access key through the `Authorization` header. Ourchival Clipper uses a separate paired device credential for `/capture`. Drive-backed images render through `/drive-file` so originals can stay private. Link-only captures save metadata without creating a Drive file.
 
 ## Storage principle
 

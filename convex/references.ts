@@ -1,9 +1,11 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireOwnerAccess } from "./lib/privateAccess";
 
 export const listRecent = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { accessKey: v.string() },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     return await ctx.db
       .query("references")
       .withIndex("by_captured_at")
@@ -14,6 +16,7 @@ export const listRecent = query({
 
 export const create = mutation({
   args: {
+    accessKey: v.string(),
     kind: v.union(
       v.literal("image"),
       v.literal("post"),
@@ -34,6 +37,7 @@ export const create = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const now = Date.now();
 
     return await ctx.db.insert("references", {

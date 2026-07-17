@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireOwnerAccess } from "./lib/privateAccess";
 import {
   hammingDistanceHex,
   sharedPaletteColors,
@@ -9,10 +10,12 @@ const visualJobTypes = ["dominant_colors", "perceptual_hash"] as const;
 
 export const start = mutation({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
     assetId: v.id("assets"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const [reference, asset] = await Promise.all([
       ctx.db.get(args.referenceId),
       ctx.db.get(args.assetId),
@@ -57,9 +60,11 @@ export const start = mutation({
 
 export const begin = mutation({
   args: {
+    accessKey: v.string(),
     jobIds: v.array(v.id("enrichmentJobs")),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const now = Date.now();
     const started: string[] = [];
     for (const jobId of Array.from(new Set(args.jobIds)).slice(0, 4)) {
@@ -88,6 +93,7 @@ export const begin = mutation({
 
 export const complete = mutation({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
     assetId: v.id("assets"),
     jobIds: v.array(v.id("enrichmentJobs")),
@@ -97,6 +103,7 @@ export const complete = mutation({
     height: v.number(),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const [reference, asset] = await Promise.all([
       ctx.db.get(args.referenceId),
       ctx.db.get(args.assetId),
@@ -149,10 +156,12 @@ export const complete = mutation({
 
 export const fail = mutation({
   args: {
+    accessKey: v.string(),
     jobIds: v.array(v.id("enrichmentJobs")),
     error: v.string(),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const now = Date.now();
     let updated = 0;
     for (const jobId of Array.from(new Set(args.jobIds)).slice(0, 4)) {
@@ -178,10 +187,12 @@ export const fail = mutation({
 
 export const findSimilar = query({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const reference = await ctx.db.get(args.referenceId);
     if (!reference) throw new Error("Reference not found.");
     const targetAssets = await ctx.db
@@ -189,7 +200,8 @@ export const findSimilar = query({
       .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
       .collect();
     const target = targetAssets.find(
-      (asset) => typeof asset.perceptualHash === "string" && asset.perceptualHash.length > 0,
+      (asset) =>
+        typeof asset.perceptualHash === "string" && asset.perceptualHash.length > 0,
     );
     if (!target?.perceptualHash) return [];
 

@@ -1,12 +1,15 @@
 import { mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { requireOwnerAccess } from "./lib/privateAccess";
 
 export const enqueueSourceMetadataMany = mutation({
   args: {
+    accessKey: v.string(),
     referenceIds: v.array(v.id("references")),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
     let queued = 0;
     let existing = 0;

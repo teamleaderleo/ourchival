@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
+import { withOwnerAccess } from "./privateAccess";
 
 export type ReferenceBoard = {
   _id: string;
@@ -13,23 +14,30 @@ export type ReferenceBoard = {
   referenceCount: number;
 };
 
-type CreateBoardArgs = { name: string; description?: string };
-type UpdateBoardArgs = { boardId: string; name: string; description?: string };
-type RemoveBoardArgs = { boardId: string };
-type UpdateReferenceBoardsArgs = {
+type AccessArgs = { accessKey: string };
+type CreateBoardArgs = AccessArgs & { name: string; description?: string };
+type UpdateBoardArgs = AccessArgs & {
+  boardId: string;
+  name: string;
+  description?: string;
+};
+type RemoveBoardArgs = AccessArgs & { boardId: string };
+type UpdateReferenceBoardsArgs = AccessArgs & {
   referenceId: string;
   addBoardIds: string[];
   removeBoardIds: string[];
 };
-type UpdateReferencesBoardsArgs = {
+type UpdateReferencesBoardsArgs = AccessArgs & {
   referenceIds: string[];
   boardId: string;
   mode: "add" | "remove";
 };
 
-const listBoardsReference = makeFunctionReference<"query", {}, ReferenceBoard[]>(
-  "boards:list",
-);
+const listBoardsReference = makeFunctionReference<
+  "query",
+  AccessArgs,
+  ReferenceBoard[]
+>("boards:list");
 const createBoardReference = makeFunctionReference<
   "mutation",
   CreateBoardArgs,
@@ -76,7 +84,10 @@ export function useAllReferenceBoards() {
 }
 
 export async function createReferenceBoard(name: string, description?: string) {
-  await getClient().mutation(createBoardReference, { name, description });
+  await getClient().mutation(
+    createBoardReference,
+    withOwnerAccess({ name, description }),
+  );
   return await refreshBoards();
 }
 
@@ -85,12 +96,18 @@ export async function updateReferenceBoard(
   name: string,
   description?: string,
 ) {
-  await getClient().mutation(updateBoardReference, { boardId, name, description });
+  await getClient().mutation(
+    updateBoardReference,
+    withOwnerAccess({ boardId, name, description }),
+  );
   return await refreshBoards();
 }
 
 export async function removeReferenceBoard(boardId: string) {
-  const result = await getClient().mutation(removeBoardReference, { boardId });
+  const result = await getClient().mutation(
+    removeBoardReference,
+    withOwnerAccess({ boardId }),
+  );
   await refreshBoards();
   return result;
 }
@@ -99,11 +116,14 @@ export async function mutateReferenceBoards(
   referenceId: string,
   args: { addBoardIds?: string[]; removeBoardIds?: string[] },
 ) {
-  const boardIds = await getClient().mutation(updateReferenceBoardsReference, {
-    referenceId,
-    addBoardIds: args.addBoardIds ?? [],
-    removeBoardIds: args.removeBoardIds ?? [],
-  });
+  const boardIds = await getClient().mutation(
+    updateReferenceBoardsReference,
+    withOwnerAccess({
+      referenceId,
+      addBoardIds: args.addBoardIds ?? [],
+      removeBoardIds: args.removeBoardIds ?? [],
+    }),
+  );
   await refreshBoards();
   return boardIds;
 }
@@ -113,11 +133,10 @@ export async function mutateReferencesBoards(
   boardId: string,
   mode: "add" | "remove",
 ) {
-  const result = await getClient().mutation(updateReferencesBoardsReference, {
-    referenceIds,
-    boardId,
-    mode,
-  });
+  const result = await getClient().mutation(
+    updateReferencesBoardsReference,
+    withOwnerAccess({ referenceIds, boardId, mode }),
+  );
   await refreshBoards();
   return result;
 }
@@ -133,10 +152,12 @@ async function refreshBoards() {
 async function loadBoards() {
   if (boardsCache) return boardsCache;
   if (!boardsPromise) {
-    boardsPromise = getClient().query(listBoardsReference, {}).then((boards) => {
-      boardsCache = boards;
-      return boards;
-    });
+    boardsPromise = getClient()
+      .query(listBoardsReference, withOwnerAccess({}))
+      .then((boards) => {
+        boardsCache = boards;
+        return boards;
+      });
   }
   return await boardsPromise;
 }

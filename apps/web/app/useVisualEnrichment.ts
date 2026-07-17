@@ -3,16 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
+import { withOwnerAccess } from "./privateAccess";
 import { analyzeImageUrl, type VisualAnalysisResult } from "./visualAnalysis";
 import type { EnrichmentJob } from "./useEnrichmentJobs";
 
-type StartArgs = { referenceId: string; assetId: string };
-type JobIdsArgs = { jobIds: string[] };
-type CompleteArgs = StartArgs &
-  JobIdsArgs &
-  VisualAnalysisResult;
+type AccessArgs = { accessKey: string };
+type StartArgs = AccessArgs & { referenceId: string; assetId: string };
+type JobIdsArgs = AccessArgs & { jobIds: string[] };
+type CompleteArgs = StartArgs & JobIdsArgs & VisualAnalysisResult;
 type FailArgs = JobIdsArgs & { error: string };
-type SimilarArgs = { referenceId: string; limit?: number };
+type SimilarArgs = AccessArgs & { referenceId: string; limit?: number };
 
 export type SimilarVisualReference = {
   reference: {
@@ -56,26 +56,34 @@ const findSimilar = makeFunctionReference<
 
 let client: ConvexHttpClient | undefined;
 
-export async function runVisualAnalysis(args: StartArgs & { imageUrl: string }) {
-  const started = await getClient().mutation(startVisual, {
-    referenceId: args.referenceId,
-    assetId: args.assetId,
-  });
+export async function runVisualAnalysis(
+  args: Omit<StartArgs, "accessKey"> & { imageUrl: string },
+) {
+  const started = await getClient().mutation(
+    startVisual,
+    withOwnerAccess({ referenceId: args.referenceId, assetId: args.assetId }),
+  );
   const jobIds = started.jobs.map((job) => job._id);
-  await getClient().mutation(beginVisual, { jobIds });
+  await getClient().mutation(beginVisual, withOwnerAccess({ jobIds }));
 
   try {
     const analysis = await analyzeImageUrl(args.imageUrl);
-    return await getClient().mutation(completeVisual, {
-      referenceId: args.referenceId,
-      assetId: args.assetId,
-      jobIds,
-      ...analysis,
-    });
+    return await getClient().mutation(
+      completeVisual,
+      withOwnerAccess({
+        referenceId: args.referenceId,
+        assetId: args.assetId,
+        jobIds,
+        ...analysis,
+      }),
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Visual analysis failed.";
-    await getClient().mutation(failVisual, { jobIds, error: message });
+    await getClient().mutation(
+      failVisual,
+      withOwnerAccess({ jobIds, error: message }),
+    );
     throw new Error(message);
   }
 }
@@ -95,10 +103,10 @@ export function useSimilarVisualReferences(referenceId: string, enabled: boolean
     setLoading(true);
     setError("");
     try {
-      const next = await getClient().query(findSimilar, {
-        referenceId,
-        limit: 8,
-      });
+      const next = await getClient().query(
+        findSimilar,
+        withOwnerAccess({ referenceId, limit: 8 }),
+      );
       setResults(next);
       return next;
     } catch (caught) {

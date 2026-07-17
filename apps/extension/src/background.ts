@@ -29,6 +29,7 @@ type ContextCapture = {
 type CaptureResponse = {
   ok?: boolean;
   error?: string;
+  code?: string;
   referenceId?: string;
   assetId?: string | null;
   storageStatus?: string;
@@ -40,8 +41,17 @@ type CaptureResponse = {
 type ExtensionMessage =
   | { type: "OURCHIVAL_CAPTURE_TABS"; mode: TabCaptureMode }
   | { type: "OURCHIVAL_CAPTURE_URLS"; entries: ImportedUrl[]; source?: ImportSource }
-  | { type: "OURCHIVAL_CAPTURE_PAYLOADS"; payloads: CapturePayload[]; source?: BatchCaptureSource }
+  | {
+      type: "OURCHIVAL_CAPTURE_PAYLOADS";
+      payloads: CapturePayload[];
+      source?: BatchCaptureSource;
+    }
   | { type: "OURCHIVAL_CLOSE_SAVED_TABS"; tabIds: number[] };
+
+type CaptureConnection = {
+  endpoint: string;
+  deviceToken: string;
+};
 
 let activeJobId: string | undefined;
 
@@ -93,30 +103,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   const payload =
-    info.menuItemId === "save-post-to-ourchival" && context?.parsedSource?.platform === "x"
+    info.menuItemId === "save-post-to-ourchival" &&
+    context?.parsedSource?.platform === "x"
       ? buildXPayload(context, { kind: "post" })
       : buildCapturePayload(info, tab, context);
 
   await saveLastCapture(payload);
-  const settings = await getSettings();
-  const endpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
-
-  if (!endpoint) {
-    await markResult({
-      ok: false,
-      message: "Add your Convex site URL in the Ourchival popup.",
-      savedAt: new Date().toISOString(),
-    });
-    return;
-  }
 
   try {
-    const result = await capturePayload(endpoint, payload);
+    const connection = await getCaptureConnection();
+    const result = await capturePayload(connection, payload);
     await markResult(toCaptureResult(result));
   } catch (error) {
     await markResult({
       ok: false,
-      message: error instanceof Error ? error.message : "Capture request failed.",
+      message: errorMessage(error, "Capture request failed."),
       savedAt: new Date().toISOString(),
     });
   }
@@ -181,7 +182,11 @@ async function getContextCapture(tabId: number | undefined) {
 async function captureTabs(mode: TabCaptureMode) {
   const tabs = await queryTabs(mode);
   const source: BatchCaptureSource =
-    mode === "current" ? "current_tab" : mode === "selected" ? "selected_tabs" : "window";
+    mode === "current"
+      ? "current_tab"
+      : mode === "selected"
+        ? "selected_tabs"
+        : "window";
   return await runBatch(
     source,
     tabs.map((tab) => ({ url: tab.url, title: tab.title, tabId: tab.id })),
@@ -212,8 +217,7 @@ async function runPayloadBatch(payloads: CapturePayload[], source: BatchCaptureS
 
 async function runBatch(source: BatchCaptureSource, items: BatchCaptureItem[]) {
   if (activeJobId) throw new Error("A bulk capture is already running.");
-  const endpoint = normalizeCaptureEndpoint((await getSettings()).captureEndpoint);
-  if (!endpoint) throw new Error("Add your Convex site URL before starting a bulk capture.");
+  const connection = await getCaptureConnection();
 
   const state: BatchCaptureState = {
     jobId: createJobId(),
@@ -233,20 +237,25 @@ async function runBatch(source: BatchCaptureSource, items: BatchCaptureItem[]) {
   };
 
   await saveBatchState(state);
-  return await continueBatch(state, endpoint);
+  return await continueBatch(state, connection);
 }
 
-async function continueBatch(state: BatchCaptureState, endpoint?: string) {
+async function continueBatch(
+  state: BatchCaptureState,
+  providedConnection?: CaptureConnection,
+) {
   if (activeJobId && activeJobId !== state.jobId) {
     throw new Error("Another bulk capture is already running.");
   }
-  const resolvedEndpoint =
-    endpoint ?? normalizeCaptureEndpoint((await getSettings()).captureEndpoint);
-  if (!resolvedEndpoint) {
+
+  let connection: CaptureConnection;
+  try {
+    connection = providedConnection ?? (await getCaptureConnection());
+  } catch (error) {
     state.running = false;
-    state.currentLabel = "Reconnect the clipper endpoint, then retry the remaining links.";
+    state.currentLabel = "Pair the Clipper again, then retry the remaining captures.";
     await saveBatchState(state);
-    return state;
+    throw error;
   }
 
   activeJobId = state.jobId;
@@ -278,7 +287,7 @@ async function continueBatch(state: BatchCaptureState, endpoint?: string) {
           };
 
       try {
-        const result = await capturePayload(resolvedEndpoint, payload);
+        const result = await capturePayload(connection, payload);
         if (!result.ok) {
           throw new Error(result.error || `Capture failed with status ${result.status}`);
         }
@@ -307,7 +316,14 @@ async function continueBatch(state: BatchCaptureState, endpoint?: string) {
     await saveBatchState({ ...state });
     const successful = state.saved + state.duplicates;
     await chrome.action.setBadgeText({
-      text: successful > 99 ? "99+" : successful > 0 ? String(successful) : state.failed ? "!" : "✓",
+      text:
+        successful > 99
+          ? "99+"
+          : successful > 0
+            ? String(successful)
+            : state.failed
+              ? "!"
+              : "✓",
     });
     await chrome.action.setBadgeBackgroundColor({
       color: state.failed ? "#8a5d3d" : "#3d6b3d",
@@ -338,7 +354,10 @@ async function resumeInterruptedBatch() {
     await continueBatch(state);
   } catch (error) {
     state.running = false;
-    state.currentLabel = errorMessage(error, "The interrupted import could not resume.");
+    state.currentLabel = errorMessage(
+      error,
+      "The interrupted import could not resume.",
+    );
     await saveBatchState(state);
   }
 }
@@ -367,10 +386,26 @@ async function closeSavedTabs(tabIds: number[]) {
   return closed;
 }
 
-async function capturePayload(endpoint: string, payload: CapturePayload) {
-  const response = await fetch(endpoint, {
+async function getCaptureConnection(): Promise<CaptureConnection> {
+  const settings = await getSettings();
+  const endpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
+  const deviceToken = settings.deviceToken?.trim();
+  if (!endpoint || !deviceToken) {
+    throw new Error("Pair this browser from the Ourchival Clipper popup first.");
+  }
+  return { endpoint, deviceToken };
+}
+
+async function capturePayload(
+  connection: CaptureConnection,
+  payload: CapturePayload,
+) {
+  const response = await fetch(connection.endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${connection.deviceToken}`,
+    },
     body: JSON.stringify(payload),
   });
   const body = (await response.json().catch(() => ({}))) as CaptureResponse;
@@ -382,14 +417,18 @@ async function capturePayload(endpoint: string, payload: CapturePayload) {
   };
 }
 
-function toCaptureResult(result: Awaited<ReturnType<typeof capturePayload>>): CaptureResult {
+function toCaptureResult(
+  result: Awaited<ReturnType<typeof capturePayload>>,
+): CaptureResult {
   return {
     ok: result.ok,
     status: result.status,
     message: result.ok
       ? result.body.alreadySaved
         ? duplicateMessage(result.body.existingReference)
-        : ["Saved to Ourchival.", result.body.storageStatus].filter(Boolean).join(" ")
+        : ["Saved to Ourchival.", result.body.storageStatus]
+            .filter(Boolean)
+            .join(" ")
       : result.error,
     storageStatus: result.body.storageStatus,
     referenceId: result.body.referenceId,
@@ -411,7 +450,9 @@ function buildCapturePayload(
     return buildXPayload(context, {
       kind: assetUrl ? "image" : "post",
       ...(assetUrl ? { assetUrl } : {}),
-      altText: assetUrl ? context.parsedSource.altTexts?.[assetUrl] : undefined,
+      altText: assetUrl
+        ? context.parsedSource.altTexts?.[assetUrl]
+        : undefined,
     });
   }
 
@@ -424,7 +465,9 @@ function buildCapturePayload(
       sourceUrl: info.pageUrl ?? tab?.url ?? info.srcUrl,
       assetUrl: info.srcUrl,
       ...snapshotFields,
-      ...(!snapshotFields.pageTitle && tab?.title ? { pageTitle: tab.title } : {}),
+      ...(!snapshotFields.pageTitle && tab?.title
+        ? { pageTitle: tab.title }
+        : {}),
       ...(selectedText ? { selectedText } : {}),
       capturedAt: new Date().toISOString(),
     };
@@ -441,21 +484,29 @@ function buildCapturePayload(
     kind: "page",
     sourceUrl: info.pageUrl ?? tab?.url ?? "",
     ...snapshotFields,
-    ...(!snapshotFields.pageTitle && tab?.title ? { pageTitle: tab.title } : {}),
+    ...(!snapshotFields.pageTitle && tab?.title
+      ? { pageTitle: tab.title }
+      : {}),
     ...(selectedText ? { selectedText } : {}),
     capturedAt: new Date().toISOString(),
   };
 }
 
-function pageSnapshotFields(snapshot: PageSnapshot | undefined): Partial<CapturePayload> {
+function pageSnapshotFields(
+  snapshot: PageSnapshot | undefined,
+): Partial<CapturePayload> {
   if (!snapshot) return {};
   return {
     ...(snapshot.canonicalUrl ? { canonicalUrl: snapshot.canonicalUrl } : {}),
     ...(snapshot.title ? { pageTitle: snapshot.title } : {}),
-    ...(snapshot.description ? { pageDescription: snapshot.description } : {}),
+    ...(snapshot.description
+      ? { pageDescription: snapshot.description }
+      : {}),
     ...(snapshot.siteName ? { siteName: snapshot.siteName } : {}),
     ...(snapshot.faviconUrl ? { faviconUrl: snapshot.faviconUrl } : {}),
-    ...(snapshot.previewImageUrl ? { previewImageUrl: snapshot.previewImageUrl } : {}),
+    ...(snapshot.previewImageUrl
+      ? { previewImageUrl: snapshot.previewImageUrl }
+      : {}),
     ...(snapshot.author ? { pageAuthor: snapshot.author } : {}),
     ...(snapshot.contentType ? { contentType: snapshot.contentType } : {}),
   };
@@ -470,7 +521,9 @@ function buildXPayload(
     kind: args.kind,
     sourceUrl: source.sourceUrl,
     ...(args.assetUrl ? { assetUrl: args.assetUrl } : {}),
-    ...(source.title ? { pageTitle: source.title } : { pageTitle: context.pageTitle }),
+    ...(source.title
+      ? { pageTitle: source.title }
+      : { pageTitle: context.pageTitle }),
     ...(context.selectedText ? { selectedText: context.selectedText } : {}),
     ...(source.authorName ? { authorName: source.authorName } : {}),
     ...(source.authorHandle ? { authorHandle: source.authorHandle } : {}),
@@ -484,15 +537,21 @@ function buildXPayload(
   };
 }
 
-function duplicateMessage(existingReference: CaptureResult["existingReference"]) {
+function duplicateMessage(
+  existingReference: CaptureResult["existingReference"],
+) {
   const title = existingReference?.title?.trim();
   const savedDate = existingReference?.capturedAt
     ? new Date(existingReference.capturedAt).toLocaleDateString()
     : undefined;
   const boardNote = existingReference?.boardCount
-    ? ` It is already in ${existingReference.boardCount} ${existingReference.boardCount === 1 ? "board" : "boards"}.`
+    ? ` It is already in ${existingReference.boardCount} ${
+        existingReference.boardCount === 1 ? "board" : "boards"
+      }.`
     : "";
-  return `Already saved${title ? ` as “${title}”` : ""}${savedDate ? ` on ${savedDate}` : ""}.${boardNote}`;
+  return `Already saved${title ? ` as “${title}”` : ""}${
+    savedDate ? ` on ${savedDate}` : ""
+  }.${boardNote}`;
 }
 
 function createJobId() {
@@ -505,9 +564,15 @@ function errorMessage(error: unknown, fallback: string) {
 
 async function markResult(result: CaptureResult) {
   await saveLastResult(result);
-  await chrome.action.setBadgeText({ text: result.alreadySaved ? "↺" : result.ok ? "✓" : "!" });
+  await chrome.action.setBadgeText({
+    text: result.alreadySaved ? "↺" : result.ok ? "✓" : "!",
+  });
   await chrome.action.setBadgeBackgroundColor({
-    color: result.alreadySaved ? "#6f5bb7" : result.ok ? "#3d6b3d" : "#8a3d3d",
+    color: result.alreadySaved
+      ? "#6f5bb7"
+      : result.ok
+        ? "#3d6b3d"
+        : "#8a3d3d",
   });
 }
 

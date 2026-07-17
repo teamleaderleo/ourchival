@@ -56,7 +56,22 @@ jobs:
         run: pnpm test
 
       - name: Typecheck workspace
-        run: pnpm typecheck
+        id: typecheck
+        shell: bash
+        run: |
+          set +e
+          pnpm typecheck 2>&1 | tee typecheck.log
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Upload typecheck diagnostics
+        if: failure() && steps.typecheck.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.log
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Build browser extension
         run: pnpm extension:build

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   assetLabel,
   referenceCollection,
@@ -12,6 +12,7 @@ import {
   type SavedReference,
 } from "./referenceVaultModel";
 import { getDomain, getInitial } from "./ReferenceCards";
+import { usePrivateImageUrl } from "./usePrivateImageUrl";
 import { type TriageDestination } from "./useReferenceVault";
 import { mutateReferenceTags, useReferenceTags } from "./useReferenceTags";
 
@@ -46,8 +47,17 @@ export function SelectedReference({
 }) {
   const asset = reference.assets[0];
   const snapshot = reference.sourceSnapshot;
-  const imageUrl =
-    asset?.storedUrl ?? asset?.originalUrl ?? snapshot?.previewImageUrl;
+  const privateImageSource =
+    asset?.previewUrl ??
+    asset?.thumbUrl ??
+    asset?.storedUrl ??
+    asset?.originalUrl ??
+    snapshot?.previewImageUrl;
+  const {
+    resolvedUrl: imageUrl,
+    loading: imageLoading,
+    error: imageLoadError,
+  } = usePrivateImageUrl(privateImageSource);
   const collection = referenceCollection(reference);
   const displayTitle = referenceDisplayTitle(reference);
   const [titleDraft, setTitleDraft] = useState(reference.title ?? "");
@@ -66,6 +76,10 @@ export function SelectedReference({
   const isDirty =
     titleDraft.trim() !== (reference.title ?? "") ||
     notesDraft.trim() !== (reference.notes ?? "");
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl]);
 
   async function handleSave() {
     setSavingDetails(true);
@@ -158,6 +172,8 @@ export function SelectedReference({
       ) : (
         <div
           className={`selected-placeholder ${referenceMode(reference.kind) === "links" ? "link-placeholder" : ""}`}
+          aria-busy={imageLoading}
+          title={imageLoadError || undefined}
         >
           {referenceMode(reference.kind) === "links" ? (
             <span>{getInitial(displayTitle)}</span>

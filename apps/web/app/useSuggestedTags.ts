@@ -5,6 +5,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import type { ReferenceTag } from "./referenceVaultModel";
 import type { EnrichmentJob } from "./useEnrichmentJobs";
+import { withOwnerAccess } from "./privateAccess";
 
 export type TagSuggestionStatus = "pending" | "accepted" | "dismissed";
 
@@ -20,10 +21,11 @@ export type TagSuggestion = {
   updatedAt: number;
 };
 
-type ReferenceIdArgs = { referenceId: string };
-type ReferenceIdsArgs = { referenceIds: string[] };
-type SuggestionIdArgs = { suggestionId: string };
-type AcceptSuggestionArgs = { suggestionId: string; value?: string };
+type AccessArgs = { accessKey: string };
+type ReferenceIdArgs = AccessArgs & { referenceId: string };
+type ReferenceIdsArgs = AccessArgs & { referenceIds: string[] };
+type SuggestionIdArgs = AccessArgs & { suggestionId: string };
+type AcceptSuggestionArgs = SuggestionIdArgs & { value?: string };
 
 const listForReference = makeFunctionReference<
   "query",
@@ -50,9 +52,11 @@ const acceptEvery = makeFunctionReference<
   ReferenceIdArgs,
   { accepted: number; tags: ReferenceTag[] }
 >("suggestedTags:acceptAll");
-const dismissOne = makeFunctionReference<"mutation", SuggestionIdArgs, boolean>(
-  "suggestedTags:dismiss",
-);
+const dismissOne = makeFunctionReference<
+  "mutation",
+  SuggestionIdArgs,
+  boolean
+>("suggestedTags:dismiss");
 
 let client: ConvexHttpClient | undefined;
 
@@ -61,7 +65,10 @@ export function useSuggestedTags(referenceId: string) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const next = await getClient().query(listForReference, { referenceId });
+    const next = await getClient().query(
+      listForReference,
+      withOwnerAccess({ referenceId }),
+    );
     setSuggestions(next);
     setLoading(false);
     return next;
@@ -73,7 +80,10 @@ export function useSuggestedTags(referenceId: string) {
 
     async function load() {
       try {
-        const next = await getClient().query(listForReference, { referenceId });
+        const next = await getClient().query(
+          listForReference,
+          withOwnerAccess({ referenceId }),
+        );
         if (!cancelled) {
           setSuggestions(next);
           setLoading(false);
@@ -95,23 +105,38 @@ export function useSuggestedTags(referenceId: string) {
 }
 
 export async function enqueueSuggestedTags(referenceId: string) {
-  return await getClient().mutation(enqueueOne, { referenceId });
+  return await getClient().mutation(
+    enqueueOne,
+    withOwnerAccess({ referenceId }),
+  );
 }
 
 export async function enqueueSuggestedTagsMany(referenceIds: string[]) {
-  return await getClient().mutation(enqueueMany, { referenceIds });
+  return await getClient().mutation(
+    enqueueMany,
+    withOwnerAccess({ referenceIds }),
+  );
 }
 
 export async function acceptSuggestedTag(suggestionId: string, value?: string) {
-  return await getClient().mutation(acceptOne, { suggestionId, value });
+  return await getClient().mutation(
+    acceptOne,
+    withOwnerAccess({ suggestionId, value }),
+  );
 }
 
 export async function acceptAllSuggestedTags(referenceId: string) {
-  return await getClient().mutation(acceptEvery, { referenceId });
+  return await getClient().mutation(
+    acceptEvery,
+    withOwnerAccess({ referenceId }),
+  );
 }
 
 export async function dismissSuggestedTag(suggestionId: string) {
-  return await getClient().mutation(dismissOne, { suggestionId });
+  return await getClient().mutation(
+    dismissOne,
+    withOwnerAccess({ suggestionId }),
+  );
 }
 
 function getClient() {

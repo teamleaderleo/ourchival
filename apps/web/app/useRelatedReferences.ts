@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
+import { withOwnerAccess } from "./privateAccess";
 
 export type RelatedReason = {
   type:
@@ -38,7 +39,11 @@ export type RelatedReferenceResult = {
   reasons: RelatedReason[];
 };
 
-type FindRelatedArgs = { referenceId: string; limit?: number };
+type FindRelatedArgs = {
+  accessKey: string;
+  referenceId: string;
+  limit?: number;
+};
 
 const findRelated = makeFunctionReference<
   "query",
@@ -57,7 +62,10 @@ export function useRelatedReferences(referenceId: string, limit = 8) {
     setLoading(true);
     setError("");
     try {
-      const next = await getClient().query(findRelated, { referenceId, limit });
+      const next = await getClient().query(
+        findRelated,
+        withOwnerAccess({ referenceId, limit }),
+      );
       setResults(next);
       return next;
     } catch (caught) {

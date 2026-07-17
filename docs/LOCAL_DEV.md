@@ -30,6 +30,15 @@ NEXT_PUBLIC_CONVEX_SITE_URL=https://your-deployment.convex.site
 
 The web app derives `.convex.site` from `.convex.cloud` when possible, but the explicit value is clearer.
 
+Configure private access for the active Convex development deployment:
+
+```bash
+npx convex env set OURCHIVAL_OWNER_ACCESS_KEY <long-random-value>
+npx convex env set OURCHIVAL_ALLOWED_ORIGINS "http://localhost:3000"
+```
+
+Keep the owner key outside `.env.local`, public environment variables, commits, logs, and screenshots.
+
 ## 4. Start the web app
 
 In another terminal:
@@ -43,6 +52,8 @@ Open:
 ```txt
 http://localhost:3000
 ```
+
+Enter the owner access key on **Unlock Ourchival**.
 
 ## 5. Build the Edge extension
 
@@ -70,15 +81,23 @@ Turn on Developer mode, choose **Load unpacked**, and select:
 apps/extension/dist
 ```
 
-## 6. Connect the extension
+Reload the unpacked extension after rebuilding it.
 
-Open the Ourchival Clipper popup and paste the endpoint shown in the web app:
+## 6. Pair the extension
+
+1. In the unlocked web vault, open **Clipper access**.
+2. Create a one-time pairing code.
+3. Open the Ourchival Clipper popup.
+4. Enter the Convex site URL without `/capture`:
 
 ```txt
-https://your-deployment.convex.site/capture
+https://your-deployment.convex.site
 ```
 
-Click **Save endpoint**.
+5. Enter a recognizable browser name and the pairing code.
+6. Select **Pair browser**.
+
+The extension stores a separate revocable device credential. It never stores the owner access key.
 
 ## 7. Test saving
 
@@ -90,7 +109,9 @@ Save image to Ourchival
 
 The extension badge will show a checkmark on success. The popup reports whether the image landed in Google Drive, Convex Storage fallback, or linked-only mode.
 
-The Reliquary gallery refreshes every few seconds. Drive-backed originals render through the `/drive-file?id=...` proxy.
+The Reliquary gallery refreshes every few seconds. Drive-backed originals render through the authenticated `/drive-file?id=...` proxy.
+
+Then open **Clipper access**, revoke the browser, and confirm its next capture is rejected. Pair it again to continue testing.
 
 ## Manual test path
 

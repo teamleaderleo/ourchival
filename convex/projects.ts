@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireOwnerAccess } from "./lib/privateAccess";
 
 const projectStatus = v.union(
   v.literal("active"),
@@ -9,8 +10,9 @@ const projectStatus = v.union(
 );
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { accessKey: v.string() },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const [projects, uses] = await Promise.all([
       ctx.db.query("projects").collect(),
       ctx.db.query("projectReferences").collect(),
@@ -32,11 +34,13 @@ export const list = query({
 
 export const create = mutation({
   args: {
+    accessKey: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
     status: v.optional(projectStatus),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const name = cleanProjectName(args.name);
     if (!name) throw new Error("Project name is required.");
     await assertUniqueName(ctx, name);
@@ -57,12 +61,14 @@ export const create = mutation({
 
 export const update = mutation({
   args: {
+    accessKey: v.string(),
     projectId: v.id("projects"),
     name: v.string(),
     description: v.optional(v.string()),
     status: projectStatus,
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const project = await ctx.db.get(args.projectId);
     if (!project) throw new Error("Project not found.");
 
@@ -82,9 +88,11 @@ export const update = mutation({
 
 export const remove = mutation({
   args: {
+    accessKey: v.string(),
     projectId: v.id("projects"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const project = await ctx.db.get(args.projectId);
     if (!project) return { removed: false, usesRemoved: 0 };
 
@@ -100,9 +108,11 @@ export const remove = mutation({
 
 export const listForReference = query({
   args: {
+    accessKey: v.string(),
     referenceId: v.id("references"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const uses = await ctx.db
       .query("projectReferences")
       .withIndex("by_reference", (q) => q.eq("referenceId", args.referenceId))
@@ -121,6 +131,7 @@ export const listForReference = query({
 
 export const upsertReference = mutation({
   args: {
+    accessKey: v.string(),
     projectId: v.id("projects"),
     referenceId: v.id("references"),
     assetId: v.optional(v.id("assets")),
@@ -128,6 +139,7 @@ export const upsertReference = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const [project, reference] = await Promise.all([
       ctx.db.get(args.projectId),
       ctx.db.get(args.referenceId),
@@ -140,12 +152,14 @@ export const upsertReference = mutation({
 
 export const upsertReferences = mutation({
   args: {
+    accessKey: v.string(),
     projectId: v.id("projects"),
     referenceIds: v.array(v.id("references")),
     reason: v.optional(v.string()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     if (!(await ctx.db.get(args.projectId))) throw new Error("Project not found.");
     const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
     let updated = 0;
@@ -166,20 +180,24 @@ export const upsertReferences = mutation({
 
 export const removeReference = mutation({
   args: {
+    accessKey: v.string(),
     projectId: v.id("projects"),
     referenceId: v.id("references"),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     return await removeProjectReference(ctx, args.projectId, args.referenceId);
   },
 });
 
 export const removeReferences = mutation({
   args: {
+    accessKey: v.string(),
     projectId: v.id("projects"),
     referenceIds: v.array(v.id("references")),
   },
   handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
     const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
     let updated = 0;
     for (const referenceId of referenceIds) {

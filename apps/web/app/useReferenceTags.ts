@@ -4,20 +4,22 @@ import { useEffect, useState } from "react";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import type { ReferenceTag } from "./referenceVaultModel";
+import { withOwnerAccess } from "./privateAccess";
 
-type UpdateReferenceTagsArgs = {
+type AccessArgs = { accessKey: string };
+type UpdateReferenceTagsArgs = AccessArgs & {
   referenceId: string;
   addNames: string[];
   removeIds: string[];
 };
 
-type UpdateReferencesTagsArgs = {
+type UpdateReferencesTagsArgs = AccessArgs & {
   referenceIds: string[];
   addNames: string[];
   removeIds: string[];
 };
 
-const listTagsReference = makeFunctionReference<"query", {}, ReferenceTag[]>(
+const listTagsReference = makeFunctionReference<"query", AccessArgs, ReferenceTag[]>(
   "tags:list",
 );
 const updateReferenceTagsReference = makeFunctionReference<
@@ -86,11 +88,14 @@ export async function mutateReferenceTags(
   referenceId: string,
   args: { addNames?: string[]; removeIds?: string[] },
 ) {
-  const result = await getClient().mutation(updateReferenceTagsReference, {
-    referenceId,
-    addNames: args.addNames ?? [],
-    removeIds: args.removeIds ?? [],
-  });
+  const result = await getClient().mutation(
+    updateReferenceTagsReference,
+    withOwnerAccess({
+      referenceId,
+      addNames: args.addNames ?? [],
+      removeIds: args.removeIds ?? [],
+    }),
+  );
   await refreshReferenceTagCatalog();
   return result;
 }
@@ -99,11 +104,14 @@ export async function mutateReferencesTags(
   referenceIds: string[],
   args: { addNames?: string[]; removeIds?: string[] },
 ) {
-  const result = await getClient().mutation(updateReferencesTagsReference, {
-    referenceIds,
-    addNames: args.addNames ?? [],
-    removeIds: args.removeIds ?? [],
-  });
+  const result = await getClient().mutation(
+    updateReferencesTagsReference,
+    withOwnerAccess({
+      referenceIds,
+      addNames: args.addNames ?? [],
+      removeIds: args.removeIds ?? [],
+    }),
+  );
   await refreshReferenceTagCatalog();
   return result;
 }
@@ -119,10 +127,12 @@ export async function refreshReferenceTagCatalog() {
 async function loadAllTags() {
   if (allTagsCache) return allTagsCache;
   if (!allTagsPromise) {
-    allTagsPromise = getClient().query(listTagsReference, {}).then((tags) => {
-      allTagsCache = tags;
-      return tags;
-    });
+    allTagsPromise = getClient()
+      .query(listTagsReference, withOwnerAccess({}))
+      .then((tags) => {
+        allTagsCache = tags;
+        return tags;
+      });
   }
   return await allTagsPromise;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useBatchSelectionItem } from "./batchSelection";
 import { ReferenceBoardAssignment } from "./BoardPanel";
 import { ReferenceEnrichmentPanel } from "./ReferenceEnrichmentPanel";
@@ -14,6 +14,7 @@ import {
   referenceMode,
   type SavedReference,
 } from "./referenceVaultModel";
+import { usePrivateImageUrl } from "./usePrivateImageUrl";
 import { useReferenceTags } from "./useReferenceTags";
 
 export function ReferenceCard({
@@ -162,12 +163,19 @@ export function ThumbImage({
   kind: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const { resolvedUrl, loading } = usePrivateImageUrl(imageUrl);
   const linkLike = kind === "link" || kind === "article" || kind === "page";
-  if (!imageUrl || failed) {
+
+  useEffect(() => {
+    setFailed(false);
+  }, [resolvedUrl]);
+
+  if (!resolvedUrl || failed) {
     return (
       <div
         className={`thumb placeholder ${linkLike ? "link-placeholder" : ""}`}
         aria-hidden={!title}
+        aria-busy={loading}
       >
         {linkLike ? <span>{getInitial(title)}</span> : null}
       </div>
@@ -177,7 +185,7 @@ export function ThumbImage({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       className="thumb"
-      src={imageUrl}
+      src={resolvedUrl}
       alt={title ?? "Saved reference"}
       loading="lazy"
       onError={() => setFailed(true)}

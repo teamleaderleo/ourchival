@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ReferenceAsset, SavedReference } from "./referenceVaultModel";
 import { useEnrichmentJobs } from "./useEnrichmentJobs";
+import { usePrivateImageUrl } from "./usePrivateImageUrl";
 import {
   runVisualAnalysis,
   useSimilarVisualReferences,
@@ -15,11 +16,18 @@ export function ReferenceVisualEnrichmentPanel({
   reference: SavedReference;
   asset?: ReferenceAsset;
 }) {
-  const imageUrl =
+  const privateImageSource =
+    asset?.previewUrl ??
+    asset?.thumbUrl ??
     asset?.storedUrl ??
     asset?.originalUrl ??
     reference.sourceSnapshot?.previewImageUrl ??
     null;
+  const {
+    resolvedUrl: imageUrl,
+    loading: imageLoading,
+    error: imageLoadError,
+  } = usePrivateImageUrl(privateImageSource);
   const [perceptualHash, setPerceptualHash] = useState(
     asset?.perceptualHash ?? "",
   );
@@ -82,9 +90,9 @@ export function ReferenceVisualEnrichmentPanel({
           type="button"
           className="button secondary"
           onClick={() => void analyze()}
-          disabled={busy || active || !imageUrl}
+          disabled={busy || active || imageLoading || !imageUrl}
         >
-          {busy || active
+          {busy || active || imageLoading
             ? "Analyzing…"
             : failed
               ? "Retry analysis"
@@ -96,7 +104,7 @@ export function ReferenceVisualEnrichmentPanel({
 
       {!imageUrl ? (
         <p className="visual-enrichment-empty">
-          This reference has no browser-readable image URL.
+          {imageLoadError || "This reference has no browser-readable image URL."}
         </p>
       ) : perceptualHash || dominantColors.length > 0 ? (
         <div className="visual-analysis-summary">
