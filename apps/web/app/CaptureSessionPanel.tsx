@@ -60,8 +60,11 @@ export function CaptureSessionPanel() {
         sessionKey: selectedSession.sessionKey,
         ...args,
       });
-      await Promise.all([detail.refresh(), refresh()]);
-      setMessage(reviewResultMessage(args.destination, args.favorite, result.remainingCount));
+      detail.applyReferencePatch(result.reference);
+      await refresh();
+      setMessage(
+        reviewResultMessage(args.destination, args.favorite, result.hasRemaining),
+      );
       return true;
     } catch (caught) {
       setMessage(
@@ -115,9 +118,12 @@ export function CaptureSessionPanel() {
               session={selectedSession}
               references={detail.references}
               loading={detail.loading}
+              loadingMore={detail.loadingMore}
+              hasMore={detail.hasMore}
               error={detail.error}
               busy={busy}
               message={message}
+              onLoadMore={detail.loadMore}
               onReviewState={updateReviewState}
               onReviewReference={reviewReference}
             />
@@ -214,18 +220,24 @@ function SessionDetail({
   session,
   references,
   loading,
+  loadingMore,
+  hasMore,
   error,
   busy,
   message,
+  onLoadMore,
   onReviewState,
   onReviewReference,
 }: {
   session: CaptureSession;
   references: CaptureSessionReference[];
   loading: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
   error: string;
   busy: boolean;
   message: string;
+  onLoadMore: () => Promise<CaptureSessionReference[]>;
   onReviewState: (state: CaptureSessionReviewState) => Promise<boolean>;
   onReviewReference: (args: {
     referenceId: string;
@@ -241,9 +253,11 @@ function SessionDetail({
   );
   const reviewQueue = pendingReferences.length > 0
     ? pendingReferences
-    : references.filter((reference) => !reference.deleted);
-  const activeReference =
-    reviewQueue.find((reference) => reference._id === activeId) ?? reviewQueue[0];
+    : hasMore
+      ? []
+      : references.filter((reference) => !reference.deleted);
+  const selectedReference = references.find((reference) => reference._id === activeId);
+  const activeReference = selectedReference ?? reviewQueue[0];
   const activeIndex = activeReference
     ? reviewQueue.findIndex((reference) => reference._id === activeReference._id)
     : -1;
@@ -251,20 +265,40 @@ function SessionDetail({
   const progress = references.length > 0 ? reviewedCount / references.length : 0;
 
   useEffect(() => {
+    if (
+      session.reviewState !== "completed" &&
+      pendingReferences.length === 0 &&
+      hasMore &&
+      !loading &&
+      !loadingMore
+    ) {
+      void onLoadMore();
+    }
+  }, [
+    hasMore,
+    loading,
+    loadingMore,
+    onLoadMore,
+    pendingReferences.length,
+    session.reviewState,
+  ]);
+
+  useEffect(() => {
     if (reviewQueue.length === 0) {
-      setActiveId(undefined);
+      if (!selectedReference) setActiveId(undefined);
       return;
     }
-    if (!reviewQueue.some((reference) => reference._id === activeId)) {
+    if (!selectedReference) {
       setActiveId(reviewQueue[0]?._id);
     }
-  }, [activeId, reviewQueue]);
+  }, [reviewQueue, selectedReference]);
 
   function selectRelative(offset: number) {
     if (!reviewQueue.length) return;
+    const currentIndex = activeIndex < 0 ? 0 : activeIndex;
     const nextIndex = Math.min(
       reviewQueue.length - 1,
-      Math.max(0, (activeIndex < 0 ? 0 : activeIndex) + offset),
+      Math.max(0, currentIndex + offset),
     );
     setActiveId(reviewQueue[nextIndex]?._id);
   }
@@ -272,7 +306,9 @@ function SessionDetail({
   async function applyDestination(destination: CaptureSessionReviewDestination) {
     if (!activeReference || busy) return;
     const next =
-      reviewQueue[activeIndex + 1] ?? reviewQueue[activeIndex - 1] ?? undefined;
+      activeIndex >= 0
+        ? reviewQueue[activeIndex + 1] ?? reviewQueue[activeIndex - 1]
+        : reviewQueue[0];
     const undo: UndoReview = {
       referenceId: activeReference._id,
       title: referenceTitle(activeReference),
@@ -383,8 +419,11 @@ function SessionDetail({
           <div><dt>Failed</dt><dd>{session.failedCount}</dd></div>
         </dl>
         <div className="capture-session-progress-copy">
-          <span>{reviewedCount} reviewed</span>
-          <span>{pendingReferences.length} remaining</span>
+          <span>{reviewedCount} reviewed in loaded queue</span>
+          <span>
+            {pendingReferences.length} remaining here
+            {hasMore ? " · older items available" : ""}
+          </span>
         </div>
         <div
           className="capture-session-progress"
@@ -392,7 +431,7 @@ function SessionDetail({
           aria-valuemin={0}
           aria-valuemax={references.length}
           aria-valuenow={reviewedCount}
-          aria-label="Session review progress"
+          aria-label="Loaded session review progress"
         >
           <span style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
@@ -420,7 +459,7 @@ function SessionDetail({
           </div>
           <div className="capture-session-review-copy">
             <p className="eyebrow">
-              {activeIndex + 1} of {reviewQueue.length} ·{" "}
+              {activeIndex >= 0 ? `${activeIndex + 1} of ${reviewQueue.length} · ` : ""}
               {activeReference.siteName || activeReference.authorHandle || activeReference.authorName || getDomain(activeReference.sourceUrl)}
             </p>
             <h3>{referenceTitle(activeReference)}</h3>
@@ -455,14 +494,18 @@ function SessionDetail({
             <button type="button" className="button ghost" disabled={busy || activeIndex <= 0} onClick={() => selectRelative(-1)}>
               ← Previous
             </button>
-            <button type="button" className="button ghost" disabled={busy || activeIndex >= reviewQueue.length - 1} onClick={() => selectRelative(1)}>
+            <button type="button" className="button ghost" disabled={busy || activeIndex < 0 || activeIndex >= reviewQueue.length - 1} onClick={() => selectRelative(1)}>
               Next →
             </button>
           </div>
         </section>
       ) : (
         <p className="capture-session-empty">
-          {loading ? "Loading session references…" : "Every captured reference has left the Inbox."}
+          {loading || loadingMore
+            ? "Loading older session references…"
+            : hasMore
+              ? "Older references are available below."
+              : "Every captured reference has left the Inbox."}
         </p>
       )}
 
@@ -526,6 +569,16 @@ function SessionDetail({
             {loading ? "Loading session references…" : "No references remain in this session."}
           </p>
         )}
+        {hasMore ? (
+          <button
+            type="button"
+            className="button secondary full-width"
+            disabled={loadingMore}
+            onClick={() => void onLoadMore()}
+          >
+            {loadingMore ? "Loading older references…" : "Load older references"}
+          </button>
+        ) : null}
       </section>
     </div>
   );
@@ -600,12 +653,12 @@ function reviewActionMessage(
 function reviewResultMessage(
   destination: CaptureSessionReviewDestination | undefined,
   favorite: boolean | undefined,
-  remainingCount: number,
+  hasRemaining: boolean,
 ) {
   if (typeof favorite === "boolean" && !destination) {
     return favorite ? "Added to favorites." : "Removed from favorites.";
   }
-  const remaining = `${remainingCount} ${remainingCount === 1 ? "reference" : "references"} remaining.`;
+  const remaining = hasRemaining ? "More references remain." : "Session cleared.";
   if (destination === "inbox") return `Restored to Inbox. ${remaining}`;
   if (destination === "keep") return `Kept in Library. ${remaining}`;
   if (destination === "later") return `Moved to Later. ${remaining}`;
