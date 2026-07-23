@@ -4,7 +4,6 @@ import { hashSecret, requireOwnerAccess } from "./lib/privateAccess";
 import { applyReferenceStatsDelta } from "./lib/referenceCatalog";
 import {
   captureSessionReviewPatch,
-  isPendingCaptureSessionReference,
 } from "./lib/captureSessionReview";
 
 const reviewState = v.union(
@@ -218,18 +217,19 @@ export const getReferences = query({
     accessKey: v.string(),
     sessionKey: v.string(),
     limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireOwnerAccess(args.accessKey);
-    const limit = Math.min(500, Math.max(1, Math.floor(args.limit ?? 200)));
-    const references = await ctx.db
+    const limit = Math.min(200, Math.max(1, Math.floor(args.limit ?? 96)));
+    const page = await ctx.db
       .query("references")
       .withIndex("by_capture_session", (q) => q.eq("captureSessionId", args.sessionKey))
       .order("desc")
-      .take(limit);
+      .paginate({ cursor: args.cursor ?? null, numItems: limit });
 
-    return await Promise.all(
-      references.map(async (reference) => {
+    const references = await Promise.all(
+      page.page.map(async (reference) => {
         const [snapshot, asset] = await Promise.all([
           ctx.db
             .query("sourceSnapshots")
@@ -273,6 +273,12 @@ export const getReferences = query({
         };
       }),
     );
+
+    return {
+      references,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
   },
 });
 
@@ -305,13 +311,22 @@ export const reviewReference = mutation({
     await ctx.db.patch(reference._id, patch);
     await applyReferenceStatsDelta(ctx, reference, updated);
 
-    const sessionReferences = await ctx.db
-      .query("references")
-      .withIndex("by_capture_session", (q) => q.eq("captureSessionId", args.sessionKey))
-      .collect();
-    const remainingCount = sessionReferences.filter((item) =>
-      isPendingCaptureSessionReference(item._id === reference._id ? updated : item),
-    ).length;
+    const remainingReference = args.destination
+      ? await ctx.db
+          .query("references")
+          .withIndex("by_capture_session", (q) =>
+            q.eq("captureSessionId", args.sessionKey),
+          )
+          .filter((q) =>
+            q.and(
+              q.eq(q.field("triageState"), "inbox"),
+              q.eq(q.field("archived"), false),
+              q.eq(q.field("deleted"), false),
+            ),
+          )
+          .first()
+      : undefined;
+    const hasRemaining = Boolean(remainingReference);
 
     const session = await ctx.db
       .query("captureSessions")
@@ -319,7 +334,7 @@ export const reviewReference = mutation({
       .unique();
     let nextReviewState = session?.reviewState ?? "unreviewed";
     if (args.destination) {
-      nextReviewState = remainingCount === 0 ? "completed" : "reviewing";
+      nextReviewState = hasRemaining ? "reviewing" : "completed";
       if (session && session.reviewState !== nextReviewState) {
         await ctx.db.patch(session._id, {
           reviewState: nextReviewState,
@@ -337,7 +352,7 @@ export const reviewReference = mutation({
         deleted: updated.deleted,
         favorite: updated.favorite,
       },
-      remainingCount,
+      hasRemaining,
       reviewState: nextReviewState,
     };
   },
