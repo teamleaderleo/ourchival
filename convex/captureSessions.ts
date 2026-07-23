@@ -136,9 +136,10 @@ export const reportFromClipper = mutation({
   handler: async (ctx, args) => {
     const deviceToken = args.deviceToken.trim();
     if (!deviceToken) throw new Error("Clipper device token is required.");
+    const tokenHash = await hashSecret(deviceToken);
     const device = await ctx.db
       .query("clipperDevices")
-      .withIndex("by_token_hash", (q) => q.eq("tokenHash", await hashSecret(deviceToken)))
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
       .first();
     if (!device) throw new Error("This Clipper credential is invalid.");
     if (device.revokedAt) throw new Error("This Clipper was revoked.");
@@ -197,10 +198,9 @@ export const reportFromClipper = mutation({
       updatedAt: now,
     };
 
-    let sessionId;
+    let sessionId = existing?._id;
     if (existing) {
       await ctx.db.patch(existing._id, patch);
-      sessionId = existing._id;
     } else {
       sessionId = await ctx.db.insert("captureSessions", {
         sessionKey,
@@ -209,7 +209,7 @@ export const reportFromClipper = mutation({
       });
     }
     await ctx.db.patch(device._id, { lastUsedAt: now });
-    return { sessionId, created: !existing };
+    return { sessionId: sessionId!, created: !existing };
   },
 });
 
