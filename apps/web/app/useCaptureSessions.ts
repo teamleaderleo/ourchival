@@ -11,6 +11,13 @@ export type CaptureSessionReviewState =
   | "completed"
   | "deferred";
 
+export type CaptureSessionReviewDestination =
+  | "inbox"
+  | "keep"
+  | "later"
+  | "archive"
+  | "trash";
+
 export type CaptureSession = {
   _id: string;
   sessionKey: string;
@@ -41,11 +48,22 @@ export type CaptureSessionReference = {
   authorHandle?: string;
   capturedAt: number;
   triageState?: "inbox" | "kept" | "later";
+  reviewedAt?: number;
   archived: boolean;
+  deleted: boolean;
   favorite: boolean;
   previewUrl?: string | null;
   description?: string | null;
   siteName?: string | null;
+};
+
+export type CaptureSessionReviewResult = {
+  reference: Pick<
+    CaptureSessionReference,
+    "_id" | "triageState" | "reviewedAt" | "archived" | "deleted" | "favorite"
+  >;
+  remainingCount: number;
+  reviewState: CaptureSessionReviewState;
 };
 
 type AccessArgs = { accessKey: string };
@@ -55,6 +73,12 @@ type DetailArgs = AccessArgs & { sessionKey: string; limit?: number };
 type ReviewArgs = AccessArgs & {
   sessionId: string;
   reviewState: CaptureSessionReviewState;
+};
+type ReviewReferenceArgs = AccessArgs & {
+  sessionKey: string;
+  referenceId: string;
+  destination?: CaptureSessionReviewDestination;
+  favorite?: boolean;
 };
 
 const listRecentReference = makeFunctionReference<
@@ -77,6 +101,11 @@ const setReviewStateReference = makeFunctionReference<
   ReviewArgs,
   CaptureSession
 >("captureSessions:setReviewState");
+const reviewReferenceReference = makeFunctionReference<
+  "mutation",
+  ReviewReferenceArgs,
+  CaptureSessionReviewResult
+>("captureSessions:reviewReference");
 
 let client: ConvexHttpClient | undefined;
 
@@ -133,7 +162,7 @@ export function useCaptureSessionReferences(sessionKey?: string) {
     try {
       const next = await getClient().query(
         getReferencesReference,
-        withOwnerAccess({ sessionKey, limit: 300 }),
+        withOwnerAccess({ sessionKey, limit: 500 }),
       );
       setReferences(next);
       return next;
@@ -152,6 +181,18 @@ export function useCaptureSessionReferences(sessionKey?: string) {
   }, [refresh]);
 
   return { references, loading, error, refresh };
+}
+
+export async function reviewCaptureSessionReference(args: {
+  sessionKey: string;
+  referenceId: string;
+  destination?: CaptureSessionReviewDestination;
+  favorite?: boolean;
+}) {
+  return await getClient().mutation(
+    reviewReferenceReference,
+    withOwnerAccess(args),
+  );
 }
 
 export async function setCaptureSessionReviewState(
