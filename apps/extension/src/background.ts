@@ -1,6 +1,7 @@
 import type { ParsedXSource } from "@ourchival/parsers";
 import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
+import { reportCaptureSession } from "./sessionReporting";
 import {
   getSettings,
   LAST_BATCH_KEY,
@@ -260,6 +261,7 @@ async function continueBatch(
 
   activeJobId = state.jobId;
   state.running = true;
+  await reportCaptureSession(connection, state, { force: true });
   await chrome.action.setBadgeText({ text: "…" });
   await chrome.action.setBadgeBackgroundColor({ color: "#6f5bb7" });
 
@@ -273,6 +275,7 @@ async function continueBatch(
         state.skipped += 1;
         advanceCheckpoint(state);
         await saveBatchState({ ...state });
+        await reportCaptureSession(connection, state);
         continue;
       }
 
@@ -308,12 +311,14 @@ async function continueBatch(
 
       advanceCheckpoint(state);
       await saveBatchState({ ...state });
+      await reportCaptureSession(connection, state);
     }
 
     state.running = false;
     state.completedAt = new Date().toISOString();
     state.currentLabel = undefined;
     await saveBatchState({ ...state });
+    await reportCaptureSession(connection, state, { force: true });
     const successful = state.saved + state.duplicates;
     await chrome.action.setBadgeText({
       text:
@@ -329,6 +334,12 @@ async function continueBatch(
       color: state.failed ? "#8a5d3d" : "#3d6b3d",
     });
     return state;
+  } catch (error) {
+    state.running = false;
+    state.currentLabel = errorMessage(error, "The bulk capture was interrupted.");
+    await saveBatchState({ ...state });
+    await reportCaptureSession(connection, state, { force: true });
+    throw error;
   } finally {
     if (activeJobId === state.jobId) activeJobId = undefined;
   }
