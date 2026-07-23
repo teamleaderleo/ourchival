@@ -1,6 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { requireOwnerAccess } from "./lib/privateAccess";
+import { hashSecret, requireOwnerAccess } from "./lib/privateAccess";
 import { applyReferenceStatsDelta } from "./lib/referenceCatalog";
 import {
   captureSessionReviewPatch,
@@ -20,6 +20,13 @@ const reviewDestination = v.union(
   v.literal("later"),
   v.literal("archive"),
   v.literal("trash"),
+);
+
+const sessionKind = v.union(v.literal("bundle"), v.literal("import"));
+const sessionStatus = v.union(
+  v.literal("running"),
+  v.literal("completed"),
+  v.literal("interrupted"),
 );
 
 export const listRecent = query({
@@ -105,6 +112,104 @@ export const syncRecent = mutation({
     }
 
     return { created, updated, scanned: references.length };
+  },
+});
+
+export const reportFromClipper = mutation({
+  args: {
+    deviceToken: v.string(),
+    sessionKey: v.string(),
+    source: v.string(),
+    kind: sessionKind,
+    label: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    expectedCount: v.number(),
+    completedCount: v.number(),
+    savedCount: v.number(),
+    duplicateCount: v.number(),
+    skippedCount: v.number(),
+    failedCount: v.number(),
+    status: sessionStatus,
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const deviceToken = args.deviceToken.trim();
+    if (!deviceToken) throw new Error("Clipper device token is required.");
+    const device = await ctx.db
+      .query("clipperDevices")
+      .withIndex("by_token_hash", (q) => q.eq("tokenHash", await hashSecret(deviceToken)))
+      .first();
+    if (!device) throw new Error("This Clipper credential is invalid.");
+    if (device.revokedAt) throw new Error("This Clipper was revoked.");
+
+    const sessionKey = cleanReportText(args.sessionKey, 160);
+    if (!sessionKey) throw new Error("Capture session key is required.");
+    const source = cleanReportText(args.source, 80) || "import";
+    const label = cleanReportText(args.label, 240);
+    const sourceUrl = cleanReportText(args.sourceUrl, 2_048);
+    const now = Date.now();
+    const startedAt = validTimestamp(args.startedAt) ?? now;
+    const completedAt = validTimestamp(args.completedAt);
+    const existing = await ctx.db
+      .query("captureSessions")
+      .withIndex("by_session_key", (q) => q.eq("sessionKey", sessionKey))
+      .unique();
+    const status =
+      existing?.status === "completed" && args.status === "running"
+        ? "completed"
+        : args.status;
+    const patch = {
+      source,
+      kind: args.kind,
+      ...(label ? { label } : existing?.label ? { label: existing.label } : {}),
+      ...(sourceUrl
+        ? { sourceUrl }
+        : existing?.sourceUrl
+          ? { sourceUrl: existing.sourceUrl }
+          : {}),
+      expectedCount: Math.max(
+        existing?.expectedCount ?? 0,
+        boundedCount(args.expectedCount),
+      ),
+      completedCount: Math.max(
+        existing?.completedCount ?? 0,
+        boundedCount(args.completedCount),
+      ),
+      savedCount: Math.max(existing?.savedCount ?? 0, boundedCount(args.savedCount)),
+      duplicateCount: Math.max(
+        existing?.duplicateCount ?? 0,
+        boundedCount(args.duplicateCount),
+      ),
+      skippedCount: Math.max(
+        existing?.skippedCount ?? 0,
+        boundedCount(args.skippedCount),
+      ),
+      failedCount: Math.max(existing?.failedCount ?? 0, boundedCount(args.failedCount)),
+      status,
+      reviewState: existing?.reviewState ?? "unreviewed" as const,
+      startedAt: Math.min(existing?.startedAt ?? startedAt, startedAt),
+      ...((status === "completed" || status === "interrupted")
+        ? { completedAt: completedAt ?? existing?.completedAt ?? now }
+        : existing?.completedAt
+          ? { completedAt: existing.completedAt }
+          : {}),
+      updatedAt: now,
+    };
+
+    let sessionId;
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+      sessionId = existing._id;
+    } else {
+      sessionId = await ctx.db.insert("captureSessions", {
+        sessionKey,
+        ...patch,
+        createdAt: now,
+      });
+    }
+    await ctx.db.patch(device._id, { lastUsedAt: now });
+    return { sessionId, created: !existing };
   },
 });
 
@@ -277,6 +382,22 @@ function inferSession(items: any[]) {
     label,
     sourceUrl: kind === "bundle" ? first.sourceUrl : undefined,
   };
+}
+
+function boundedCount(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1_000_000, Math.max(0, Math.floor(value)));
+}
+
+function validTimestamp(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function cleanReportText(value: string | undefined, maxLength: number) {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned.slice(0, maxLength) : undefined;
 }
 
 function domainLabel(value: string) {
