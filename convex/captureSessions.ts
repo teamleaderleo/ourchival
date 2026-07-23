@@ -1,12 +1,25 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireOwnerAccess } from "./lib/privateAccess";
+import { applyReferenceStatsDelta } from "./lib/referenceCatalog";
+import {
+  captureSessionReviewPatch,
+  isPendingCaptureSessionReference,
+} from "./lib/captureSessionReview";
 
 const reviewState = v.union(
   v.literal("unreviewed"),
   v.literal("reviewing"),
   v.literal("completed"),
   v.literal("deferred"),
+);
+
+const reviewDestination = v.union(
+  v.literal("inbox"),
+  v.literal("keep"),
+  v.literal("later"),
+  v.literal("archive"),
+  v.literal("trash"),
 );
 
 export const listRecent = query({
@@ -111,50 +124,117 @@ export const getReferences = query({
       .take(limit);
 
     return await Promise.all(
-      references
-        .filter((reference) => !reference.deleted)
-        .map(async (reference) => {
-          const [snapshot, asset] = await Promise.all([
-            ctx.db
-              .query("sourceSnapshots")
-              .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
-              .order("desc")
-              .first(),
-            ctx.db
-              .query("assets")
-              .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
-              .first(),
-          ]);
-          const [thumbUrl, previewUrl, originalStorageUrl] = await Promise.all([
-            asset?.thumbStorageId ? ctx.storage.getUrl(asset.thumbStorageId) : null,
-            asset?.previewStorageId ? ctx.storage.getUrl(asset.previewStorageId) : null,
-            asset?.originalStorageId ? ctx.storage.getUrl(asset.originalStorageId) : null,
-          ]);
+      references.map(async (reference) => {
+        const [snapshot, asset] = await Promise.all([
+          ctx.db
+            .query("sourceSnapshots")
+            .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
+            .order("desc")
+            .first(),
+          ctx.db
+            .query("assets")
+            .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
+            .first(),
+        ]);
+        const [thumbUrl, previewUrl, originalStorageUrl] = await Promise.all([
+          asset?.thumbStorageId ? ctx.storage.getUrl(asset.thumbStorageId) : null,
+          asset?.previewStorageId ? ctx.storage.getUrl(asset.previewStorageId) : null,
+          asset?.originalStorageId ? ctx.storage.getUrl(asset.originalStorageId) : null,
+        ]);
 
-          return {
-            _id: reference._id,
-            kind: reference.kind,
-            title: reference.title,
-            sourceUrl: reference.sourceUrl,
-            authorName: reference.authorName,
-            authorHandle: reference.authorHandle,
-            capturedAt: reference.capturedAt,
-            triageState: reference.triageState,
-            archived: reference.archived,
-            favorite: reference.favorite,
-            previewUrl:
-              thumbUrl ??
-              previewUrl ??
-              originalStorageUrl ??
-              asset?.driveThumbnailLink ??
-              asset?.originalUrl ??
-              snapshot?.previewImageUrl ??
-              null,
-            description: snapshot?.description ?? snapshot?.postText ?? null,
-            siteName: snapshot?.siteName ?? null,
-          };
-        }),
+        return {
+          _id: reference._id,
+          kind: reference.kind,
+          title: reference.title,
+          sourceUrl: reference.sourceUrl,
+          authorName: reference.authorName,
+          authorHandle: reference.authorHandle,
+          capturedAt: reference.capturedAt,
+          triageState: reference.triageState,
+          reviewedAt: reference.reviewedAt,
+          archived: reference.archived,
+          deleted: reference.deleted,
+          favorite: reference.favorite,
+          previewUrl:
+            thumbUrl ??
+            previewUrl ??
+            originalStorageUrl ??
+            asset?.driveThumbnailLink ??
+            asset?.originalUrl ??
+            snapshot?.previewImageUrl ??
+            null,
+          description: snapshot?.description ?? snapshot?.postText ?? null,
+          siteName: snapshot?.siteName ?? null,
+        };
+      }),
     );
+  },
+});
+
+export const reviewReference = mutation({
+  args: {
+    accessKey: v.string(),
+    sessionKey: v.string(),
+    referenceId: v.id("references"),
+    destination: v.optional(reviewDestination),
+    favorite: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    if (!args.destination && typeof args.favorite !== "boolean") {
+      throw new Error("Choose a review destination or favorite state.");
+    }
+
+    const reference = await ctx.db.get(args.referenceId);
+    if (!reference || reference.captureSessionId !== args.sessionKey) {
+      throw new Error("Capture session reference not found.");
+    }
+
+    const patch = {
+      ...(args.destination
+        ? captureSessionReviewPatch(args.destination, Date.now())
+        : {}),
+      ...(typeof args.favorite === "boolean" ? { favorite: args.favorite } : {}),
+    };
+    const updated = { ...reference, ...patch };
+    await ctx.db.patch(reference._id, patch);
+    await applyReferenceStatsDelta(ctx, reference, updated);
+
+    const sessionReferences = await ctx.db
+      .query("references")
+      .withIndex("by_capture_session", (q) => q.eq("captureSessionId", args.sessionKey))
+      .collect();
+    const remainingCount = sessionReferences.filter((item) =>
+      isPendingCaptureSessionReference(item._id === reference._id ? updated : item),
+    ).length;
+
+    const session = await ctx.db
+      .query("captureSessions")
+      .withIndex("by_session_key", (q) => q.eq("sessionKey", args.sessionKey))
+      .unique();
+    let nextReviewState = session?.reviewState ?? "unreviewed";
+    if (args.destination) {
+      nextReviewState = remainingCount === 0 ? "completed" : "reviewing";
+      if (session && session.reviewState !== nextReviewState) {
+        await ctx.db.patch(session._id, {
+          reviewState: nextReviewState,
+          updatedAt: Date.now(),
+        });
+      }
+    }
+
+    return {
+      reference: {
+        _id: updated._id,
+        triageState: updated.triageState,
+        reviewedAt: updated.reviewedAt,
+        archived: updated.archived,
+        deleted: updated.deleted,
+        favorite: updated.favorite,
+      },
+      remainingCount,
+      reviewState: nextReviewState,
+    };
   },
 });
 
