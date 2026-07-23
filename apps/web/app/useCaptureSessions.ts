@@ -62,14 +62,24 @@ export type CaptureSessionReviewResult = {
     CaptureSessionReference,
     "_id" | "triageState" | "reviewedAt" | "archived" | "deleted" | "favorite"
   >;
-  remainingCount: number;
+  hasRemaining: boolean;
   reviewState: CaptureSessionReviewState;
+};
+
+type CaptureSessionReferencePage = {
+  references: CaptureSessionReference[];
+  continueCursor: string;
+  isDone: boolean;
 };
 
 type AccessArgs = { accessKey: string };
 type ListArgs = AccessArgs & { limit?: number };
 type SyncArgs = AccessArgs & { referenceLimit?: number };
-type DetailArgs = AccessArgs & { sessionKey: string; limit?: number };
+type DetailArgs = AccessArgs & {
+  sessionKey: string;
+  limit?: number;
+  cursor?: string;
+};
 type ReviewArgs = AccessArgs & {
   sessionId: string;
   reviewState: CaptureSessionReviewState;
@@ -94,7 +104,7 @@ const syncRecentReference = makeFunctionReference<
 const getReferencesReference = makeFunctionReference<
   "query",
   DetailArgs,
-  CaptureSessionReference[]
+  CaptureSessionReferencePage
 >("captureSessions:getReferences");
 const setReviewStateReference = makeFunctionReference<
   "mutation",
@@ -149,12 +159,17 @@ export function useCaptureSessions(limit = 24) {
 
 export function useCaptureSessionReferences(sessionKey?: string) {
   const [references, setReferences] = useState<CaptureSessionReference[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
     if (!sessionKey) {
       setReferences([]);
+      setCursor(undefined);
+      setHasMore(false);
       return [];
     }
     setLoading(true);
@@ -162,10 +177,12 @@ export function useCaptureSessionReferences(sessionKey?: string) {
     try {
       const next = await getClient().query(
         getReferencesReference,
-        withOwnerAccess({ sessionKey, limit: 500 }),
+        withOwnerAccess({ sessionKey, limit: 96 }),
       );
-      setReferences(next);
-      return next;
+      setReferences(next.references);
+      setCursor(next.isDone ? undefined : next.continueCursor);
+      setHasMore(!next.isDone);
+      return next.references;
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not load session references.",
@@ -176,11 +193,54 @@ export function useCaptureSessionReferences(sessionKey?: string) {
     }
   }, [sessionKey]);
 
+  const loadMore = useCallback(async () => {
+    if (!sessionKey || !cursor || loadingMore) return [];
+    setLoadingMore(true);
+    setError("");
+    try {
+      const next = await getClient().query(
+        getReferencesReference,
+        withOwnerAccess({ sessionKey, limit: 96, cursor }),
+      );
+      setReferences((current) => mergeReferences(current, next.references));
+      setCursor(next.isDone ? undefined : next.continueCursor);
+      setHasMore(!next.isDone);
+      return next.references;
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not load older session references.",
+      );
+      return [];
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [cursor, loadingMore, sessionKey]);
+
+  const applyReferencePatch = useCallback(
+    (patch: CaptureSessionReviewResult["reference"]) => {
+      setReferences((current) =>
+        current.map((reference) =>
+          reference._id === patch._id ? { ...reference, ...patch } : reference,
+        ),
+      );
+    },
+    [],
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  return { references, loading, error, refresh };
+  return {
+    references,
+    loading,
+    loadingMore,
+    error,
+    refresh,
+    loadMore,
+    hasMore,
+    applyReferencePatch,
+  };
 }
 
 export async function reviewCaptureSessionReference(args: {
@@ -203,6 +263,17 @@ export async function setCaptureSessionReviewState(
     setReviewStateReference,
     withOwnerAccess({ sessionId, reviewState }),
   );
+}
+
+function mergeReferences(
+  current: CaptureSessionReference[],
+  incoming: CaptureSessionReference[],
+) {
+  const seen = new Set(current.map((reference) => reference._id));
+  return [
+    ...current,
+    ...incoming.filter((reference) => !seen.has(reference._id)),
+  ];
 }
 
 function getClient() {
