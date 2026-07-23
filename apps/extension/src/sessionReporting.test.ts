@@ -72,6 +72,7 @@ describe("capture session reporting", () => {
                 kind: "image",
                 sourceUrl: "https://x.com/artist/status/1",
                 assetUrl: "https://pbs.twimg.com/media/example.jpg",
+                capturedAt: "2026-07-24T00:00:00.000Z",
               },
             },
           ],
