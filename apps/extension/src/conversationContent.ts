@@ -1,16 +1,16 @@
-import { captureChatGptConversation } from "./chatgptConversation";
+import { captureProviderConversation } from "./captureProviderConversation";
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "OURCHIVAL_GET_CONVERSATION_CAPTURE") return false;
   try {
-    const archive = captureChatGptConversation(document, location.href);
+    const archive = captureProviderConversation(document, location.href);
     sendResponse(
       archive
         ? { ok: true, archive }
         : {
             ok: false,
             error:
-              "Open a saved ChatGPT conversation with visible messages before capturing.",
+              "Open a saved ChatGPT, Claude, or Gemini conversation with visible messages before capturing.",
           },
     );
   } catch (error) {
@@ -19,7 +19,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       error:
         error instanceof Error
           ? error.message
-          : "Could not read the visible ChatGPT conversation.",
+          : "Could not read the visible conversation.",
     });
   }
   return false;
