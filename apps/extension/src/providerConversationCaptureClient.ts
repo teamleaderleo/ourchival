@@ -1,3 +1,4 @@
+import { buildConversationFingerprints } from "@ourchival/shared";
 import {
   convexMutationUrl,
   type SessionReportConnection,
@@ -62,6 +63,7 @@ export async function uploadProviderConversation(
     throw new Error(uploadResponse.statusText || "Conversation file upload failed.");
   }
 
+  const fingerprintBundle = buildConversationFingerprints(archive.messages);
   const commitArgs = {
     deviceToken: connection.deviceToken,
     storageId: uploadBody.storageId,
@@ -69,9 +71,9 @@ export async function uploadProviderConversation(
     providerConversationId: archive.providerConversationId,
     sourceUrl: archive.sourceUrl,
     title: archive.title,
-    adapter: `${archive.provider}.dom.v1`,
+    adapter: `${archive.provider}.dom.v2;identity=${fingerprintBundle.confidence}`,
     messageCount: archive.messages.length,
-    messageFingerprints: archive.messages.map(providerMessageFingerprint),
+    messageFingerprints: fingerprintBundle.fingerprints,
     capturedAt: Date.parse(archive.capturedAt),
   };
   try {
@@ -89,15 +91,7 @@ export async function uploadProviderConversation(
 export function providerMessageFingerprint(
   message: ProviderConversationArchive["messages"][number],
 ) {
-  return stableFingerprint(
-    JSON.stringify({
-      id: message.id,
-      role: message.role,
-      author: message.author,
-      text: message.text,
-      createdAt: message.createdAt,
-    }),
-  );
+  return buildConversationFingerprints([message]).fingerprints[0]!;
 }
 
 function commitProviderCapture(
@@ -157,24 +151,4 @@ async function callMutation<T>(
 
 function isRetryableMutationError(error: unknown) {
   return error instanceof ConversationMutationError && error.retryable;
-}
-
-function stableFingerprint(value: string) {
-  return [
-    hash32(value, 0x811c9dc5),
-    hash32(value, 0x9e3779b9),
-    hash32(value, 0x85ebca6b),
-    hash32(value, 0xc2b2ae35),
-  ]
-    .map((part) => part.toString(16).padStart(8, "0"))
-    .join("");
-}
-
-function hash32(value: string, seed: number) {
-  let hash = seed >>> 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
 }
