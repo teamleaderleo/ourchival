@@ -1,16 +1,14 @@
 import type { PageReadableTextCapture } from "@ourchival/shared";
 import {
+  callArtifactMutation,
+  commitArtifactMutation,
+} from "./artifactMutationClient";
+import {
   convexMutationUrl,
   type SessionReportConnection,
 } from "./sessionReporting";
 
 const maxReadableTextBytes = 500_000;
-
-type ConvexMutationResponse<T> = {
-  status?: "success" | "error";
-  errorMessage?: string;
-  value?: T;
-};
 
 export async function uploadReadablePageText(
   connection: SessionReportConnection,
@@ -36,7 +34,7 @@ export async function uploadReadablePageText(
         error: "Readable page content size is invalid.",
       };
     }
-    const create = await callConvexMutation<{
+    const create = await callArtifactMutation<{
       referenceId: string;
       uploadUrl: string;
     }>(endpoint, "pageText:createBrowserReadableTextUpload", {
@@ -61,7 +59,7 @@ export async function uploadReadablePageText(
       };
     }
 
-    const commit = await callConvexMutation<{
+    const commit = await commitArtifactMutation<{
       artifactId?: string;
       storageId?: string;
       duplicate?: boolean;
@@ -86,29 +84,4 @@ export async function uploadReadablePageText(
       error: error instanceof Error ? error.message : "Readable text upload failed.",
     };
   }
-}
-
-async function callConvexMutation<T>(
-  endpoint: string,
-  path: string,
-  args: Record<string, unknown>,
-): Promise<
-  | { ok: true; value: T }
-  | { uploaded: false; reason: "request_failed"; error: string; ok: false }
-> {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path, args, format: "json" }),
-  });
-  const body = (await response.json().catch(() => ({}))) as ConvexMutationResponse<T>;
-  if (!response.ok || body.status === "error" || body.value === undefined) {
-    return {
-      ok: false,
-      uploaded: false,
-      reason: "request_failed",
-      error: body.errorMessage ?? response.statusText ?? "Convex mutation failed.",
-    };
-  }
-  return { ok: true, value: body.value };
 }
