@@ -3,6 +3,7 @@ import {
   callArtifactMutation,
   commitArtifactMutation,
 } from "./artifactMutationClient";
+import { trackArtifactResult } from "./artifactWarnings";
 import {
   convexMutationUrl,
   type SessionReportConnection,
@@ -18,9 +19,16 @@ export async function uploadReadablePageText(
   if (!referenceId || !capture) {
     return { uploaded: false, reason: "missing_capture" as const };
   }
+  const finish = <T extends { uploaded: boolean; reason?: string; error?: string }>(
+    result: T,
+  ) => trackArtifactResult(referenceId, "readable_text", result);
   const endpoint = convexMutationUrl(connection.endpoint);
   if (!endpoint) {
-    return { uploaded: false, reason: "unsupported_endpoint" as const };
+    return await finish({
+      uploaded: false,
+      reason: "unsupported_endpoint" as const,
+      error: "The configured Convex endpoint does not support readable text uploads.",
+    });
   }
 
   try {
@@ -28,11 +36,11 @@ export async function uploadReadablePageText(
       type: "text/plain;charset=utf-8",
     });
     if (file.size < 80 || file.size > maxReadableTextBytes) {
-      return {
+      return await finish({
         uploaded: false,
         reason: "invalid_size" as const,
         error: "Readable page content size is invalid.",
-      };
+      });
     }
     const create = await callArtifactMutation<{
       referenceId: string;
@@ -41,7 +49,7 @@ export async function uploadReadablePageText(
       deviceToken: connection.deviceToken,
       referenceId,
     });
-    if (!create.ok) return create;
+    if (!create.ok) return await finish(create);
 
     const uploadResponse = await fetch(create.value.uploadUrl, {
       method: "POST",
@@ -52,11 +60,11 @@ export async function uploadReadablePageText(
       storageId?: string;
     };
     if (!uploadResponse.ok || !uploadBody.storageId) {
-      return {
+      return await finish({
         uploaded: false,
         reason: "upload_failed" as const,
         error: uploadResponse.statusText || "Readable text upload failed.",
-      };
+      });
     }
 
     const commit = await commitArtifactMutation<{
@@ -70,18 +78,18 @@ export async function uploadReadablePageText(
       source: capture.source,
       capturedAt: Date.parse(capture.capturedAt),
     });
-    if (!commit.ok) return commit;
+    if (!commit.ok) return await finish(commit);
 
-    return {
+    return await finish({
       uploaded: true as const,
       duplicate: Boolean(commit.value.duplicate),
       artifactId: commit.value.artifactId,
-    };
+    });
   } catch (error) {
-    return {
+    return await finish({
       uploaded: false,
       reason: "request_failed" as const,
       error: error instanceof Error ? error.message : "Readable text upload failed.",
-    };
+    });
   }
 }
