@@ -77,11 +77,13 @@ export async function uploadProviderConversation(
     capturedAt: Date.parse(archive.capturedAt),
   };
   try {
-    return await commitProviderCapture(endpoint, commitArgs);
+    const result = await commitProviderCapture(endpoint, commitArgs);
+    return { ...result, identityConfidence: fingerprintBundle.confidence };
   } catch (firstError) {
     if (!isRetryableMutationError(firstError)) throw firstError;
     try {
-      return await commitProviderCapture(endpoint, commitArgs);
+      const result = await commitProviderCapture(endpoint, commitArgs);
+      return { ...result, identityConfidence: fingerprintBundle.confidence };
     } catch {
       throw firstError;
     }
