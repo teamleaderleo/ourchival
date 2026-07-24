@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Ourchival Clipper",
   "version": "0.0.1",
-  "description": "Save images, tabs, links, and source metadata to your private Ourchival vault.",
+  "description": "Save images, tabs, links, conversations, and source metadata to your private Ourchival vault.",
   "permissions": [
     "contextMenus",
     "activeTab",
@@ -13,7 +13,7 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "conversationWorker.js",
     "type": "module"
   },
   "content_scripts": [
@@ -22,7 +22,8 @@
         "<all_urls>"
       ],
       "js": [
-        "content.js"
+        "content.js",
+        "conversationContent.js"
       ]
     }
   ],
