@@ -8,8 +8,10 @@ import {
   normalizeGeminiRole,
 } from "./geminiConversation";
 import {
+  assertRecognizedProviderRoles,
   cleanProviderConversationTitle,
   normalizeProviderMessages,
+  providerCaptureDiagnostics,
   stabilizeProviderMessageIds,
   validateProviderArchive,
   type ProviderConversationArchive,
@@ -108,5 +110,33 @@ describe("provider conversation adapters", () => {
     expect(first).toEqual(second);
     expect(first[0]?.id).toBe("provider-1");
     expect(first[1]?.id).toMatch(/^provider-1-[a-f0-9]{10}$/);
+  });
+
+  it("reports inferred IDs and unrecognized roles", () => {
+    expect(
+      providerCaptureDiagnostics([
+        { id: "captured-abc", role: "other", text: "Unknown container" },
+        { id: "provider-2", role: "assistant", text: "Recognized reply" },
+      ]),
+    ).toEqual({
+      unknownRoleCount: 1,
+      inferredIdCount: 1,
+    });
+  });
+
+  it("rejects captures where every message role is unrecognized", () => {
+    expect(() =>
+      assertRecognizedProviderRoles(
+        [{ id: "one", role: "other", text: "Unrecognized" }],
+        "Claude",
+      ),
+    ).toThrow("roles could not be recognized");
+
+    expect(() =>
+      assertRecognizedProviderRoles(
+        [{ id: "one", role: "user", text: "Recognized" }],
+        "Claude",
+      ),
+    ).not.toThrow();
   });
 });
