@@ -77,6 +77,37 @@ export function stabilizeProviderMessageIds<T extends ProviderConversationMessag
   });
 }
 
+export function normalizeProviderMessages<T extends ProviderConversationMessage>(
+  messages: T[],
+): T[] {
+  const stabilized = stabilizeProviderMessageIds(messages);
+  const usedIds = new Map<string, string>();
+  const normalized: T[] = [];
+
+  for (const message of stabilized) {
+    const signature = stableMessageSignature(message);
+    const existingSignature = usedIds.get(message.id);
+    if (existingSignature === signature) continue;
+
+    let id = message.id;
+    if (existingSignature !== undefined) {
+      const suffix = stableFingerprint(signature).slice(0, 10);
+      id = `${message.id}-${suffix}`;
+      let collision = 2;
+      while (usedIds.has(id) && usedIds.get(id) !== signature) {
+        id = `${message.id}-${suffix}-${collision}`;
+        collision += 1;
+      }
+      if (usedIds.get(id) === signature) continue;
+    }
+
+    usedIds.set(id, signature);
+    normalized.push(id === message.id ? message : { ...message, id });
+  }
+
+  return normalized;
+}
+
 export function validateProviderArchive<T extends ProviderConversationArchive>(
   archive: T | undefined,
 ) {
@@ -106,6 +137,15 @@ export function cleanProviderConversationTitle(
     firstUser?.text.replace(/\s+/g, " ").slice(0, 90) ||
     `${providerLabel} conversation`
   );
+}
+
+function stableMessageSignature(message: ProviderConversationMessage) {
+  return JSON.stringify({
+    role: message.role,
+    author: message.author,
+    text: message.text,
+    createdAt: message.createdAt,
+  });
 }
 
 function stableFingerprint(value: string) {
