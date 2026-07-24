@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   parseConversationImport,
   type ConversationArchive,
@@ -13,6 +13,10 @@ import {
   useConversations,
   type ConversationSummary,
 } from "./useConversations";
+
+const messagePageSize = 100;
+
+type ProviderFilter = "all" | ConversationProvider;
 
 export function ConversationPanel() {
   const [open, setOpen] = useState(false);
@@ -86,7 +90,6 @@ export function ConversationPanel() {
         onClick={() => setOpen((current) => !current)}
       >
         Conversations
-        {list.conversations.length ? <span>{list.conversations.length}</span> : null}
       </button>
 
       {open ? (
@@ -276,41 +279,97 @@ function ConversationList({
   error: string;
   onSelect: (conversation: ConversationSummary) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [provider, setProvider] = useState<ProviderFilter>("all");
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return conversations.filter((conversation) => {
+      if (provider !== "all" && conversation.provider !== provider) return false;
+      if (!needle) return true;
+      return [
+        conversation.title,
+        providerLabel(conversation.provider),
+        conversation.providerConversationId,
+        conversation.canonicalUrl,
+        conversation.reference.sourceUrl,
+      ].some((value) => value?.toLowerCase().includes(needle));
+    });
+  }, [conversations, provider, query]);
+
   if (error) return <p className="conversation-message error">{error}</p>;
   if (!conversations.length) {
     return (
       <p className="conversation-empty">
-        {loading ? "Loading conversations…" : "Imported conversations will appear here."}
+        {loading ? "Loading recent conversations…" : "Imported conversations will appear here."}
       </p>
     );
   }
+
   return (
     <div className="conversation-list">
-      {conversations.map((conversation) => (
-        <button
-          type="button"
-          className="conversation-row"
-          key={conversation._id}
-          onClick={() => onSelect(conversation)}
-        >
-          <span className="conversation-provider" aria-hidden="true">
-            {providerInitial(conversation.provider)}
-          </span>
+      <div className="conversation-list-tools">
+        <div>
+          <strong>Recent conversations</strong>
           <span>
-            <strong>{conversation.title}</strong>
-            <small>
-              {providerLabel(conversation.provider)} · {conversation.latestSnapshot.messageCount} messages ·{" "}
-              {formatDate(conversation.lastCapturedAt)}
-            </small>
-            <em>
-              {conversation.snapshotCount} {conversation.snapshotCount === 1 ? "snapshot" : "snapshots"}
-              {conversation.latestSnapshot.addedCount
-                ? ` · +${conversation.latestSnapshot.addedCount} recent`
-                : ""}
-            </em>
+            Showing {filtered.length} of {conversations.length} recently updated conversations.
           </span>
-        </button>
-      ))}
+        </div>
+        <div>
+          <label>
+            <span className="sr-only">Filter recent conversations</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Filter title, provider, ID, or URL"
+            />
+          </label>
+          <label>
+            <span className="sr-only">Filter by provider</span>
+            <select
+              value={provider}
+              onChange={(event) => setProvider(event.target.value as ProviderFilter)}
+            >
+              <option value="all">All providers</option>
+              <option value="generic">Imported</option>
+              <option value="chatgpt">ChatGPT</option>
+              <option value="claude">Claude</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {filtered.length ? (
+        filtered.map((conversation) => (
+          <button
+            type="button"
+            className="conversation-row"
+            key={conversation._id}
+            onClick={() => onSelect(conversation)}
+          >
+            <span className="conversation-provider" aria-hidden="true">
+              {providerInitial(conversation.provider)}
+            </span>
+            <span>
+              <strong>{conversation.title}</strong>
+              <small>
+                {providerLabel(conversation.provider)} · {conversation.latestSnapshot.messageCount}{" "}
+                messages · {formatDate(conversation.lastCapturedAt)}
+              </small>
+              <em>
+                {conversation.snapshotCount}{" "}
+                {conversation.snapshotCount === 1 ? "snapshot" : "snapshots"}
+                {conversation.latestSnapshot.addedCount
+                  ? ` · +${conversation.latestSnapshot.addedCount} in latest revision`
+                  : ""}
+              </em>
+            </span>
+          </button>
+        ))
+      ) : (
+        <p className="conversation-empty">No recently loaded conversations match these filters.</p>
+      )}
     </div>
   );
 }
@@ -326,10 +385,49 @@ function ConversationReader({
   loading: boolean;
   error: string;
 }) {
+  const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(messagePageSize);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+
+  useEffect(() => {
+    setQuery("");
+    setVisibleCount(messagePageSize);
+    setCopyState("idle");
+  }, [summary?._id]);
+
+  const filteredMessages = useMemo(() => {
+    if (!archive) return [];
+    const needle = query.trim().toLowerCase();
+    if (!needle) return archive.messages;
+    return archive.messages.filter((message) =>
+      [message.role, message.author, message.text].some((value) =>
+        value?.toLowerCase().includes(needle),
+      ),
+    );
+  }, [archive, query]);
+
   if (error) return <p className="conversation-message error">{error}</p>;
   if (!archive || !summary) {
-    return <p className="conversation-empty">{loading ? "Loading conversation…" : "Conversation unavailable."}</p>;
+    return (
+      <p className="conversation-empty">
+        {loading ? "Loading conversation…" : "Conversation unavailable."}
+      </p>
+    );
   }
+
+  const visibleMessages = filteredMessages.slice(0, visibleCount);
+  const remaining = filteredMessages.length - visibleMessages.length;
+
+  async function copyMarkdown() {
+    try {
+      await navigator.clipboard.writeText(conversationMarkdown(archive));
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 1600);
+    } catch {
+      setCopyState("error");
+    }
+  }
+
   return (
     <div className="conversation-reader">
       <section className="conversation-reader-summary">
@@ -351,17 +449,38 @@ function ConversationReader({
           >
             Download JSON
           </button>
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => void navigator.clipboard.writeText(conversationMarkdown(archive))}
-          >
-            Copy Markdown
+          <button type="button" className="button secondary" onClick={() => void copyMarkdown()}>
+            {copyState === "copied"
+              ? "Copied"
+              : copyState === "error"
+                ? "Copy failed"
+                : "Copy Markdown"}
           </button>
         </div>
       </section>
+
+      <div className="conversation-reader-tools">
+        <label>
+          <span className="sr-only">Search within this conversation</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setVisibleCount(messagePageSize);
+            }}
+            placeholder="Search this conversation"
+          />
+        </label>
+        <span>
+          {query.trim()
+            ? `${filteredMessages.length} matching ${filteredMessages.length === 1 ? "message" : "messages"}`
+            : `${visibleMessages.length} of ${archive.messages.length} messages shown`}
+        </span>
+      </div>
+
       <section className="conversation-messages" aria-label="Conversation messages">
-        {archive.messages.map((message) => (
+        {visibleMessages.map((message) => (
           <article className={`conversation-message-card ${message.role}`} key={message.id}>
             <header>
               <strong>{message.author || roleLabel(message.role)}</strong>
@@ -370,7 +489,20 @@ function ConversationReader({
             <pre>{message.text}</pre>
           </article>
         ))}
+        {!visibleMessages.length ? (
+          <p className="conversation-empty">No messages match this search.</p>
+        ) : null}
       </section>
+
+      {remaining > 0 ? (
+        <button
+          type="button"
+          className="button secondary conversation-load-more"
+          onClick={() => setVisibleCount((count) => count + messagePageSize)}
+        >
+          Show {Math.min(messagePageSize, remaining)} more
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -388,7 +520,9 @@ function downloadConversation(archive: ConversationArchive) {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = `${archive.title.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "conversation"}.json`;
+  document.body.append(anchor);
   anchor.click();
+  anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
