@@ -42,26 +42,38 @@ export async function uploadProviderConversation(
     throw new Error(uploadResponse.statusText || "Conversation file upload failed.");
   }
 
-  return await callMutation<{
-    conversationId: string;
-    referenceId: string;
-    snapshotId: string;
-    duplicate: boolean;
-    addedCount: number;
-    changedCount: number;
-    removedCount: number;
-  }>(endpoint, "providerConversationCaptures:commitCapture", {
-    deviceToken: connection.deviceToken,
-    storageId: uploadBody.storageId,
-    provider: archive.provider,
-    providerConversationId: archive.providerConversationId,
-    sourceUrl: archive.sourceUrl,
-    title: archive.title,
-    adapter: `${archive.provider}.dom.v1`,
-    messageCount: archive.messages.length,
-    messageFingerprints: archive.messages.map(providerMessageFingerprint),
-    capturedAt: Date.parse(archive.capturedAt),
-  });
+  try {
+    return await callMutation<{
+      conversationId: string;
+      referenceId: string;
+      snapshotId: string;
+      duplicate: boolean;
+      addedCount: number;
+      changedCount: number;
+      removedCount: number;
+    }>(endpoint, "providerConversationCaptures:commitCapture", {
+      deviceToken: connection.deviceToken,
+      storageId: uploadBody.storageId,
+      provider: archive.provider,
+      providerConversationId: archive.providerConversationId,
+      sourceUrl: archive.sourceUrl,
+      title: archive.title,
+      adapter: `${archive.provider}.dom.v1`,
+      messageCount: archive.messages.length,
+      messageFingerprints: archive.messages.map(providerMessageFingerprint),
+      capturedAt: Date.parse(archive.capturedAt),
+    });
+  } catch (error) {
+    await callMutation<{ discarded: boolean }>(
+      endpoint,
+      "providerConversationUploads:discard",
+      {
+        deviceToken: connection.deviceToken,
+        storageId: uploadBody.storageId,
+      },
+    ).catch(() => undefined);
+    throw error;
+  }
 }
 
 export function providerMessageFingerprint(
