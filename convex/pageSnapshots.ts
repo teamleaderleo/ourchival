@@ -22,25 +22,22 @@ export const commitBrowserScreenshot = mutation({
     deviceToken: v.string(),
     referenceId: v.id("references"),
     storageId: v.id("_storage"),
-    mimeType: v.string(),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
-    byteSize: v.number(),
-    contentHash: v.string(),
     capturedAt: v.number(),
   },
   handler: async (ctx, args) => {
     const device = await requireScreenshotDevice(ctx, args.deviceToken);
     const reference = await requirePageReference(ctx, args.referenceId);
-    const mimeType = cleanMimeType(args.mimeType);
-    const contentHash = cleanHash(args.contentHash);
-    const byteSize = boundedByteSize(args.byteSize);
+    const uploadedMetadata = await ctx.db.system.get("_storage", args.storageId);
+    if (!uploadedMetadata) throw new Error("Uploaded screenshot file was not found.");
+    const mimeType = cleanMimeType(uploadedMetadata.contentType);
+    const byteSize = boundedByteSize(uploadedMetadata.size);
+    const contentHash = uploadedMetadata.sha256;
     const width = positiveInteger(args.width);
     const height = positiveInteger(args.height);
     const now = Date.now();
     const capturedAt = validTimestamp(args.capturedAt) ?? now;
-    const uploadedMetadata = await ctx.db.system.get("_storage", args.storageId);
-    if (!uploadedMetadata) throw new Error("Uploaded screenshot file was not found.");
 
     const existingArtifact = await ctx.db
       .query("referenceArtifacts")
@@ -112,14 +109,8 @@ export const commitBrowserScreenshot = mutation({
       .first();
     if (asset) {
       await ctx.db.patch(asset._id, {
-        storageProvider: "convex",
         previewStorageId: args.storageId,
         thumbStorageId: args.storageId,
-        mimeType,
-        ...(width ? { width } : {}),
-        ...(height ? { height } : {}),
-        fileSize: byteSize,
-        contentHash,
         derivativeStatus: "ready",
       });
     } else {
@@ -176,20 +167,16 @@ async function requirePageReference(ctx: any, referenceId: any) {
   return reference;
 }
 
-function cleanMimeType(value: string) {
-  const mimeType = value.trim().toLowerCase();
-  if (mimeType !== "image/jpeg" && mimeType !== "image/png" && mimeType !== "image/webp") {
+function cleanMimeType(value: string | undefined) {
+  const mimeType = value?.trim().toLowerCase();
+  if (
+    mimeType !== "image/jpeg" &&
+    mimeType !== "image/png" &&
+    mimeType !== "image/webp"
+  ) {
     throw new Error("Screenshot must be a JPEG, PNG, or WebP image.");
   }
   return mimeType;
-}
-
-function cleanHash(value: string) {
-  const hash = value.trim().toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(hash)) {
-    throw new Error("Screenshot content hash is invalid.");
-  }
-  return hash;
 }
 
 function boundedByteSize(value: number) {
