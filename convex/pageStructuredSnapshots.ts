@@ -51,7 +51,9 @@ export const commitBrowserSnapshot = mutation({
       existing.contentHash === contentHash &&
       existing.storageId
     ) {
-      await ctx.storage.delete(args.storageId);
+      if (existing.storageId !== args.storageId) {
+        await ctx.storage.delete(args.storageId);
+      }
       await ctx.db.patch(existing._id, {
         provider: args.provider,
         capturedAt,
