@@ -65,9 +65,7 @@ export function stabilizeProviderMessageIds<T extends ProviderConversationMessag
     const base = `captured-${stableFingerprint(
       JSON.stringify({
         role: message.role,
-        author: message.author,
         text: message.text,
-        createdAt: message.createdAt,
       }),
     )}`;
     const occurrence = (occurrences.get(base) ?? 0) + 1;
