@@ -1,5 +1,5 @@
-import type { CapturedConversationArchive } from "./chatgptConversation";
-import { uploadChatGptConversation } from "./conversationCaptureClient";
+import type { ProviderConversationArchive } from "./providerConversation";
+import { uploadProviderConversation } from "./providerConversationCaptureClient";
 import { getSettings, normalizeCaptureEndpoint } from "./storage";
 
 type CaptureConversationResponse = {
@@ -41,7 +41,7 @@ async function captureCurrentConversation(): Promise<CaptureConversationResponse
     lastFocusedWindow: true,
   });
   if (typeof tab?.id !== "number") {
-    throw new Error("Open a ChatGPT conversation in the active tab.");
+    throw new Error("Open a supported conversation in the active tab.");
   }
 
   await chrome.action.setBadgeText({ text: "…" });
@@ -52,14 +52,15 @@ async function captureCurrentConversation(): Promise<CaptureConversationResponse
     })) as {
       ok?: boolean;
       error?: string;
-      archive?: CapturedConversationArchive;
+      archive?: ProviderConversationArchive;
     };
     if (!captured?.ok || !captured.archive) {
       throw new Error(
-        captured?.error || "The active tab does not contain a capturable ChatGPT conversation.",
+        captured?.error ||
+          "The active tab does not contain a capturable ChatGPT, Claude, or Gemini conversation.",
       );
     }
-    const result = await uploadChatGptConversation(
+    const result = await uploadProviderConversation(
       { endpoint, deviceToken },
       captured.archive,
     );
