@@ -19,6 +19,7 @@ export default defineConfig({
         conversationContent: "src/conversationContent.ts",
         popup: "src/popup.ts",
         conversationPopup: "src/conversationPopup.ts",
+        artifactWarningPopup: "src/artifactWarningPopup.ts",
       },
       output: {
         entryFileNames: "[name].js",
