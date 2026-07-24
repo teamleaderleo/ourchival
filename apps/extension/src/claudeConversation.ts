@@ -1,7 +1,9 @@
 import {
+  assertProviderMessageCount,
+  assertProviderMessageLength,
   cleanProviderConversationTitle,
   normalizeProviderMessageText,
-  providerConversationLimits,
+  stabilizeProviderMessageIds,
   validateProviderArchive,
   type ProviderConversationArchive,
   type ProviderConversationMessage,
@@ -23,12 +25,15 @@ export function captureClaudeConversation(
 ): ProviderConversationArchive | undefined {
   const identity = claudeConversationIdentity(pageUrl);
   if (!identity) return undefined;
-  const nodes = Array.from(document.querySelectorAll<HTMLElement>(messageSelector))
-    .filter((node) => !node.parentElement?.closest(messageSelector))
-    .slice(0, providerConversationLimits.maxMessages);
-  const messages = nodes
-    .map((node, index) => claudeMessageFromElement(node, index))
-    .filter((message): message is ProviderConversationMessage => Boolean(message));
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>(messageSelector)).filter(
+    (node) => !node.parentElement?.closest(messageSelector),
+  );
+  assertProviderMessageCount(nodes.length, "Claude");
+  const messages = stabilizeProviderMessageIds(
+    nodes
+      .map((node) => claudeMessageFromElement(node))
+      .filter((message): message is ProviderConversationMessage => Boolean(message)),
+  );
   return validateProviderArchive({
     schemaVersion: 1,
     title: cleanProviderConversationTitle(document.title, messages, "Claude"),
@@ -49,6 +54,7 @@ export function claudeConversationIdentity(value: string | undefined) {
     const match = url.pathname.match(/(?:^|\/)chat\/([^/?#]+)/i);
     if (!match?.[1]) return undefined;
     url.hash = "";
+    url.search = "";
     return {
       conversationId: decodeURIComponent(match[1]),
       sourceUrl: url.toString(),
@@ -71,26 +77,22 @@ export function normalizeClaudeRole(
 
 function claudeMessageFromElement(
   node: HTMLElement,
-  index: number,
 ): ProviderConversationMessage | undefined {
   const role = normalizeClaudeRole(
-    [
-      node.dataset.messageAuthorRole,
-      node.dataset.testid,
-      node.className,
-    ]
+    [node.dataset.messageAuthorRole, node.dataset.testid, node.className]
       .filter((value): value is string => typeof value === "string")
       .join(" "),
   );
   const text = extractClaudeText(node);
   if (!text) return undefined;
+  assertProviderMessageLength(text, "Claude");
   const id =
     firstText(
       node.dataset.messageId,
       node.getAttribute("data-message-id") ?? undefined,
       node.closest<HTMLElement>("[data-message-id]")?.dataset.messageId,
       node.id,
-    ) ?? `message-${index + 1}`;
+    ) ?? "";
   const createdAt = firstText(
     node.querySelector<HTMLTimeElement>("time[datetime]")?.dateTime,
     node.getAttribute("data-created-at") ?? undefined,
@@ -107,7 +109,7 @@ function claudeMessageFromElement(
     id,
     role,
     ...(model ? { author: model } : {}),
-    text: text.slice(0, providerConversationLimits.maxMessageLength),
+    text,
     ...(createdAt ? { createdAt } : {}),
   };
 }
