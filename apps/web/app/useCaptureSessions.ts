@@ -101,6 +101,11 @@ type ReviewReferenceArgs = AccessArgs & {
   destination?: CaptureSessionReviewDestination;
   favorite?: boolean;
 };
+type FavoriteReferenceArgs = AccessArgs & {
+  sessionKey: string;
+  referenceId: string;
+  favorite: boolean;
+};
 type ReviewPendingBatchArgs = AccessArgs & {
   sessionKey: string;
   destination: CaptureSessionBatchDestination;
@@ -132,6 +137,11 @@ const reviewReferenceReference = makeFunctionReference<
   ReviewReferenceArgs,
   CaptureSessionReviewResult
 >("captureSessions:reviewReference");
+const favoriteReferenceReference = makeFunctionReference<
+  "mutation",
+  FavoriteReferenceArgs,
+  CaptureSessionReviewResult
+>("captureSessionFavorites:setFavorite");
 const reviewPendingBatchReference = makeFunctionReference<
   "mutation",
   ReviewPendingBatchArgs,
@@ -270,6 +280,16 @@ export async function reviewCaptureSessionReference(args: {
   destination?: CaptureSessionReviewDestination;
   favorite?: boolean;
 }) {
+  if (!args.destination && typeof args.favorite === "boolean") {
+    return await getClient().mutation(
+      favoriteReferenceReference,
+      withOwnerAccess({
+        sessionKey: args.sessionKey,
+        referenceId: args.referenceId,
+        favorite: args.favorite,
+      }),
+    );
+  }
   return await getClient().mutation(
     reviewReferenceReference,
     withOwnerAccess(args),
