@@ -3,12 +3,14 @@ import type {
   CapturePayload,
   PageReadableTextCapture,
   PageSnapshot,
+  PageStructuredSnapshotCapture,
 } from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
 import {
   captureVisiblePageScreenshot,
   uploadPageScreenshot,
 } from "./pageScreenshot";
+import { uploadStructuredPageSnapshot } from "./pageStructuredSnapshot";
 import { uploadReadablePageText } from "./pageText";
 import { reportCaptureSession } from "./sessionReporting";
 import {
@@ -119,6 +121,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const readableText = saveWholePage
     ? readableTextCapture(context?.pageSnapshot)
     : undefined;
+  const structuredSnapshot = saveWholePage
+    ? structuredSnapshotCapture(context?.pageSnapshot)
+    : undefined;
   const payload =
     info.menuItemId === "save-post-to-ourchival" &&
     context?.parsedSource?.platform === "x"
@@ -131,18 +136,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const connection = await getCaptureConnection();
     const result = await capturePayload(connection, payload);
     if (result.ok) {
-      await Promise.all([
-        uploadPageScreenshot(
-          connection,
-          result.body.referenceId,
-          pageScreenshot,
-        ),
-        uploadReadablePageText(
-          connection,
-          result.body.referenceId,
-          readableText,
-        ),
-      ]);
+      await uploadPageArtifacts(connection, result.body.referenceId, {
+        pageScreenshot,
+        readableText,
+        structuredSnapshot,
+      });
     }
     await markResult(toCaptureResult(result));
   } catch (error) {
@@ -236,6 +234,7 @@ async function captureTabs(mode: TabCaptureMode) {
     ? await captureVisiblePageScreenshot(tabs[0])
     : undefined;
   const readableText = readableTextCapture(currentSnapshot);
+  const structuredSnapshot = structuredSnapshotCapture(currentSnapshot);
 
   return await runBatch(
     source,
@@ -259,6 +258,7 @@ async function captureTabs(mode: TabCaptureMode) {
         ...(currentPayload ? { payload: currentPayload } : {}),
         ...(index === 0 && pageScreenshot ? { pageScreenshot } : {}),
         ...(index === 0 && readableText ? { readableText } : {}),
+        ...(index === 0 && structuredSnapshot ? { structuredSnapshot } : {}),
       };
     }),
   );
@@ -343,8 +343,7 @@ async function continueBatch(
 
       if (!isCapturableUrl(sourceUrl)) {
         state.skipped += 1;
-        item.pageScreenshot = undefined;
-        item.readableText = undefined;
+        clearPageArtifacts(item);
         advanceCheckpoint(state);
         await saveBatchState({ ...state });
         await reportCaptureSession(connection, state);
@@ -369,18 +368,7 @@ async function continueBatch(
         if (result.body.alreadySaved) state.duplicates += 1;
         else state.saved += 1;
         if (typeof item.tabId === "number") state.successfulTabIds.push(item.tabId);
-        await Promise.all([
-          uploadPageScreenshot(
-            connection,
-            result.body.referenceId,
-            item.pageScreenshot,
-          ),
-          uploadReadablePageText(
-            connection,
-            result.body.referenceId,
-            item.readableText,
-          ),
-        ]);
+        await uploadPageArtifacts(connection, result.body.referenceId, item);
         await saveLastCapture(payload);
         await saveLastResult(toCaptureResult(result));
       } catch (error) {
@@ -392,8 +380,7 @@ async function continueBatch(
           message: errorMessage(error, "Capture failed."),
         });
       } finally {
-        item.pageScreenshot = undefined;
-        item.readableText = undefined;
+        clearPageArtifacts(item);
       }
 
       advanceCheckpoint(state);
@@ -430,6 +417,31 @@ async function continueBatch(
   } finally {
     if (activeJobId === state.jobId) activeJobId = undefined;
   }
+}
+
+async function uploadPageArtifacts(
+  connection: CaptureConnection,
+  referenceId: string | undefined,
+  artifacts: Pick<
+    BatchCaptureItem,
+    "pageScreenshot" | "readableText" | "structuredSnapshot"
+  >,
+) {
+  await Promise.all([
+    uploadPageScreenshot(connection, referenceId, artifacts.pageScreenshot),
+    uploadReadablePageText(connection, referenceId, artifacts.readableText),
+    uploadStructuredPageSnapshot(
+      connection,
+      referenceId,
+      artifacts.structuredSnapshot,
+    ),
+  ]);
+}
+
+function clearPageArtifacts(item: BatchCaptureItem) {
+  item.pageScreenshot = undefined;
+  item.readableText = undefined;
+  item.structuredSnapshot = undefined;
 }
 
 function advanceCheckpoint(state: BatchCaptureState) {
@@ -619,6 +631,12 @@ function readableTextCapture(
     source: snapshot.readableTextSource,
     capturedAt: new Date().toISOString(),
   };
+}
+
+function structuredSnapshotCapture(
+  snapshot: PageSnapshot | undefined,
+): PageStructuredSnapshotCapture | undefined {
+  return snapshot?.structuredSnapshot;
 }
 
 function buildXPayload(
