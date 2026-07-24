@@ -1,6 +1,10 @@
 import type { ParsedXSource } from "@ourchival/parsers";
 import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
+import {
+  captureVisiblePageScreenshot,
+  uploadPageScreenshot,
+} from "./pageScreenshot";
 import { reportCaptureSession } from "./sessionReporting";
 import {
   getSettings,
@@ -103,6 +107,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
+  const pageScreenshot =
+    info.menuItemId === "save-page-to-ourchival"
+      ? await captureVisiblePageScreenshot(tab)
+      : undefined;
   const payload =
     info.menuItemId === "save-post-to-ourchival" &&
     context?.parsedSource?.platform === "x"
@@ -114,6 +122,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     const connection = await getCaptureConnection();
     const result = await capturePayload(connection, payload);
+    if (result.ok) {
+      await uploadPageScreenshot(
+        connection,
+        result.body.referenceId,
+        pageScreenshot,
+      );
+    }
     await markResult(toCaptureResult(result));
   } catch (error) {
     await markResult({
@@ -188,9 +203,16 @@ async function captureTabs(mode: TabCaptureMode) {
       : mode === "selected"
         ? "selected_tabs"
         : "window";
+  const pageScreenshot =
+    mode === "current" ? await captureVisiblePageScreenshot(tabs[0]) : undefined;
   return await runBatch(
     source,
-    tabs.map((tab) => ({ url: tab.url, title: tab.title, tabId: tab.id })),
+    tabs.map((tab, index) => ({
+      url: tab.url,
+      title: tab.title,
+      tabId: tab.id,
+      ...(index === 0 && pageScreenshot ? { pageScreenshot } : {}),
+    })),
   );
 }
 
@@ -273,6 +295,7 @@ async function continueBatch(
 
       if (!isCapturableUrl(sourceUrl)) {
         state.skipped += 1;
+        item.pageScreenshot = undefined;
         advanceCheckpoint(state);
         await saveBatchState({ ...state });
         await reportCaptureSession(connection, state);
@@ -297,6 +320,12 @@ async function continueBatch(
         if (result.body.alreadySaved) state.duplicates += 1;
         else state.saved += 1;
         if (typeof item.tabId === "number") state.successfulTabIds.push(item.tabId);
+        await uploadPageScreenshot(
+          connection,
+          result.body.referenceId,
+          item.pageScreenshot,
+        );
+        item.pageScreenshot = undefined;
         await saveLastCapture(payload);
         await saveLastResult(toCaptureResult(result));
       } catch (error) {
