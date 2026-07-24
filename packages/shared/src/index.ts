@@ -22,6 +22,14 @@ export type PageReadableTextCapture = {
   capturedAt: string;
 };
 
+export type PageStructuredSnapshotProvider = "reddit.dom";
+
+export type PageStructuredSnapshotCapture = {
+  data: string;
+  provider: PageStructuredSnapshotProvider;
+  capturedAt: string;
+};
+
 export type CapturePayload = {
   kind: ReferenceKind;
   sourceUrl: string;
@@ -61,6 +69,7 @@ export type PageSnapshot = {
   selectedText?: string;
   readableText?: string;
   readableTextSource?: PageReadableTextSource;
+  structuredSnapshot?: PageStructuredSnapshotCapture;
   images: Array<{
     src: string;
     alt?: string;
