@@ -1,17 +1,33 @@
 import { captureProviderConversation } from "./captureProviderConversation";
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "OURCHIVAL_GET_CONVERSATION_CAPTURE") return false;
+  const isCapture = message?.type === "OURCHIVAL_GET_CONVERSATION_CAPTURE";
+  const isDescription =
+    message?.type === "OURCHIVAL_DESCRIBE_CONVERSATION_CAPTURE";
+  if (!isCapture && !isDescription) return false;
+
   try {
     const archive = captureProviderConversation(document, location.href);
+    if (!archive) {
+      sendResponse({
+        ok: false,
+        error:
+          "Open a saved ChatGPT, Claude, or Gemini conversation with visible messages before capturing.",
+      });
+      return false;
+    }
     sendResponse(
-      archive
-        ? { ok: true, archive }
-        : {
-            ok: false,
-            error:
-              "Open a saved ChatGPT, Claude, or Gemini conversation with visible messages before capturing.",
-          },
+      isDescription
+        ? {
+            ok: true,
+            description: {
+              provider: archive.provider,
+              title: archive.title,
+              messageCount: archive.messages.length,
+              sourceUrl: archive.sourceUrl,
+            },
+          }
+        : { ok: true, archive },
     );
   } catch (error) {
     sendResponse({
