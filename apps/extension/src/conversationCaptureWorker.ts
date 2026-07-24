@@ -1,3 +1,4 @@
+import type { ConversationIdentityConfidence } from "@ourchival/shared";
 import type {
   ProviderConversationArchive,
   ProviderConversationProvider,
@@ -13,6 +14,7 @@ type CaptureConversationResponse = {
   referenceId?: string;
   duplicate?: boolean;
   addedCount?: number;
+  changedCount?: number;
   removedCount?: number;
 };
 
@@ -76,8 +78,8 @@ async function captureCurrentConversation(): Promise<CaptureConversationResponse
     const count = archive.messages.length;
     const revision = result.duplicate
       ? `${label}: ${count} visible ${count === 1 ? "message is" : "messages are"} already archived.`
-      : result.addedCount || result.removedCount
-        ? `${label}: saved ${count} visible messages; ${result.addedCount} added and ${result.removedCount} removed.`
+      : result.addedCount || result.changedCount || result.removedCount
+        ? `${label}: saved ${count} visible messages; ${result.addedCount} added, ${result.changedCount} changed, and ${result.removedCount} removed. ${identityConfidenceNote(result.identityConfidence)}`
         : `${label}: saved ${count} visible ${count === 1 ? "message" : "messages"} to Inbox.`;
     return {
       ok: true,
@@ -86,6 +88,7 @@ async function captureCurrentConversation(): Promise<CaptureConversationResponse
       referenceId: result.referenceId,
       duplicate: result.duplicate,
       addedCount: result.addedCount,
+      changedCount: result.changedCount,
       removedCount: result.removedCount,
     };
   } catch (error) {
@@ -99,4 +102,15 @@ function providerLabel(provider: ProviderConversationProvider) {
   if (provider === "chatgpt") return "ChatGPT";
   if (provider === "claude") return "Claude";
   return "Gemini";
+}
+
+function identityConfidenceNote(confidence: ConversationIdentityConfidence) {
+  if (confidence === "stable") return "Edits use stable message IDs.";
+  if (confidence === "mixed") {
+    return "Changed counts use stable IDs where available; inferred messages stay conservative.";
+  }
+  if (confidence === "positional") {
+    return "This transcript used positional IDs, so edits are reported conservatively as additions and removals.";
+  }
+  return "Message IDs were content-derived, so edits are reported conservatively as additions and removals.";
 }
