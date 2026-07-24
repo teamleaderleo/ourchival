@@ -1,3 +1,5 @@
+import { buildConversationFingerprints } from "@ourchival/shared";
+
 export type ConversationProvider =
   | "generic"
   | "chatgpt"
@@ -31,6 +33,11 @@ export type ConversationArchive = {
 
 export type ConversationImportFormat = "json" | "markdown";
 
+const maxMessages = 5_000;
+const maxMessageLength = 200_000;
+const maxArchiveCharacters = 4_500_000;
+const speakerLine = /^(?:#{1,6}\s*)?(?:\*\*)?(user|assistant|system|tool|human|claude|chatgpt|gemini)(?:\*\*)?\s*:?\s*(.*)$/i;
+
 type ParsedConversation = {
   title?: string;
   provider?: ConversationProvider;
@@ -38,11 +45,6 @@ type ParsedConversation = {
   sourceUrl?: string;
   messages: ConversationMessage[];
 };
-
-const maxMessages = 5_000;
-const maxMessageLength = 200_000;
-const maxArchiveCharacters = 4_500_000;
-const speakerLine = /^(?:#{1,6}\s*)?(?:\*\*)?(user|assistant|system|tool|human|claude|chatgpt|gemini)(?:\*\*)?\s*:?\s*(.*)$/i;
 
 export function parseConversationImport(args: {
   text: string;
@@ -93,17 +95,7 @@ export function parseConversationImport(args: {
 export function conversationMessageFingerprints(
   archive: ConversationArchive,
 ) {
-  return archive.messages.map((message) =>
-    stableFingerprint(
-      JSON.stringify({
-        id: message.id,
-        role: message.role,
-        author: message.author,
-        text: message.text,
-        createdAt: message.createdAt,
-      }),
-    ),
-  );
+  return buildConversationFingerprints(archive.messages).fingerprints;
 }
 
 export function serializeConversationArchive(archive: ConversationArchive) {
@@ -308,24 +300,4 @@ function stringValue(...values: any[]) {
 
 function firstArray(...values: any[]) {
   return values.find(Array.isArray) as any[] | undefined;
-}
-
-function stableFingerprint(value: string) {
-  return [
-    hash32(value, 0x811c9dc5),
-    hash32(value, 0x9e3779b9),
-    hash32(value, 0x85ebca6b),
-    hash32(value, 0xc2b2ae35),
-  ]
-    .map((part) => part.toString(16).padStart(8, "0"))
-    .join("");
-}
-
-function hash32(value: string, seed: number) {
-  let hash = seed >>> 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
 }
