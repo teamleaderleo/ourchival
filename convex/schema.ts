@@ -145,6 +145,53 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_retention", ["retention"]),
 
+  conversations: defineTable({
+    referenceId: v.id("references"),
+    provider: v.union(
+      v.literal("generic"),
+      v.literal("chatgpt"),
+      v.literal("claude"),
+      v.literal("gemini"),
+    ),
+    providerConversationId: v.optional(v.string()),
+    canonicalUrl: v.optional(v.string()),
+    title: v.string(),
+    latestSnapshotId: v.optional(v.id("conversationSnapshots")),
+    snapshotCount: v.number(),
+    firstCapturedAt: v.number(),
+    lastCapturedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_reference", ["referenceId"])
+    .index("by_provider_external", ["provider", "providerConversationId"])
+    .index("by_canonical_url", ["canonicalUrl"])
+    .index("by_updated_at", ["updatedAt"]),
+
+  conversationSnapshots: defineTable({
+    conversationId: v.id("conversations"),
+    storageId: v.id("_storage"),
+    contentHash: v.string(),
+    messageCount: v.number(),
+    messageFingerprints: v.array(v.string()),
+    captureMethod: v.union(v.literal("import"), v.literal("browser")),
+    format: v.union(
+      v.literal("json"),
+      v.literal("markdown"),
+      v.literal("provider"),
+    ),
+    adapter: v.string(),
+    previousSnapshotId: v.optional(v.id("conversationSnapshots")),
+    addedCount: v.number(),
+    changedCount: v.number(),
+    removedCount: v.number(),
+    capturedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_conversation_hash", ["conversationId", "contentHash"])
+    .index("by_captured_at", ["capturedAt"]),
+
   boards: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
