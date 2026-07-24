@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { ThumbImage, getDomain } from "./ReferenceCards";
 import {
+  reviewCaptureSessionPendingBatch,
   reviewCaptureSessionReference,
   setCaptureSessionReviewState,
   useCaptureSessionReferences,
   useCaptureSessions,
   type CaptureSession,
+  type CaptureSessionBatchDestination,
   type CaptureSessionReference,
   type CaptureSessionReviewDestination,
   type CaptureSessionReviewState,
@@ -62,13 +64,54 @@ export function CaptureSessionPanel() {
       });
       detail.applyReferencePatch(result.reference);
       await refresh();
-      setMessage(
-        reviewResultMessage(args.destination, args.favorite, result.hasRemaining),
-      );
+      setMessage(reviewResultMessage(args.destination, args.favorite, result.hasRemaining));
       return true;
     } catch (caught) {
       setMessage(
         caught instanceof Error ? caught.message : "Could not review that reference.",
+      );
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewPending(destination: CaptureSessionBatchDestination) {
+    if (!selectedSession) return false;
+    if (
+      destination === "trash" &&
+      !window.confirm("Move every remaining Inbox item in this session to Trash?")
+    ) {
+      return false;
+    }
+
+    setBusy(true);
+    setMessage(`${batchVerb(destination)} remaining session items…`);
+    try {
+      let updated = 0;
+      let hasRemaining = true;
+      let batches = 0;
+      while (hasRemaining && batches < 200) {
+        const result = await reviewCaptureSessionPendingBatch({
+          sessionKey: selectedSession.sessionKey,
+          destination,
+          limit: 48,
+        });
+        updated += result.updated;
+        hasRemaining = result.hasRemaining;
+        batches += 1;
+        if (result.updated === 0) break;
+      }
+      await Promise.all([detail.refresh(), refresh()]);
+      setMessage(
+        hasRemaining
+          ? `${batchPastTense(destination)} ${updated} items. More remain; run the action again.`
+          : `${batchPastTense(destination)} ${updated} ${updated === 1 ? "item" : "items"}. Session review complete.`,
+      );
+      return !hasRemaining;
+    } catch (caught) {
+      setMessage(
+        caught instanceof Error ? caught.message : "Could not review the remaining session.",
       );
       return false;
     } finally {
@@ -126,6 +169,7 @@ export function CaptureSessionPanel() {
               onLoadMore={detail.loadMore}
               onReviewState={updateReviewState}
               onReviewReference={reviewReference}
+              onReviewPending={reviewPending}
             />
           ) : (
             <SessionList
@@ -228,6 +272,7 @@ function SessionDetail({
   onLoadMore,
   onReviewState,
   onReviewReference,
+  onReviewPending,
 }: {
   session: CaptureSession;
   references: CaptureSessionReference[];
@@ -244,6 +289,7 @@ function SessionDetail({
     destination?: CaptureSessionReviewDestination;
     favorite?: boolean;
   }) => Promise<boolean>;
+  onReviewPending: (destination: CaptureSessionBatchDestination) => Promise<boolean>;
 }) {
   const [activeId, setActiveId] = useState<string | undefined>();
   const [undoReview, setUndoReview] = useState<UndoReview | null>(null);
@@ -253,11 +299,9 @@ function SessionDetail({
   );
   const reviewQueue = pendingReferences.length > 0
     ? pendingReferences
-    : hasMore
-      ? []
-      : references.filter((reference) => !reference.deleted);
-  const selectedReference = references.find((reference) => reference._id === activeId);
-  const activeReference = selectedReference ?? reviewQueue[0];
+    : references.filter((reference) => !reference.deleted);
+  const activeReference =
+    reviewQueue.find((reference) => reference._id === activeId) ?? reviewQueue[0];
   const activeIndex = activeReference
     ? reviewQueue.findIndex((reference) => reference._id === activeReference._id)
     : -1;
@@ -265,40 +309,32 @@ function SessionDetail({
   const progress = references.length > 0 ? reviewedCount / references.length : 0;
 
   useEffect(() => {
+    if (reviewQueue.length === 0) {
+      setActiveId(undefined);
+      return;
+    }
+    if (!reviewQueue.some((reference) => reference._id === activeId)) {
+      setActiveId(reviewQueue[0]?._id);
+    }
+  }, [activeId, reviewQueue]);
+
+  useEffect(() => {
     if (
-      session.reviewState !== "completed" &&
-      pendingReferences.length === 0 &&
-      hasMore &&
       !loading &&
-      !loadingMore
+      !loadingMore &&
+      hasMore &&
+      pendingReferences.length === 0 &&
+      session.reviewState !== "completed"
     ) {
       void onLoadMore();
     }
-  }, [
-    hasMore,
-    loading,
-    loadingMore,
-    onLoadMore,
-    pendingReferences.length,
-    session.reviewState,
-  ]);
-
-  useEffect(() => {
-    if (reviewQueue.length === 0) {
-      if (!selectedReference) setActiveId(undefined);
-      return;
-    }
-    if (!selectedReference) {
-      setActiveId(reviewQueue[0]?._id);
-    }
-  }, [reviewQueue, selectedReference]);
+  }, [hasMore, loading, loadingMore, onLoadMore, pendingReferences.length, session.reviewState]);
 
   function selectRelative(offset: number) {
     if (!reviewQueue.length) return;
-    const currentIndex = activeIndex < 0 ? 0 : activeIndex;
     const nextIndex = Math.min(
       reviewQueue.length - 1,
-      Math.max(0, currentIndex + offset),
+      Math.max(0, (activeIndex < 0 ? 0 : activeIndex) + offset),
     );
     setActiveId(reviewQueue[nextIndex]?._id);
   }
@@ -306,9 +342,7 @@ function SessionDetail({
   async function applyDestination(destination: CaptureSessionReviewDestination) {
     if (!activeReference || busy) return;
     const next =
-      activeIndex >= 0
-        ? reviewQueue[activeIndex + 1] ?? reviewQueue[activeIndex - 1]
-        : reviewQueue[0];
+      reviewQueue[activeIndex + 1] ?? reviewQueue[activeIndex - 1] ?? undefined;
     const undo: UndoReview = {
       referenceId: activeReference._id,
       title: referenceTitle(activeReference),
@@ -421,8 +455,7 @@ function SessionDetail({
         <div className="capture-session-progress-copy">
           <span>{reviewedCount} reviewed in loaded queue</span>
           <span>
-            {pendingReferences.length} remaining here
-            {hasMore ? " · older items available" : ""}
+            {pendingReferences.length} loaded remaining{hasMore ? " · older items available" : ""}
           </span>
         </div>
         <div
@@ -442,6 +475,27 @@ function SessionDetail({
         ) : null}
       </section>
 
+      <section className="capture-session-batch-actions" aria-label="Review remaining session items">
+        <div>
+          <strong>Apply to every remaining Inbox item</strong>
+          <span>Runs in bounded batches and continues until the session is clear.</span>
+        </div>
+        <div>
+          <button type="button" className="button primary" disabled={busy} onClick={() => void onReviewPending("keep")}>
+            Keep all
+          </button>
+          <button type="button" className="button secondary" disabled={busy} onClick={() => void onReviewPending("later")}>
+            Later all
+          </button>
+          <button type="button" className="button ghost" disabled={busy} onClick={() => void onReviewPending("archive")}>
+            Archive all
+          </button>
+          <button type="button" className="button ghost danger" disabled={busy} onClick={() => void onReviewPending("trash")}>
+            Trash all
+          </button>
+        </div>
+      </section>
+
       {activeReference ? (
         <section className="capture-session-review-card" aria-label="Current review item">
           <div className="capture-session-review-visual">
@@ -459,7 +513,7 @@ function SessionDetail({
           </div>
           <div className="capture-session-review-copy">
             <p className="eyebrow">
-              {activeIndex >= 0 ? `${activeIndex + 1} of ${reviewQueue.length} · ` : ""}
+              {activeIndex + 1} of {reviewQueue.length} ·{" "}
               {activeReference.siteName || activeReference.authorHandle || activeReference.authorName || getDomain(activeReference.sourceUrl)}
             </p>
             <h3>{referenceTitle(activeReference)}</h3>
@@ -494,7 +548,7 @@ function SessionDetail({
             <button type="button" className="button ghost" disabled={busy || activeIndex <= 0} onClick={() => selectRelative(-1)}>
               ← Previous
             </button>
-            <button type="button" className="button ghost" disabled={busy || activeIndex < 0 || activeIndex >= reviewQueue.length - 1} onClick={() => selectRelative(1)}>
+            <button type="button" className="button ghost" disabled={busy || activeIndex >= reviewQueue.length - 1} onClick={() => selectRelative(1)}>
               Next →
             </button>
           </div>
@@ -502,10 +556,8 @@ function SessionDetail({
       ) : (
         <p className="capture-session-empty">
           {loading || loadingMore
-            ? "Loading older session references…"
-            : hasMore
-              ? "Older references are available below."
-              : "Every captured reference has left the Inbox."}
+            ? "Loading session references…"
+            : "Every captured reference has left the Inbox."}
         </p>
       )}
 
@@ -572,11 +624,11 @@ function SessionDetail({
         {hasMore ? (
           <button
             type="button"
-            className="button secondary full-width"
-            disabled={loadingMore}
+            className="button ghost full-width"
+            disabled={busy || loadingMore}
             onClick={() => void onLoadMore()}
           >
-            {loadingMore ? "Loading older references…" : "Load older references"}
+            {loadingMore ? "Loading older items…" : "Load older items"}
           </button>
         ) : null}
       </section>
@@ -658,12 +710,26 @@ function reviewResultMessage(
   if (typeof favorite === "boolean" && !destination) {
     return favorite ? "Added to favorites." : "Removed from favorites.";
   }
-  const remaining = hasRemaining ? "More references remain." : "Session cleared.";
+  const remaining = hasRemaining ? "More references remain." : "Session review complete.";
   if (destination === "inbox") return `Restored to Inbox. ${remaining}`;
   if (destination === "keep") return `Kept in Library. ${remaining}`;
   if (destination === "later") return `Moved to Later. ${remaining}`;
   if (destination === "archive") return `Archived. ${remaining}`;
   return `Moved to Trash. ${remaining}`;
+}
+
+function batchVerb(destination: CaptureSessionBatchDestination) {
+  if (destination === "keep") return "Keeping";
+  if (destination === "later") return "Deferring";
+  if (destination === "archive") return "Archiving";
+  return "Trashing";
+}
+
+function batchPastTense(destination: CaptureSessionBatchDestination) {
+  if (destination === "keep") return "Kept";
+  if (destination === "later") return "Deferred";
+  if (destination === "archive") return "Archived";
+  return "Trashed";
 }
 
 function formatSessionDate(value: number) {
