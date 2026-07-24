@@ -9,6 +9,7 @@ import {
 } from "./geminiConversation";
 import {
   cleanProviderConversationTitle,
+  stabilizeProviderMessageIds,
   validateProviderArchive,
   type ProviderConversationArchive,
 } from "./providerConversation";
@@ -24,9 +25,11 @@ const archive: ProviderConversationArchive = {
 };
 
 describe("provider conversation adapters", () => {
-  it("extracts Claude conversation identity", () => {
+  it("extracts canonical Claude conversation identity", () => {
     expect(
-      claudeConversationIdentity("https://claude.ai/chat/abc-123#message"),
+      claudeConversationIdentity(
+        "https://claude.ai/chat/abc-123?utm_source=test#message",
+      ),
     ).toEqual({
       conversationId: "abc-123",
       sourceUrl: "https://claude.ai/chat/abc-123",
@@ -34,12 +37,12 @@ describe("provider conversation adapters", () => {
     expect(claudeConversationIdentity("https://claude.ai/new")).toBeUndefined();
   });
 
-  it("extracts Gemini conversation identity", () => {
+  it("extracts canonical Gemini conversation identity", () => {
     expect(
       geminiConversationIdentity("https://gemini.google.com/app/xyz-789?hl=en#response"),
     ).toEqual({
       conversationId: "xyz-789",
-      sourceUrl: "https://gemini.google.com/app/xyz-789?hl=en",
+      sourceUrl: "https://gemini.google.com/app/xyz-789",
     });
     expect(geminiConversationIdentity("https://gemini.google.com/app")).toBeUndefined();
   });
@@ -57,5 +60,24 @@ describe("provider conversation adapters", () => {
     ).toBe("Project notes");
     expect(validateProviderArchive(archive)).toEqual(archive);
     expect(validateProviderArchive({ ...archive, messages: [] })).toBeUndefined();
+  });
+
+  it("creates stable fallback IDs without collapsing repeated messages", () => {
+    const first = stabilizeProviderMessageIds([
+      { id: "", role: "user" as const, text: "Repeat this" },
+      { id: "", role: "assistant" as const, text: "Done" },
+      { id: "", role: "user" as const, text: "Repeat this" },
+    ]);
+    const second = stabilizeProviderMessageIds([
+      { id: "known", role: "system" as const, text: "Inserted earlier" },
+      { id: "", role: "user" as const, text: "Repeat this" },
+      { id: "", role: "assistant" as const, text: "Done" },
+      { id: "", role: "user" as const, text: "Repeat this" },
+    ]);
+
+    expect(first[0]?.id).toBe(second[1]?.id);
+    expect(first[1]?.id).toBe(second[2]?.id);
+    expect(first[2]?.id).toBe(second[3]?.id);
+    expect(first[0]?.id).not.toBe(first[2]?.id);
   });
 });
