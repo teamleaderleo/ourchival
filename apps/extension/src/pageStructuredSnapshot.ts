@@ -3,6 +3,7 @@ import {
   callArtifactMutation,
   commitArtifactMutation,
 } from "./artifactMutationClient";
+import { trackArtifactResult } from "./artifactWarnings";
 import {
   convexMutationUrl,
   type SessionReportConnection,
@@ -18,9 +19,16 @@ export async function uploadStructuredPageSnapshot(
   if (!referenceId || !capture) {
     return { uploaded: false, reason: "missing_capture" as const };
   }
+  const finish = <T extends { uploaded: boolean; reason?: string; error?: string }>(
+    result: T,
+  ) => trackArtifactResult(referenceId, "page_snapshot", result);
   const endpoint = convexMutationUrl(connection.endpoint);
   if (!endpoint) {
-    return { uploaded: false, reason: "unsupported_endpoint" as const };
+    return await finish({
+      uploaded: false,
+      reason: "unsupported_endpoint" as const,
+      error: "The configured Convex endpoint does not support structured snapshots.",
+    });
   }
 
   try {
@@ -28,11 +36,11 @@ export async function uploadStructuredPageSnapshot(
       type: "application/json;charset=utf-8",
     });
     if (file.size < 40 || file.size > maxStructuredSnapshotBytes) {
-      return {
+      return await finish({
         uploaded: false,
         reason: "invalid_size" as const,
         error: "Structured page snapshot size is invalid.",
-      };
+      });
     }
     const create = await callArtifactMutation<{
       referenceId: string;
@@ -41,7 +49,7 @@ export async function uploadStructuredPageSnapshot(
       deviceToken: connection.deviceToken,
       referenceId,
     });
-    if (!create.ok) return create;
+    if (!create.ok) return await finish(create);
 
     const uploadResponse = await fetch(create.value.uploadUrl, {
       method: "POST",
@@ -52,11 +60,11 @@ export async function uploadStructuredPageSnapshot(
       storageId?: string;
     };
     if (!uploadResponse.ok || !uploadBody.storageId) {
-      return {
+      return await finish({
         uploaded: false,
         reason: "upload_failed" as const,
         error: uploadResponse.statusText || "Structured snapshot upload failed.",
-      };
+      });
     }
 
     const commit = await commitArtifactMutation<{
@@ -70,20 +78,20 @@ export async function uploadStructuredPageSnapshot(
       provider: capture.provider,
       capturedAt: Date.parse(capture.capturedAt),
     });
-    if (!commit.ok) return commit;
+    if (!commit.ok) return await finish(commit);
 
-    return {
+    return await finish({
       uploaded: true as const,
       duplicate: Boolean(commit.value.duplicate),
       artifactId: commit.value.artifactId,
-    };
+    });
   } catch (error) {
-    return {
+    return await finish({
       uploaded: false,
       reason: "request_failed" as const,
       error: error instanceof Error
         ? error.message
         : "Structured snapshot upload failed.",
-    };
+    });
   }
 }
