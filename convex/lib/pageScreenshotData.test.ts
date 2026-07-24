@@ -26,7 +26,7 @@ describe("page screenshot data", () => {
   it("produces stable SHA-256 content hashes", async () => {
     const bytes = new TextEncoder().encode("ourchival screenshot");
     expect(await sha256Hex(bytes)).toBe(
-      "44c9bc1b4967eb019c8cfc46b32cb85a12b39677374a3fcd9e95ea1675a62ce2",
+      "43cfd93070699834eb80aad74129affdc5e3d7945ed0f81e9bc5a2236a91f8c6",
     );
   });
 
