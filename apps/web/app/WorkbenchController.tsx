@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { captureSessionMutationActive } from "./captureSessionNavigationState";
 
 const drawerSelector = ".capture-session-drawer, .conversation-drawer";
 const focusableSelector = [
@@ -19,26 +20,28 @@ export function WorkbenchController() {
 
     function syncDrawer() {
       const nextDrawer = document.querySelector<HTMLElement>(drawerSelector);
-      if (nextDrawer === activeDrawer) return;
-
       if (!nextDrawer) {
+        if (activeDrawer) returnFocus?.focus();
         activeDrawer = null;
-        returnFocus?.focus();
         returnFocus = null;
         return;
       }
 
-      const activeElement =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      returnFocus =
-        activeElement && activeElement !== document.body && !nextDrawer.contains(activeElement)
-          ? activeElement
-          : matchingLauncher(nextDrawer);
-      activeDrawer = nextDrawer;
-      nextDrawer.setAttribute("role", "dialog");
-      nextDrawer.setAttribute("aria-modal", "true");
-      nextDrawer.tabIndex = -1;
-      window.requestAnimationFrame(() => nextDrawer.focus());
+      if (nextDrawer !== activeDrawer) {
+        const activeElement =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        returnFocus =
+          activeElement && activeElement !== document.body && !nextDrawer.contains(activeElement)
+            ? activeElement
+            : matchingLauncher(nextDrawer);
+        activeDrawer = nextDrawer;
+        nextDrawer.setAttribute("role", "dialog");
+        nextDrawer.setAttribute("aria-modal", "true");
+        nextDrawer.tabIndex = -1;
+        window.requestAnimationFrame(() => nextDrawer.focus());
+      }
+
+      syncCaptureSessionNavigation(nextDrawer);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -85,7 +88,12 @@ export function WorkbenchController() {
     }
 
     const observer = new MutationObserver(syncDrawer);
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["disabled"],
+      childList: true,
+      subtree: true,
+    });
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("pointerdown", handlePointerDown);
     syncDrawer();
@@ -100,11 +108,38 @@ export function WorkbenchController() {
   return null;
 }
 
+function syncCaptureSessionNavigation(drawer: HTMLElement) {
+  if (!drawer.classList.contains("capture-session-drawer")) return;
+  const batchActions = Array.from(
+    drawer.querySelectorAll<HTMLButtonElement>(
+      ".capture-session-batch-actions button",
+    ),
+  );
+  const locked = captureSessionMutationActive(
+    batchActions.map((button) => button.disabled),
+  );
+  for (const button of headerNavigationButtons(drawer)) {
+    button.disabled = locked;
+    button.setAttribute("aria-disabled", String(locked));
+  }
+}
+
 function matchingLauncher(drawer: HTMLElement) {
   const selector = drawer.classList.contains("capture-session-drawer")
     ? ".capture-session-launcher"
     : ".conversation-launcher";
   return document.querySelector<HTMLElement>(selector);
+}
+
+function headerNavigationButtons(drawer: HTMLElement) {
+  const header = drawer.querySelector("header");
+  if (!header) return [];
+  return Array.from(header.querySelectorAll<HTMLButtonElement>("button")).filter(
+    (button) => {
+      const label = button.textContent?.trim();
+      return label === "Back" || label === "Close";
+    },
+  );
 }
 
 function closeButton(drawer: HTMLElement) {
