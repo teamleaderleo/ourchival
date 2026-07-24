@@ -40,6 +40,45 @@ export function normalizeProviderMessageText(value: string) {
     .trim();
 }
 
+export function assertProviderMessageCount(count: number, providerLabel: string) {
+  if (count > providerConversationLimits.maxMessages) {
+    throw new Error(
+      `${providerLabel} rendered more than ${providerConversationLimits.maxMessages.toLocaleString()} messages. Use a provider export or split the capture to avoid a partial archive.`,
+    );
+  }
+}
+
+export function assertProviderMessageLength(text: string, providerLabel: string) {
+  if (text.length > providerConversationLimits.maxMessageLength) {
+    throw new Error(
+      `A visible ${providerLabel} message is too large for browser capture. Use a provider export so it is preserved without truncation.`,
+    );
+  }
+}
+
+export function stabilizeProviderMessageIds<T extends ProviderConversationMessage>(
+  messages: T[],
+): T[] {
+  const occurrences = new Map<string, number>();
+  return messages.map((message) => {
+    if (message.id.trim()) return message;
+    const base = `captured-${stableFingerprint(
+      JSON.stringify({
+        role: message.role,
+        author: message.author,
+        text: message.text,
+        createdAt: message.createdAt,
+      }),
+    )}`;
+    const occurrence = (occurrences.get(base) ?? 0) + 1;
+    occurrences.set(base, occurrence);
+    return {
+      ...message,
+      id: occurrence === 1 ? base : `${base}-${occurrence}`,
+    };
+  });
+}
+
 export function validateProviderArchive<T extends ProviderConversationArchive>(
   archive: T | undefined,
 ) {
@@ -69,4 +108,24 @@ export function cleanProviderConversationTitle(
     firstUser?.text.replace(/\s+/g, " ").slice(0, 90) ||
     `${providerLabel} conversation`
   );
+}
+
+function stableFingerprint(value: string) {
+  return [
+    hash32(value, 0x811c9dc5),
+    hash32(value, 0x9e3779b9),
+    hash32(value, 0x85ebca6b),
+    hash32(value, 0xc2b2ae35),
+  ]
+    .map((part) => part.toString(16).padStart(8, "0"))
+    .join("");
+}
+
+function hash32(value: string, seed: number) {
+  let hash = seed >>> 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
 }
