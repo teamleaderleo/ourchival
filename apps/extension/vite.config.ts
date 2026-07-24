@@ -14,9 +14,11 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        background: "src/background.ts",
+        conversationWorker: "src/conversationWorker.ts",
         content: "src/content.ts",
+        conversationContent: "src/conversationContent.ts",
         popup: "src/popup.ts",
+        conversationPopup: "src/conversationPopup.ts",
       },
       output: {
         entryFileNames: "[name].js",
