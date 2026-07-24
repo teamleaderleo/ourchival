@@ -7,6 +7,13 @@ export type ReferenceKind =
   | "video_frame"
   | "file";
 
+export type PageScreenshotCapture = {
+  dataUrl: string;
+  width?: number;
+  height?: number;
+  capturedAt: string;
+};
+
 export type CapturePayload = {
   kind: ReferenceKind;
   sourceUrl: string;
