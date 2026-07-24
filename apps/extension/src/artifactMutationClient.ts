@@ -62,7 +62,8 @@ export async function commitArtifactMutation<T>(
   const first = await callArtifactMutation<T>(endpoint, path, args);
   if (first.ok || !first.retryable) return first;
   const second = await callArtifactMutation<T>(endpoint, path, args);
-  return second.ok ? second : first;
+  if (second.ok || !second.retryable) return second;
+  return first;
 }
 
 function failure(error: string, retryable: boolean): ArtifactMutationFailure {
