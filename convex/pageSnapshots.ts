@@ -52,7 +52,9 @@ export const commitBrowserScreenshot = mutation({
       existingArtifact.contentHash === contentHash &&
       existingArtifact.storageId
     ) {
-      await ctx.storage.delete(args.storageId);
+      if (existingArtifact.storageId !== args.storageId) {
+        await ctx.storage.delete(args.storageId);
+      }
       await ctx.db.patch(existingArtifact._id, {
         capturedAt,
         updatedAt: now,
