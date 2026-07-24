@@ -1,42 +1,47 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
-import {
-  decodeScreenshotDataUrl,
-  isPageLike,
-  positiveInteger,
-  sha256Hex,
-  validTimestamp,
-} from "./lib/pageScreenshotData";
 import { hashSecret } from "./lib/privateAccess";
 
-export const saveBrowserScreenshot = mutation({
+export const createBrowserScreenshotUpload = mutation({
   args: {
     deviceToken: v.string(),
     referenceId: v.id("references"),
-    dataUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await requireScreenshotDevice(ctx, args.deviceToken);
+    const reference = await requirePageReference(ctx, args.referenceId);
+    return {
+      referenceId: reference._id,
+      uploadUrl: await ctx.storage.generateUploadUrl(),
+    };
+  },
+});
+
+export const commitBrowserScreenshot = mutation({
+  args: {
+    deviceToken: v.string(),
+    referenceId: v.id("references"),
+    storageId: v.id("_storage"),
+    mimeType: v.string(),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
+    byteSize: v.number(),
+    contentHash: v.string(),
     capturedAt: v.number(),
   },
   handler: async (ctx, args) => {
-    const deviceToken = args.deviceToken.trim();
-    if (!deviceToken) throw new Error("Clipper device token is required.");
-    const tokenHash = await hashSecret(deviceToken);
-    const device = await ctx.db
-      .query("clipperDevices")
-      .withIndex("by_token_hash", (q) => q.eq("tokenHash", tokenHash))
-      .first();
-    if (!device) throw new Error("This Clipper credential is invalid.");
-    if (device.revokedAt) throw new Error("This Clipper was revoked.");
+    const device = await requireScreenshotDevice(ctx, args.deviceToken);
+    const reference = await requirePageReference(ctx, args.referenceId);
+    const mimeType = cleanMimeType(args.mimeType);
+    const contentHash = cleanHash(args.contentHash);
+    const byteSize = boundedByteSize(args.byteSize);
+    const width = positiveInteger(args.width);
+    const height = positiveInteger(args.height);
+    const now = Date.now();
+    const capturedAt = validTimestamp(args.capturedAt) ?? now;
+    const uploadedMetadata = await ctx.db.system.get("_storage", args.storageId);
+    if (!uploadedMetadata) throw new Error("Uploaded screenshot file was not found.");
 
-    const reference = await ctx.db.get(args.referenceId);
-    if (!reference) throw new Error("Reference not found.");
-    if (!isPageLike(reference.kind)) {
-      throw new Error("Screenshots can only be attached to page-like references.");
-    }
-
-    const decoded = decodeScreenshotDataUrl(args.dataUrl);
-    const contentHash = await sha256Hex(decoded.bytes);
     const existingArtifact = await ctx.db
       .query("referenceArtifacts")
       .withIndex("by_reference_kind", (q) =>
@@ -44,16 +49,13 @@ export const saveBrowserScreenshot = mutation({
       )
       .order("desc")
       .first();
-    const now = Date.now();
-    const capturedAt = validTimestamp(args.capturedAt) ?? now;
-    const width = positiveInteger(args.width);
-    const height = positiveInteger(args.height);
 
     if (
       existingArtifact?.status === "ready" &&
       existingArtifact.contentHash === contentHash &&
       existingArtifact.storageId
     ) {
+      await ctx.storage.delete(args.storageId);
       await ctx.db.patch(existingArtifact._id, {
         capturedAt,
         updatedAt: now,
@@ -66,19 +68,17 @@ export const saveBrowserScreenshot = mutation({
       };
     }
 
-    const blob = new Blob([decoded.bytes], { type: decoded.mimeType });
-    const storageId = await ctx.storage.store(blob);
     let artifactId = existingArtifact?._id;
     if (existingArtifact) {
       await ctx.db.patch(existingArtifact._id, {
         captureMethod: "browser",
         provider: "chrome.tabs.captureVisibleTab",
         version: "1",
-        storageId,
-        mimeType: decoded.mimeType,
+        storageId: args.storageId,
+        mimeType,
         ...(width ? { width } : {}),
         ...(height ? { height } : {}),
-        byteSize: decoded.bytes.byteLength,
+        byteSize,
         contentHash,
         status: "ready",
         retention: existingArtifact.retention,
@@ -92,11 +92,11 @@ export const saveBrowserScreenshot = mutation({
         captureMethod: "browser",
         provider: "chrome.tabs.captureVisibleTab",
         version: "1",
-        storageId,
-        mimeType: decoded.mimeType,
+        storageId: args.storageId,
+        mimeType,
         ...(width ? { width } : {}),
         ...(height ? { height } : {}),
-        byteSize: decoded.bytes.byteLength,
+        byteSize,
         contentHash,
         status: "ready",
         retention: "review",
@@ -113,12 +113,12 @@ export const saveBrowserScreenshot = mutation({
     if (asset) {
       await ctx.db.patch(asset._id, {
         storageProvider: "convex",
-        previewStorageId: storageId,
-        thumbStorageId: storageId,
-        mimeType: decoded.mimeType,
+        previewStorageId: args.storageId,
+        thumbStorageId: args.storageId,
+        mimeType,
         ...(width ? { width } : {}),
         ...(height ? { height } : {}),
-        fileSize: decoded.bytes.byteLength,
+        fileSize: byteSize,
         contentHash,
         derivativeStatus: "ready",
       });
@@ -126,27 +126,91 @@ export const saveBrowserScreenshot = mutation({
       await ctx.db.insert("assets", {
         referenceId: reference._id,
         storageProvider: "convex",
-        previewStorageId: storageId,
-        thumbStorageId: storageId,
-        mimeType: decoded.mimeType,
+        previewStorageId: args.storageId,
+        thumbStorageId: args.storageId,
+        mimeType,
         ...(width ? { width } : {}),
         ...(height ? { height } : {}),
-        fileSize: decoded.bytes.byteLength,
+        fileSize: byteSize,
         contentHash,
         dominantColors: [],
         derivativeStatus: "ready",
       });
     }
 
-    if (existingArtifact?.storageId && existingArtifact.storageId !== storageId) {
+    if (
+      existingArtifact?.storageId &&
+      existingArtifact.storageId !== args.storageId
+    ) {
       await ctx.storage.delete(existingArtifact.storageId);
     }
     await ctx.db.patch(device._id, { lastUsedAt: now });
 
     return {
       artifactId: artifactId!,
-      storageId,
+      storageId: args.storageId,
       duplicate: false,
     };
   },
 });
+
+async function requireScreenshotDevice(ctx: any, rawToken: string) {
+  const deviceToken = rawToken.trim();
+  if (!deviceToken) throw new Error("Clipper device token is required.");
+  const tokenHash = await hashSecret(deviceToken);
+  const device = await ctx.db
+    .query("clipperDevices")
+    .withIndex("by_token_hash", (q: any) => q.eq("tokenHash", tokenHash))
+    .first();
+  if (!device) throw new Error("This Clipper credential is invalid.");
+  if (device.revokedAt) throw new Error("This Clipper was revoked.");
+  return device;
+}
+
+async function requirePageReference(ctx: any, referenceId: any) {
+  const reference = await ctx.db.get(referenceId);
+  if (!reference) throw new Error("Reference not found.");
+  if (!isPageLike(reference.kind)) {
+    throw new Error("Screenshots can only be attached to page-like references.");
+  }
+  return reference;
+}
+
+function cleanMimeType(value: string) {
+  const mimeType = value.trim().toLowerCase();
+  if (mimeType !== "image/jpeg" && mimeType !== "image/png" && mimeType !== "image/webp") {
+    throw new Error("Screenshot must be a JPEG, PNG, or WebP image.");
+  }
+  return mimeType;
+}
+
+function cleanHash(value: string) {
+  const hash = value.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(hash)) {
+    throw new Error("Screenshot content hash is invalid.");
+  }
+  return hash;
+}
+
+function boundedByteSize(value: number) {
+  if (!Number.isFinite(value) || value <= 0 || value > 12_000_000) {
+    throw new Error("Screenshot file size is invalid.");
+  }
+  return Math.floor(value);
+}
+
+function positiveInteger(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+function validTimestamp(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function isPageLike(kind: string) {
+  return kind === "page" || kind === "link" || kind === "article";
+}
