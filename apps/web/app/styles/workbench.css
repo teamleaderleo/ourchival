@@ -39,6 +39,20 @@
   background: var(--panel-raised);
 }
 
+.workbench-dock .conversation-launcher > span {
+  display: none;
+}
+
+body:has(.capture-session-drawer)::before,
+body:has(.conversation-drawer)::before {
+  content: "";
+  position: fixed;
+  z-index: 65;
+  inset: 0;
+  background: color-mix(in srgb, #05070b, transparent 38%);
+  backdrop-filter: blur(3px);
+}
+
 body:has(.capture-session-drawer) .workbench-dock .conversation-launcher,
 body:has(.conversation-drawer) .workbench-dock .capture-session-launcher {
   display: none;
@@ -58,6 +72,11 @@ body:has(.conversation-drawer) .workbench-dock-label::after {
 }
 
 @media (max-width: 720px) {
+  body:has(.capture-session-drawer),
+  body:has(.conversation-drawer) {
+    overflow: hidden;
+  }
+
   .workbench-dock {
     right: 12px;
     left: 12px;
