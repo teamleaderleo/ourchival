@@ -61,30 +61,18 @@ export const purgeExpiredReviewArtifacts = mutation({
     let skipped = 0;
     for (const artifact of candidates) {
       const reference = await ctx.db.get(artifact.referenceId);
-      if (!reference?.reviewedAt || reference.reviewedAt >= before) {
+      if (!reference) {
+        await deleteArtifact(ctx, artifact);
+        deleted += 1;
+        continue;
+      }
+      if (!reference.reviewedAt || reference.reviewedAt >= before) {
+        await ctx.db.patch(artifact._id, { updatedAt: Date.now() });
         skipped += 1;
         continue;
       }
 
-      if (artifact.storageId) {
-        const asset = await ctx.db
-          .query("assets")
-          .withIndex("by_reference", (q) => q.eq("referenceId", artifact.referenceId))
-          .first();
-        if (asset && screenshotIsCurrentPreview(asset, artifact.storageId)) {
-          if (assetHasOwnedOriginal(asset)) {
-            await ctx.db.patch(asset._id, {
-              previewStorageId: undefined,
-              thumbStorageId: undefined,
-              derivativeStatus: undefined,
-            });
-          } else {
-            await ctx.db.delete(asset._id);
-          }
-        }
-        await ctx.storage.delete(artifact.storageId);
-      }
-      await ctx.db.delete(artifact._id);
+      await deleteArtifact(ctx, artifact);
       deleted += 1;
     }
 
@@ -96,6 +84,28 @@ export const purgeExpiredReviewArtifacts = mutation({
     };
   },
 });
+
+async function deleteArtifact(ctx: any, artifact: any) {
+  if (artifact.storageId) {
+    const asset = await ctx.db
+      .query("assets")
+      .withIndex("by_reference", (q: any) => q.eq("referenceId", artifact.referenceId))
+      .first();
+    if (asset && screenshotIsCurrentPreview(asset, artifact.storageId)) {
+      if (assetHasOwnedOriginal(asset)) {
+        await ctx.db.patch(asset._id, {
+          previewStorageId: undefined,
+          thumbStorageId: undefined,
+          derivativeStatus: undefined,
+        });
+      } else {
+        await ctx.db.delete(asset._id);
+      }
+    }
+    await ctx.storage.delete(artifact.storageId);
+  }
+  await ctx.db.delete(artifact._id);
+}
 
 function validCutoff(value: number) {
   if (!Number.isFinite(value) || value <= 0 || value > Date.now()) {
