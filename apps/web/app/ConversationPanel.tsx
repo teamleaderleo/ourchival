@@ -64,8 +64,8 @@ export function ConversationPanel() {
       setMessage(
         result.duplicate
           ? "That exact conversation snapshot was already archived."
-          : result.addedCount || result.removedCount
-            ? `Saved revision: ${result.addedCount} added, ${result.removedCount} removed.`
+          : result.addedCount || result.changedCount || result.removedCount
+            ? `Saved revision: ${result.addedCount} added, ${result.changedCount} changed, ${result.removedCount} removed.`
             : "Conversation archived.",
       );
     } catch (caught) {
@@ -139,6 +139,7 @@ export function ConversationPanel() {
             <ConversationReader
               summary={selected}
               archive={reader.archive}
+              adapter={reader.detail?.latestSnapshot.adapter}
               loading={reader.loading}
               error={reader.error}
             />
@@ -341,32 +342,33 @@ function ConversationList({
       </div>
 
       {filtered.length ? (
-        filtered.map((conversation) => (
-          <button
-            type="button"
-            className="conversation-row"
-            key={conversation._id}
-            onClick={() => onSelect(conversation)}
-          >
-            <span className="conversation-provider" aria-hidden="true">
-              {providerInitial(conversation.provider)}
-            </span>
-            <span>
-              <strong>{conversation.title}</strong>
-              <small>
-                {providerLabel(conversation.provider)} · {conversation.latestSnapshot.messageCount}{" "}
-                messages · {formatDate(conversation.lastCapturedAt)}
-              </small>
-              <em>
-                {conversation.snapshotCount}{" "}
-                {conversation.snapshotCount === 1 ? "snapshot" : "snapshots"}
-                {conversation.latestSnapshot.addedCount
-                  ? ` · +${conversation.latestSnapshot.addedCount} in latest revision`
-                  : ""}
-              </em>
-            </span>
-          </button>
-        ))
+        filtered.map((conversation) => {
+          const revision = revisionSummary(conversation.latestSnapshot);
+          return (
+            <button
+              type="button"
+              className="conversation-row"
+              key={conversation._id}
+              onClick={() => onSelect(conversation)}
+            >
+              <span className="conversation-provider" aria-hidden="true">
+                {providerInitial(conversation.provider)}
+              </span>
+              <span>
+                <strong>{conversation.title}</strong>
+                <small>
+                  {providerLabel(conversation.provider)} · {conversation.latestSnapshot.messageCount}{" "}
+                  messages · {formatDate(conversation.lastCapturedAt)}
+                </small>
+                <em>
+                  {conversation.snapshotCount}{" "}
+                  {conversation.snapshotCount === 1 ? "snapshot" : "snapshots"}
+                  {revision ? ` · ${revision}` : ""}
+                </em>
+              </span>
+            </button>
+          );
+        })
       ) : (
         <p className="conversation-empty">No recently loaded conversations match these filters.</p>
       )}
@@ -377,11 +379,13 @@ function ConversationList({
 function ConversationReader({
   summary,
   archive,
+  adapter,
   loading,
   error,
 }: {
   summary?: ConversationSummary;
   archive: ConversationArchive | null;
+  adapter?: string;
   loading: boolean;
   error: string;
 }) {
@@ -435,6 +439,7 @@ function ConversationReader({
           <strong>{providerLabel(archive.provider)}</strong>
           <span>{archive.messages.length} messages</span>
           <span>{summary.snapshotCount} saved snapshots</span>
+          {adapter ? <span>{identityConfidenceLabel(adapter)}</span> : null}
         </div>
         <div>
           {archive.sourceUrl ? (
@@ -524,6 +529,23 @@ function downloadConversation(archive: ConversationArchive) {
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function revisionSummary(snapshot: ConversationSummary["latestSnapshot"]) {
+  const parts: string[] = [];
+  if (snapshot.addedCount) parts.push(`+${snapshot.addedCount}`);
+  if (snapshot.changedCount) parts.push(`~${snapshot.changedCount}`);
+  if (snapshot.removedCount) parts.push(`−${snapshot.removedCount}`);
+  return parts.join(" ");
+}
+
+function identityConfidenceLabel(adapter: string) {
+  const confidence = adapter.match(/(?:^|;)identity=([a-z-]+)/i)?.[1];
+  if (confidence === "stable") return "Stable message identity";
+  if (confidence === "mixed") return "Mixed message identity; some edits are conservative";
+  if (confidence === "positional") return "Positional identity; edits appear as add/remove";
+  if (confidence === "content") return "Content-derived identity; edits appear as add/remove";
+  return "Legacy revision matching";
 }
 
 function roleLabel(role: string) {
