@@ -71,6 +71,15 @@ type CommitArgs = AccessArgs & {
   messageFingerprints: string[];
   capturedAt?: number;
 };
+type CommitResult = {
+  conversationId: string;
+  referenceId: string;
+  snapshotId: string;
+  duplicate: boolean;
+  addedCount: number;
+  changedCount: number;
+  removedCount: number;
+};
 
 const createUploadReference = makeFunctionReference<
   "mutation",
@@ -80,15 +89,7 @@ const createUploadReference = makeFunctionReference<
 const commitImportReference = makeFunctionReference<
   "mutation",
   CommitArgs,
-  {
-    conversationId: string;
-    referenceId: string;
-    snapshotId: string;
-    duplicate: boolean;
-    addedCount: number;
-    changedCount: number;
-    removedCount: number;
-  }
+  CommitResult
 >("conversations:commitImport");
 const listRecentReference = makeFunctionReference<
   "query",
@@ -210,23 +211,30 @@ export async function importConversationArchive(args: {
   if (!response.ok || !body.storageId) {
     throw new Error(response.statusText || "Conversation upload failed.");
   }
-  return await client.mutation(
-    commitImportReference,
-    withOwnerAccess({
-      storageId: body.storageId,
-      provider: args.archive.provider,
-      ...(args.archive.providerConversationId
-        ? { providerConversationId: args.archive.providerConversationId }
-        : {}),
-      ...(args.archive.sourceUrl ? { sourceUrl: args.archive.sourceUrl } : {}),
-      title: args.archive.title,
-      format: args.originalFormat,
-      adapter: `generic.${args.originalFormat}.v1`,
-      messageCount: args.archive.messages.length,
-      messageFingerprints: conversationMessageFingerprints(args.archive),
-      capturedAt: Date.parse(args.archive.capturedAt),
-    }),
-  );
+  const commitArgs = withOwnerAccess({
+    storageId: body.storageId,
+    provider: args.archive.provider,
+    ...(args.archive.providerConversationId
+      ? { providerConversationId: args.archive.providerConversationId }
+      : {}),
+    ...(args.archive.sourceUrl ? { sourceUrl: args.archive.sourceUrl } : {}),
+    title: args.archive.title,
+    format: args.originalFormat,
+    adapter: `generic.${args.originalFormat}.v1`,
+    messageCount: args.archive.messages.length,
+    messageFingerprints: conversationMessageFingerprints(args.archive),
+    capturedAt: Date.parse(args.archive.capturedAt),
+  });
+
+  try {
+    return await client.mutation(commitImportReference, commitArgs);
+  } catch (firstError) {
+    try {
+      return await client.mutation(commitImportReference, commitArgs);
+    } catch {
+      throw firstError;
+    }
+  }
 }
 
 function getClient() {
