@@ -1,7 +1,9 @@
 import {
+  assertProviderMessageCount,
+  assertProviderMessageLength,
   cleanProviderConversationTitle,
   normalizeProviderMessageText,
-  providerConversationLimits,
+  stabilizeProviderMessageIds,
   validateProviderArchive,
   type ProviderConversationArchive,
   type ProviderConversationMessage,
@@ -23,12 +25,15 @@ export function captureGeminiConversation(
 ): ProviderConversationArchive | undefined {
   const identity = geminiConversationIdentity(pageUrl);
   if (!identity) return undefined;
-  const nodes = Array.from(document.querySelectorAll<HTMLElement>(messageSelector))
-    .filter((node) => !node.parentElement?.closest(messageSelector))
-    .slice(0, providerConversationLimits.maxMessages);
-  const messages = nodes
-    .map((node, index) => geminiMessageFromElement(node, index))
-    .filter((message): message is ProviderConversationMessage => Boolean(message));
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>(messageSelector)).filter(
+    (node) => !node.parentElement?.closest(messageSelector),
+  );
+  assertProviderMessageCount(nodes.length, "Gemini");
+  const messages = stabilizeProviderMessageIds(
+    nodes
+      .map((node) => geminiMessageFromElement(node))
+      .filter((message): message is ProviderConversationMessage => Boolean(message)),
+  );
   return validateProviderArchive({
     schemaVersion: 1,
     title: cleanProviderConversationTitle(document.title, messages, "Gemini"),
@@ -49,6 +54,7 @@ export function geminiConversationIdentity(value: string | undefined) {
     const match = url.pathname.match(/(?:^|\/)app\/([^/?#]+)/i);
     if (!match?.[1]) return undefined;
     url.hash = "";
+    url.search = "";
     return {
       conversationId: decodeURIComponent(match[1]),
       sourceUrl: url.toString(),
@@ -71,7 +77,6 @@ export function normalizeGeminiRole(
 
 function geminiMessageFromElement(
   node: HTMLElement,
-  index: number,
 ): ProviderConversationMessage | undefined {
   const role = normalizeGeminiRole(
     [node.tagName, node.dataset.testId, node.className]
@@ -80,12 +85,13 @@ function geminiMessageFromElement(
   );
   const text = extractGeminiText(node);
   if (!text) return undefined;
+  assertProviderMessageLength(text, "Gemini");
   const id =
     firstText(
       node.dataset.messageId,
       node.getAttribute("data-message-id") ?? undefined,
       node.id,
-    ) ?? `message-${index + 1}`;
+    ) ?? "";
   const createdAt = firstText(
     node.querySelector<HTMLTimeElement>("time[datetime]")?.dateTime,
     node.getAttribute("data-created-at") ?? undefined,
@@ -102,7 +108,7 @@ function geminiMessageFromElement(
     id,
     role,
     ...(model ? { author: model } : {}),
-    text: text.slice(0, providerConversationLimits.maxMessageLength),
+    text,
     ...(createdAt ? { createdAt } : {}),
   };
 }
