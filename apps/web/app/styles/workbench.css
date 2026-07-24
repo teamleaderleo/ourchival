@@ -39,6 +39,7 @@
   background: var(--panel-raised);
 }
 
+.workbench-dock .capture-session-launcher > span,
 .workbench-dock .conversation-launcher > span {
   display: none;
 }
