@@ -6,6 +6,16 @@ import type { ProviderConversationArchive } from "./providerConversation";
 
 const maxConversationBytes = 5_000_000;
 
+class ConversationMutationError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "ConversationMutationError";
+  }
+}
+
 type ConvexMutationResponse<T> = {
   status?: "success" | "error";
   errorMessage?: string;
@@ -65,18 +75,11 @@ export async function uploadProviderConversation(
     capturedAt: Date.parse(archive.capturedAt),
   };
   try {
-    return await callMutation<ProviderCaptureResult>(
-      endpoint,
-      "providerConversationCaptures:commitCapture",
-      commitArgs,
-    );
+    return await commitProviderCapture(endpoint, commitArgs);
   } catch (firstError) {
+    if (!isRetryableMutationError(firstError)) throw firstError;
     try {
-      return await callMutation<ProviderCaptureResult>(
-        endpoint,
-        "providerConversationCaptures:commitCapture",
-        commitArgs,
-      );
+      return await commitProviderCapture(endpoint, commitArgs);
     } catch {
       throw firstError;
     }
@@ -97,23 +100,63 @@ export function providerMessageFingerprint(
   );
 }
 
+function commitProviderCapture(
+  endpoint: string,
+  args: Record<string, unknown>,
+) {
+  return callMutation<ProviderCaptureResult>(
+    endpoint,
+    "providerConversationCaptures:commitCapture",
+    args,
+  );
+}
+
 async function callMutation<T>(
   endpoint: string,
   path: string,
   args: Record<string, unknown>,
 ) {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path, args, format: "json" }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, args, format: "json" }),
+    });
+  } catch (error) {
+    throw new ConversationMutationError(
+      error instanceof Error ? error.message : "Conversation request failed.",
+      true,
+    );
+  }
+
   const body = (await response.json().catch(() => ({}))) as ConvexMutationResponse<T>;
-  if (!response.ok || body.status === "error" || body.value === undefined) {
-    throw new Error(
+  if (body.status === "error") {
+    throw new ConversationMutationError(
+      body.errorMessage || "Conversation mutation was rejected.",
+      false,
+    );
+  }
+  if (!response.ok) {
+    throw new ConversationMutationError(
       body.errorMessage || response.statusText || "Conversation mutation failed.",
+      response.status === 408 ||
+        response.status === 425 ||
+        response.status === 429 ||
+        response.status >= 500,
+    );
+  }
+  if (body.value === undefined) {
+    throw new ConversationMutationError(
+      "Conversation mutation returned no result.",
+      true,
     );
   }
   return body.value;
+}
+
+function isRetryableMutationError(error: unknown) {
+  return error instanceof ConversationMutationError && error.retryable;
 }
 
 function stableFingerprint(value: string) {
