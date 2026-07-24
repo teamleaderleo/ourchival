@@ -158,6 +158,7 @@ export function CaptureSessionPanel() {
 
           {selectedSession ? (
             <SessionDetail
+              key={selectedSession.sessionKey}
               session={selectedSession}
               references={detail.references}
               loading={detail.loading}
@@ -320,6 +321,7 @@ function SessionDetail({
 
   useEffect(() => {
     if (
+      !busy &&
       !loading &&
       !loadingMore &&
       hasMore &&
@@ -328,7 +330,7 @@ function SessionDetail({
     ) {
       void onLoadMore();
     }
-  }, [hasMore, loading, loadingMore, onLoadMore, pendingReferences.length, session.reviewState]);
+  }, [busy, hasMore, loading, loadingMore, onLoadMore, pendingReferences.length, session.reviewState]);
 
   function selectRelative(offset: number) {
     if (!reviewQueue.length) return;
