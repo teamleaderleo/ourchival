@@ -1,3 +1,9 @@
+import {
+  assertProviderMessageCount,
+  assertProviderMessageLength,
+  stabilizeProviderMessageIds,
+} from "./providerConversation";
+
 export type CapturedConversationRole =
   | "user"
   | "assistant"
@@ -23,8 +29,6 @@ export type CapturedConversationArchive = {
   messages: CapturedConversationMessage[];
 };
 
-const maxMessages = 5_000;
-const maxMessageLength = 200_000;
 const maxArchiveCharacters = 4_500_000;
 
 export function captureChatGptConversation(
@@ -35,12 +39,15 @@ export function captureChatGptConversation(
   if (!identity) return undefined;
   const nodes = Array.from(
     document.querySelectorAll<HTMLElement>("[data-message-author-role]"),
-  ).slice(0, maxMessages);
-  const messages = nodes
-    .map((node, index) => chatGptMessageFromElement(node, index))
-    .filter(
-      (message): message is CapturedConversationMessage => Boolean(message),
-    );
+  );
+  assertProviderMessageCount(nodes.length, "ChatGPT");
+  const messages = stabilizeProviderMessageIds(
+    nodes
+      .map((node) => chatGptMessageFromElement(node))
+      .filter(
+        (message): message is CapturedConversationMessage => Boolean(message),
+      ),
+  );
   if (!messages.length) return undefined;
 
   const archive: CapturedConversationArchive = {
@@ -76,6 +83,7 @@ export function chatGptConversationIdentity(value: string | undefined) {
     const match = url.pathname.match(/(?:^|\/)c\/([^/?#]+)/i);
     if (!match?.[1]) return undefined;
     url.hash = "";
+    url.search = "";
     return {
       conversationId: decodeURIComponent(match[1]),
       sourceUrl: url.toString(),
@@ -112,18 +120,18 @@ export function normalizeChatGptRole(value: string | undefined): CapturedConvers
 
 function chatGptMessageFromElement(
   node: HTMLElement,
-  index: number,
 ): CapturedConversationMessage | undefined {
   const role = normalizeChatGptRole(node.dataset.messageAuthorRole);
   const text = extractMessageText(node);
   if (!text) return undefined;
+  assertProviderMessageLength(text, "ChatGPT");
   const id =
     firstText(
       node.dataset.messageId,
       node.getAttribute("data-message-id") ?? undefined,
       node.closest<HTMLElement>("[data-message-id]")?.dataset.messageId,
       node.id,
-    ) ?? `message-${index + 1}`;
+    ) ?? "";
   const createdAt = firstText(
     node.querySelector<HTMLTimeElement>("time[datetime]")?.dateTime,
     node.getAttribute("data-created-at") ?? undefined,
@@ -141,7 +149,7 @@ function chatGptMessageFromElement(
     id,
     role,
     ...(model ? { author: model } : {}),
-    text: text.slice(0, maxMessageLength),
+    text,
     ...(createdAt ? { createdAt } : {}),
   };
 }
