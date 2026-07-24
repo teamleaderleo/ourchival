@@ -25,6 +25,11 @@ export type ProviderConversationArchive = {
   messages: ProviderConversationMessage[];
 };
 
+export type ProviderCaptureDiagnostics = {
+  unknownRoleCount: number;
+  inferredIdCount: number;
+};
+
 export const providerConversationLimits = {
   maxMessages: 5_000,
   maxMessageLength: 200_000,
@@ -54,6 +59,26 @@ export function assertProviderMessageLength(text: string, providerLabel: string)
       `A visible ${providerLabel} message is too large for browser capture. Use a provider export so it is preserved without truncation.`,
     );
   }
+}
+
+export function assertRecognizedProviderRoles(
+  messages: ProviderConversationMessage[],
+  providerLabel: string,
+) {
+  if (messages.length > 0 && messages.every((message) => message.role === "other")) {
+    throw new Error(
+      `${providerLabel} message containers were found, but their roles could not be recognized. The capture adapter may need an update.`,
+    );
+  }
+}
+
+export function providerCaptureDiagnostics(
+  messages: ProviderConversationMessage[],
+): ProviderCaptureDiagnostics {
+  return {
+    unknownRoleCount: messages.filter((message) => message.role === "other").length,
+    inferredIdCount: messages.filter((message) => message.id.startsWith("captured-")).length,
+  };
 }
 
 export function stabilizeProviderMessageIds<T extends ProviderConversationMessage>(
