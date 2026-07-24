@@ -1,4 +1,4 @@
-const buttonId = "capture-chatgpt-conversation";
+const buttonId = "capture-provider-conversation";
 const feedbackId = "conversation-capture-feedback";
 
 function enhancePopup() {
@@ -11,9 +11,9 @@ function enhancePopup() {
   section.className = "conversation-capture-action";
   section.innerHTML = `
     <button id="${buttonId}" type="button" class="primary full-width" ${disabled ? "disabled" : ""}>
-      Save this ChatGPT conversation
+      Save this conversation
     </button>
-    <p id="${feedbackId}" class="hint">Captures the visible conversation as a versioned private archive.</p>
+    <p id="${feedbackId}" class="hint">Supports visible ChatGPT, Claude, and Gemini conversations. Later captures become revisions.</p>
   `;
   actionGrid.insertAdjacentElement("afterend", section);
   section.querySelector<HTMLButtonElement>(`#${buttonId}`)?.addEventListener(
@@ -22,7 +22,7 @@ function enhancePopup() {
       const button = event.currentTarget as HTMLButtonElement;
       const feedback = document.getElementById(feedbackId);
       button.disabled = true;
-      if (feedback) feedback.textContent = "Reading the visible ChatGPT conversation…";
+      if (feedback) feedback.textContent = "Reading the visible conversation…";
       try {
         const response = (await chrome.runtime.sendMessage({
           type: "OURCHIVAL_CAPTURE_CONVERSATION",
