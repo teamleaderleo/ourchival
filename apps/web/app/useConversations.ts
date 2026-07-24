@@ -1,10 +1,10 @@
 "use client";
 
+import { buildConversationFingerprints } from "@ourchival/shared";
 import { useCallback, useEffect, useState } from "react";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import {
-  conversationMessageFingerprints,
   serializeConversationArchive,
   type ConversationArchive,
   type ConversationImportFormat,
@@ -212,6 +212,7 @@ export async function importConversationArchive(args: {
   if (!response.ok || !body.storageId) {
     throw new Error(response.statusText || "Conversation upload failed.");
   }
+  const fingerprintBundle = buildConversationFingerprints(args.archive.messages);
   const commitArgs = withOwnerAccess({
     storageId: body.storageId,
     provider: args.archive.provider,
@@ -221,9 +222,9 @@ export async function importConversationArchive(args: {
     ...(args.archive.sourceUrl ? { sourceUrl: args.archive.sourceUrl } : {}),
     title: args.archive.title,
     format: args.originalFormat,
-    adapter: `generic.${args.originalFormat}.v1`,
+    adapter: `generic.${args.originalFormat}.v2;identity=${fingerprintBundle.confidence}`,
     messageCount: args.archive.messages.length,
-    messageFingerprints: conversationMessageFingerprints(args.archive),
+    messageFingerprints: fingerprintBundle.fingerprints,
     capturedAt: Date.parse(args.archive.capturedAt),
   });
 
