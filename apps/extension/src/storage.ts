@@ -1,4 +1,4 @@
-import type { CapturePayload } from "@ourchival/shared";
+import type { CapturePayload, PageScreenshotCapture } from "@ourchival/shared";
 
 export type CaptureResult = {
   ok: boolean;
@@ -33,6 +33,7 @@ export type BatchCaptureItem = {
   title?: string;
   tabId?: number;
   payload?: CapturePayload;
+  pageScreenshot?: PageScreenshotCapture;
 };
 
 export type BatchCaptureFailure = {
