@@ -135,8 +135,9 @@ export const commitImport = mutation({
       if (reference) {
         await ctx.db.patch(reference._id, {
           title,
-          sourceUrl,
-          ...(canonicalUrl ? { canonicalUrl } : {}),
+          ...(canonicalUrl
+            ? { sourceUrl: canonicalUrl, canonicalUrl }
+            : {}),
         });
       }
       return {
