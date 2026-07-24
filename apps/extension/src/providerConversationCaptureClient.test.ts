@@ -6,7 +6,7 @@ import {
 import type { ProviderConversationArchive } from "./providerConversation";
 
 const message = {
-  id: "message-1",
+  id: "provider-message-1",
   role: "assistant" as const,
   author: "claude-sonnet",
   text: "A provider-generic archive should keep stable identity.",
@@ -32,17 +32,24 @@ afterEach(() => {
 });
 
 describe("provider conversation fingerprints", () => {
-  it("creates stable backend-compatible fingerprints", () => {
+  it("creates stable backend-compatible identity/content fingerprints", () => {
     expect(providerMessageFingerprint(message)).toBe(
       providerMessageFingerprint(message),
     );
-    expect(providerMessageFingerprint(message)).toMatch(/^[a-f0-9]{32}$/);
+    expect(providerMessageFingerprint(message)).toMatch(
+      /^s:[a-f0-9]{32}:[a-f0-9]{32}$/,
+    );
   });
 
-  it("changes when message content changes", () => {
-    expect(providerMessageFingerprint(message)).not.toBe(
-      providerMessageFingerprint({ ...message, text: `${message.text} Updated.` }),
-    );
+  it("keeps identity while changing the content fingerprint", () => {
+    const before = providerMessageFingerprint(message).split(":");
+    const after = providerMessageFingerprint({
+      ...message,
+      text: `${message.text} Updated.`,
+    }).split(":");
+
+    expect(before[1]).toBe(after[1]);
+    expect(before[2]).not.toBe(after[2]);
   });
 });
 
@@ -84,6 +91,10 @@ describe("provider conversation uploads", () => {
     expect(secondCommit.path).toBe(firstCommit.path);
     expect(secondCommit.args.storageId).toBe("storage-1");
     expect(secondCommit.args).toEqual(firstCommit.args);
+    expect(firstCommit.args.adapter).toBe("claude.dom.v2;identity=stable");
+    expect(firstCommit.args.messageFingerprints[0]).toMatch(
+      /^s:[a-f0-9]{32}:[a-f0-9]{32}$/,
+    );
   });
 
   it("does not retry an explicit Convex rejection", async () => {
@@ -121,6 +132,10 @@ function jsonResponse(value: unknown, status = 200) {
 function requestBody(init: RequestInit | undefined) {
   return JSON.parse(String(init?.body)) as {
     path: string;
-    args: Record<string, string>;
+    args: {
+      storageId: string;
+      adapter: string;
+      messageFingerprints: string[];
+    };
   };
 }
