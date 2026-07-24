@@ -10,6 +10,7 @@ import {
   type ConversationImportFormat,
 } from "./conversationImport";
 import { withOwnerAccess } from "./privateAccess";
+import { retryOnce } from "./retryOnce";
 
 export type ConversationSummary = {
   _id: string;
@@ -226,15 +227,9 @@ export async function importConversationArchive(args: {
     capturedAt: Date.parse(args.archive.capturedAt),
   });
 
-  try {
-    return await client.mutation(commitImportReference, commitArgs);
-  } catch (firstError) {
-    try {
-      return await client.mutation(commitImportReference, commitArgs);
-    } catch {
-      throw firstError;
-    }
-  }
+  return await retryOnce(() =>
+    client.mutation(commitImportReference, commitArgs),
+  );
 }
 
 function getClient() {
