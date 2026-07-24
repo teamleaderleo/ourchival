@@ -18,6 +18,11 @@ export type CaptureSessionReviewDestination =
   | "archive"
   | "trash";
 
+export type CaptureSessionBatchDestination = Exclude<
+  CaptureSessionReviewDestination,
+  "inbox"
+>;
+
 export type CaptureSession = {
   _id: string;
   sessionKey: string;
@@ -66,6 +71,12 @@ export type CaptureSessionReviewResult = {
   reviewState: CaptureSessionReviewState;
 };
 
+export type CaptureSessionBatchResult = {
+  updated: number;
+  hasRemaining: boolean;
+  reviewState: CaptureSessionReviewState;
+};
+
 type CaptureSessionReferencePage = {
   references: CaptureSessionReference[];
   continueCursor: string;
@@ -89,6 +100,11 @@ type ReviewReferenceArgs = AccessArgs & {
   referenceId: string;
   destination?: CaptureSessionReviewDestination;
   favorite?: boolean;
+};
+type ReviewPendingBatchArgs = AccessArgs & {
+  sessionKey: string;
+  destination: CaptureSessionBatchDestination;
+  limit?: number;
 };
 
 const listRecentReference = makeFunctionReference<
@@ -116,6 +132,11 @@ const reviewReferenceReference = makeFunctionReference<
   ReviewReferenceArgs,
   CaptureSessionReviewResult
 >("captureSessions:reviewReference");
+const reviewPendingBatchReference = makeFunctionReference<
+  "mutation",
+  ReviewPendingBatchArgs,
+  CaptureSessionBatchResult
+>("captureSessionBatch:reviewPending");
 
 let client: ConvexHttpClient | undefined;
 
@@ -251,6 +272,17 @@ export async function reviewCaptureSessionReference(args: {
 }) {
   return await getClient().mutation(
     reviewReferenceReference,
+    withOwnerAccess(args),
+  );
+}
+
+export async function reviewCaptureSessionPendingBatch(args: {
+  sessionKey: string;
+  destination: CaptureSessionBatchDestination;
+  limit?: number;
+}) {
+  return await getClient().mutation(
+    reviewPendingBatchReference,
     withOwnerAccess(args),
   );
 }
