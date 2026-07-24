@@ -1,10 +1,15 @@
 import type { ParsedXSource } from "@ourchival/parsers";
-import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
+import type {
+  CapturePayload,
+  PageReadableTextCapture,
+  PageSnapshot,
+} from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
 import {
   captureVisiblePageScreenshot,
   uploadPageScreenshot,
 } from "./pageScreenshot";
+import { uploadReadablePageText } from "./pageText";
 import { reportCaptureSession } from "./sessionReporting";
 import {
   getSettings,
@@ -107,10 +112,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  const pageScreenshot =
-    info.menuItemId === "save-page-to-ourchival"
-      ? await captureVisiblePageScreenshot(tab)
-      : undefined;
+  const saveWholePage = info.menuItemId === "save-page-to-ourchival";
+  const pageScreenshot = saveWholePage
+    ? await captureVisiblePageScreenshot(tab)
+    : undefined;
+  const readableText = saveWholePage
+    ? readableTextCapture(context?.pageSnapshot)
+    : undefined;
   const payload =
     info.menuItemId === "save-post-to-ourchival" &&
     context?.parsedSource?.platform === "x"
@@ -123,11 +131,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const connection = await getCaptureConnection();
     const result = await capturePayload(connection, payload);
     if (result.ok) {
-      await uploadPageScreenshot(
-        connection,
-        result.body.referenceId,
-        pageScreenshot,
-      );
+      await Promise.all([
+        uploadPageScreenshot(
+          connection,
+          result.body.referenceId,
+          pageScreenshot,
+        ),
+        uploadReadablePageText(
+          connection,
+          result.body.referenceId,
+          readableText,
+        ),
+      ]);
     }
     await markResult(toCaptureResult(result));
   } catch (error) {
@@ -195,6 +210,17 @@ async function getContextCapture(tabId: number | undefined) {
   }
 }
 
+async function getPageSnapshot(tabId: number | undefined) {
+  if (typeof tabId !== "number") return undefined;
+  try {
+    return (await chrome.tabs.sendMessage(tabId, {
+      type: "OURCHIVAL_SNAPSHOT_PAGE",
+    })) as PageSnapshot | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function captureTabs(mode: TabCaptureMode) {
   const tabs = await queryTabs(mode);
   const source: BatchCaptureSource =
@@ -203,16 +229,38 @@ async function captureTabs(mode: TabCaptureMode) {
       : mode === "selected"
         ? "selected_tabs"
         : "window";
-  const pageScreenshot =
-    mode === "current" ? await captureVisiblePageScreenshot(tabs[0]) : undefined;
+  const currentSnapshot = mode === "current"
+    ? await getPageSnapshot(tabs[0]?.id)
+    : undefined;
+  const pageScreenshot = mode === "current"
+    ? await captureVisiblePageScreenshot(tabs[0])
+    : undefined;
+  const readableText = readableTextCapture(currentSnapshot);
+
   return await runBatch(
     source,
-    tabs.map((tab, index) => ({
-      url: tab.url,
-      title: tab.title,
-      tabId: tab.id,
-      ...(index === 0 && pageScreenshot ? { pageScreenshot } : {}),
-    })),
+    tabs.map((tab, index) => {
+      const currentPayload =
+        index === 0 && currentSnapshot && tab.url
+          ? {
+              kind: "page" as const,
+              sourceUrl: tab.url,
+              ...pageSnapshotFields(currentSnapshot),
+              ...(!currentSnapshot.title && tab.title
+                ? { pageTitle: tab.title }
+                : {}),
+              capturedAt: new Date().toISOString(),
+            }
+          : undefined;
+      return {
+        url: tab.url,
+        title: tab.title,
+        tabId: tab.id,
+        ...(currentPayload ? { payload: currentPayload } : {}),
+        ...(index === 0 && pageScreenshot ? { pageScreenshot } : {}),
+        ...(index === 0 && readableText ? { readableText } : {}),
+      };
+    }),
   );
 }
 
@@ -296,6 +344,7 @@ async function continueBatch(
       if (!isCapturableUrl(sourceUrl)) {
         state.skipped += 1;
         item.pageScreenshot = undefined;
+        item.readableText = undefined;
         advanceCheckpoint(state);
         await saveBatchState({ ...state });
         await reportCaptureSession(connection, state);
@@ -320,12 +369,18 @@ async function continueBatch(
         if (result.body.alreadySaved) state.duplicates += 1;
         else state.saved += 1;
         if (typeof item.tabId === "number") state.successfulTabIds.push(item.tabId);
-        await uploadPageScreenshot(
-          connection,
-          result.body.referenceId,
-          item.pageScreenshot,
-        );
-        item.pageScreenshot = undefined;
+        await Promise.all([
+          uploadPageScreenshot(
+            connection,
+            result.body.referenceId,
+            item.pageScreenshot,
+          ),
+          uploadReadablePageText(
+            connection,
+            result.body.referenceId,
+            item.readableText,
+          ),
+        ]);
         await saveLastCapture(payload);
         await saveLastResult(toCaptureResult(result));
       } catch (error) {
@@ -336,6 +391,9 @@ async function continueBatch(
           ...(item.payload ? { payload: item.payload } : {}),
           message: errorMessage(error, "Capture failed."),
         });
+      } finally {
+        item.pageScreenshot = undefined;
+        item.readableText = undefined;
       }
 
       advanceCheckpoint(state);
@@ -549,6 +607,17 @@ function pageSnapshotFields(
       : {}),
     ...(snapshot.author ? { pageAuthor: snapshot.author } : {}),
     ...(snapshot.contentType ? { contentType: snapshot.contentType } : {}),
+  };
+}
+
+function readableTextCapture(
+  snapshot: PageSnapshot | undefined,
+): PageReadableTextCapture | undefined {
+  if (!snapshot?.readableText || !snapshot.readableTextSource) return undefined;
+  return {
+    text: snapshot.readableText,
+    source: snapshot.readableTextSource,
+    capturedAt: new Date().toISOString(),
   };
 }
 
