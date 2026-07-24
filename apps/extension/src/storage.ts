@@ -2,6 +2,7 @@ import type {
   CapturePayload,
   PageReadableTextCapture,
   PageScreenshotCapture,
+  PageStructuredSnapshotCapture,
 } from "@ourchival/shared";
 
 export type CaptureResult = {
@@ -39,6 +40,7 @@ export type BatchCaptureItem = {
   payload?: CapturePayload;
   pageScreenshot?: PageScreenshotCapture;
   readableText?: PageReadableTextCapture;
+  structuredSnapshot?: PageStructuredSnapshotCapture;
 };
 
 export type BatchCaptureFailure = {
