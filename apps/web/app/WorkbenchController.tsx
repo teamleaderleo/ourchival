@@ -28,9 +28,11 @@ export function WorkbenchController() {
         return;
       }
 
+      const activeElement =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       returnFocus =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
+        activeElement && activeElement !== document.body && !nextDrawer.contains(activeElement)
+          ? activeElement
           : matchingLauncher(nextDrawer);
       activeDrawer = nextDrawer;
       nextDrawer.setAttribute("role", "dialog");
@@ -61,7 +63,10 @@ export function WorkbenchController() {
 
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (document.activeElement === drawer) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
@@ -73,14 +78,22 @@ export function WorkbenchController() {
       }
     }
 
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target !== document.body) return;
+      const drawer = document.querySelector<HTMLElement>(drawerSelector);
+      if (drawer) closeButton(drawer)?.click();
+    }
+
     const observer = new MutationObserver(syncDrawer);
     observer.observe(document.body, { childList: true, subtree: true });
     document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("pointerdown", handlePointerDown);
     syncDrawer();
 
     return () => {
       observer.disconnect();
       document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("pointerdown", handlePointerDown);
     };
   }, []);
 
