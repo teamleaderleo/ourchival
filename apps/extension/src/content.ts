@@ -1,6 +1,7 @@
 import { parseXSnapshot, type ParsedXSource, type XDomSnapshot } from "@ourchival/parsers";
 import type { PageSnapshot } from "@ourchival/shared";
 import { captureReadableText } from "./readableText";
+import { captureRedditThreadSnapshot } from "./redditSnapshot";
 
 type ContextCapture = {
   pageTitle: string;
@@ -35,6 +36,7 @@ function snapshotPage(): PageSnapshot {
       metaContent('meta[name="twitter:image:src"]'),
   );
   const readable = captureReadableText(document);
+  const structuredSnapshot = captureRedditThreadSnapshot(document, location.href);
 
   return {
     url: location.href,
@@ -88,6 +90,7 @@ function snapshotPage(): PageSnapshot {
           readableTextSource: readable.source,
         }
       : {}),
+    ...(structuredSnapshot ? { structuredSnapshot } : {}),
     images,
   };
 }
