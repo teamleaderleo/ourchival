@@ -1,5 +1,6 @@
 import { parseXSnapshot, type ParsedXSource, type XDomSnapshot } from "@ourchival/parsers";
 import type { PageSnapshot } from "@ourchival/shared";
+import { captureReadableText } from "./readableText";
 
 type ContextCapture = {
   pageTitle: string;
@@ -33,6 +34,7 @@ function snapshotPage(): PageSnapshot {
       metaContent('meta[name="twitter:image"]') ??
       metaContent('meta[name="twitter:image:src"]'),
   );
+  const readable = captureReadableText(document);
 
   return {
     url: location.href,
@@ -80,6 +82,12 @@ function snapshotPage(): PageSnapshot {
       : {}),
     ...(document.contentType ? { contentType: document.contentType } : {}),
     selectedText: window.getSelection()?.toString() || undefined,
+    ...(readable
+      ? {
+          readableText: readable.text,
+          readableTextSource: readable.source,
+        }
+      : {}),
     images,
   };
 }
