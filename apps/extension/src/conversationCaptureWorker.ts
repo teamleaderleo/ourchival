@@ -1,4 +1,7 @@
-import type { ProviderConversationArchive } from "./providerConversation";
+import type {
+  ProviderConversationArchive,
+  ProviderConversationProvider,
+} from "./providerConversation";
 import { uploadProviderConversation } from "./providerConversationCaptureClient";
 import { getSettings, normalizeCaptureEndpoint } from "./storage";
 
@@ -60,19 +63,22 @@ async function captureCurrentConversation(): Promise<CaptureConversationResponse
           "The active tab does not contain a capturable ChatGPT, Claude, or Gemini conversation.",
       );
     }
+    const archive = captured.archive;
     const result = await uploadProviderConversation(
       { endpoint, deviceToken },
-      captured.archive,
+      archive,
     );
     await chrome.action.setBadgeText({ text: result.duplicate ? "↺" : "✓" });
     await chrome.action.setBadgeBackgroundColor({
       color: result.duplicate ? "#6f5bb7" : "#3d6b3d",
     });
+    const label = providerLabel(archive.provider);
+    const count = archive.messages.length;
     const revision = result.duplicate
-      ? "That exact conversation snapshot is already archived."
+      ? `${label}: ${count} visible ${count === 1 ? "message is" : "messages are"} already archived.`
       : result.addedCount || result.removedCount
-        ? `Saved revision: ${result.addedCount} added, ${result.removedCount} removed.`
-        : "Conversation saved to Inbox.";
+        ? `${label}: saved ${count} visible messages; ${result.addedCount} added and ${result.removedCount} removed.`
+        : `${label}: saved ${count} visible ${count === 1 ? "message" : "messages"} to Inbox.`;
     return {
       ok: true,
       message: revision,
@@ -87,4 +93,10 @@ async function captureCurrentConversation(): Promise<CaptureConversationResponse
     await chrome.action.setBadgeBackgroundColor({ color: "#8a3d3d" });
     throw error;
   }
+}
+
+function providerLabel(provider: ProviderConversationProvider) {
+  if (provider === "chatgpt") return "ChatGPT";
+  if (provider === "claude") return "Claude";
+  return "Gemini";
 }
