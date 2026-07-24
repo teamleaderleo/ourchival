@@ -6,6 +6,8 @@ type ConversationDescription = {
   title: string;
   messageCount: number;
   sourceUrl: string;
+  unknownRoleCount: number;
+  inferredIdCount: number;
 };
 
 function enhancePopup() {
@@ -82,7 +84,7 @@ async function describeActiveConversation(
     button.disabled = baseDisabled;
     feedback.textContent = baseDisabled
       ? `${label} conversation detected. Pair the Clipper or finish the current import to save it.`
-      : `${description.title} · later saves become revisions.`;
+      : captureDescription(description);
   } catch (error) {
     button.dataset.supported = "false";
     button.disabled = true;
@@ -92,6 +94,21 @@ async function describeActiveConversation(
         ? error.message
         : "Open a supported conversation to enable capture.";
   }
+}
+
+function captureDescription(description: ConversationDescription) {
+  const notes: string[] = [];
+  if (description.unknownRoleCount > 0) {
+    notes.push(
+      `${description.unknownRoleCount} ${description.unknownRoleCount === 1 ? "role was" : "roles were"} not recognized`,
+    );
+  }
+  if (description.inferredIdCount > 0) {
+    notes.push(
+      `${description.inferredIdCount} ${description.inferredIdCount === 1 ? "message uses" : "messages use"} content-derived IDs`,
+    );
+  }
+  return `${description.title} · later saves become revisions${notes.length ? `. Note: ${notes.join("; ")}.` : "."}`;
 }
 
 function providerLabel(provider: ConversationDescription["provider"]) {
