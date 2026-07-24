@@ -14,6 +14,14 @@ export type PageScreenshotCapture = {
   capturedAt: string;
 };
 
+export type PageReadableTextSource = "article" | "main" | "body";
+
+export type PageReadableTextCapture = {
+  text: string;
+  source: PageReadableTextSource;
+  capturedAt: string;
+};
+
 export type CapturePayload = {
   kind: ReferenceKind;
   sourceUrl: string;
@@ -51,6 +59,8 @@ export type PageSnapshot = {
   author?: string;
   contentType?: string;
   selectedText?: string;
+  readableText?: string;
+  readableTextSource?: PageReadableTextSource;
   images: Array<{
     src: string;
     alt?: string;
