@@ -12,6 +12,16 @@ type ConvexMutationResponse<T> = {
   value?: T;
 };
 
+type ProviderCaptureResult = {
+  conversationId: string;
+  referenceId: string;
+  snapshotId: string;
+  duplicate: boolean;
+  addedCount: number;
+  changedCount: number;
+  removedCount: number;
+};
+
 export async function uploadProviderConversation(
   connection: SessionReportConnection,
   archive: ProviderConversationArchive,
@@ -42,37 +52,34 @@ export async function uploadProviderConversation(
     throw new Error(uploadResponse.statusText || "Conversation file upload failed.");
   }
 
+  const commitArgs = {
+    deviceToken: connection.deviceToken,
+    storageId: uploadBody.storageId,
+    provider: archive.provider,
+    providerConversationId: archive.providerConversationId,
+    sourceUrl: archive.sourceUrl,
+    title: archive.title,
+    adapter: `${archive.provider}.dom.v1`,
+    messageCount: archive.messages.length,
+    messageFingerprints: archive.messages.map(providerMessageFingerprint),
+    capturedAt: Date.parse(archive.capturedAt),
+  };
   try {
-    return await callMutation<{
-      conversationId: string;
-      referenceId: string;
-      snapshotId: string;
-      duplicate: boolean;
-      addedCount: number;
-      changedCount: number;
-      removedCount: number;
-    }>(endpoint, "providerConversationCaptures:commitCapture", {
-      deviceToken: connection.deviceToken,
-      storageId: uploadBody.storageId,
-      provider: archive.provider,
-      providerConversationId: archive.providerConversationId,
-      sourceUrl: archive.sourceUrl,
-      title: archive.title,
-      adapter: `${archive.provider}.dom.v1`,
-      messageCount: archive.messages.length,
-      messageFingerprints: archive.messages.map(providerMessageFingerprint),
-      capturedAt: Date.parse(archive.capturedAt),
-    });
-  } catch (error) {
-    await callMutation<{ discarded: boolean }>(
+    return await callMutation<ProviderCaptureResult>(
       endpoint,
-      "providerConversationUploads:discard",
-      {
-        deviceToken: connection.deviceToken,
-        storageId: uploadBody.storageId,
-      },
-    ).catch(() => undefined);
-    throw error;
+      "providerConversationCaptures:commitCapture",
+      commitArgs,
+    );
+  } catch (firstError) {
+    try {
+      return await callMutation<ProviderCaptureResult>(
+        endpoint,
+        "providerConversationCaptures:commitCapture",
+        commitArgs,
+      );
+    } catch {
+      throw firstError;
+    }
   }
 }
 
