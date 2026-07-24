@@ -1,21 +1,27 @@
 import { captureChatGptConversation } from "./chatgptConversation";
 import { captureClaudeConversation } from "./claudeConversation";
 import { captureGeminiConversation } from "./geminiConversation";
-import type { ProviderConversationArchive } from "./providerConversation";
+import {
+  normalizeProviderMessages,
+  validateProviderArchive,
+  type ProviderConversationArchive,
+} from "./providerConversation";
 
 export function captureProviderConversation(
   document: Document,
   pageUrl: string,
 ): ProviderConversationArchive | undefined {
   const chatGpt = captureChatGptConversation(document, pageUrl);
-  if (chatGpt?.providerConversationId) {
-    return {
-      ...chatGpt,
-      providerConversationId: chatGpt.providerConversationId,
-    };
-  }
-  return (
-    captureClaudeConversation(document, pageUrl) ??
-    captureGeminiConversation(document, pageUrl)
-  );
+  const archive: ProviderConversationArchive | undefined = chatGpt?.providerConversationId
+    ? {
+        ...chatGpt,
+        providerConversationId: chatGpt.providerConversationId,
+      }
+    : captureClaudeConversation(document, pageUrl) ??
+      captureGeminiConversation(document, pageUrl);
+  if (!archive) return undefined;
+  return validateProviderArchive({
+    ...archive,
+    messages: normalizeProviderMessages(archive.messages),
+  });
 }
