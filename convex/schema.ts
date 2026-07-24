@@ -105,6 +105,46 @@ export default defineSchema({
     .index("by_drive_file_id", ["driveFileId"])
     .index("by_derivative_status", ["derivativeStatus"]),
 
+  referenceArtifacts: defineTable({
+    referenceId: v.id("references"),
+    kind: v.union(
+      v.literal("page_screenshot"),
+      v.literal("page_snapshot"),
+      v.literal("readable_text"),
+    ),
+    captureMethod: v.union(
+      v.literal("browser"),
+      v.literal("remote"),
+      v.literal("import"),
+    ),
+    provider: v.optional(v.string()),
+    version: v.optional(v.string()),
+    storageId: v.optional(v.id("_storage")),
+    mimeType: v.optional(v.string()),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    byteSize: v.optional(v.number()),
+    contentHash: v.optional(v.string()),
+    status: v.union(
+      v.literal("processing"),
+      v.literal("ready"),
+      v.literal("failed"),
+    ),
+    error: v.optional(v.string()),
+    retention: v.union(
+      v.literal("review"),
+      v.literal("pinned"),
+      v.literal("archival"),
+    ),
+    capturedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_reference", ["referenceId"])
+    .index("by_reference_kind", ["referenceId", "kind"])
+    .index("by_status", ["status"])
+    .index("by_retention", ["retention"]),
+
   boards: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
