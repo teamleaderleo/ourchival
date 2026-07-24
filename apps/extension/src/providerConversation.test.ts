@@ -9,6 +9,7 @@ import {
 } from "./geminiConversation";
 import {
   cleanProviderConversationTitle,
+  normalizeProviderMessages,
   stabilizeProviderMessageIds,
   validateProviderArchive,
   type ProviderConversationArchive,
@@ -79,5 +80,33 @@ describe("provider conversation adapters", () => {
     expect(first[1]?.id).toBe(second[2]?.id);
     expect(first[2]?.id).toBe(second[3]?.id);
     expect(first[0]?.id).not.toBe(first[2]?.id);
+  });
+
+  it("drops exact duplicate DOM messages with the same provider ID", () => {
+    const normalized = normalizeProviderMessages([
+      { id: "provider-1", role: "user" as const, text: "Keep this once" },
+      { id: "provider-1", role: "user" as const, text: "Keep this once" },
+      { id: "provider-2", role: "assistant" as const, text: "A distinct reply" },
+    ]);
+
+    expect(normalized).toHaveLength(2);
+    expect(normalized.map((message) => message.id)).toEqual([
+      "provider-1",
+      "provider-2",
+    ]);
+  });
+
+  it("resolves conflicting provider IDs deterministically", () => {
+    const messages = [
+      { id: "provider-1", role: "assistant" as const, text: "First render" },
+      { id: "provider-1", role: "assistant" as const, text: "Updated render" },
+    ];
+
+    const first = normalizeProviderMessages(messages);
+    const second = normalizeProviderMessages(messages);
+
+    expect(first).toEqual(second);
+    expect(first[0]?.id).toBe("provider-1");
+    expect(first[1]?.id).toMatch(/^provider-1-[a-f0-9]{10}$/);
   });
 });
