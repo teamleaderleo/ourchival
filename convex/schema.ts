@@ -142,6 +142,7 @@ export default defineSchema({
   })
     .index("by_reference", ["referenceId"])
     .index("by_reference_kind", ["referenceId", "kind"])
+    .index("by_storage_id", ["storageId"])
     .index("by_status", ["status"])
     .index("by_retention", ["retention"]),
 
