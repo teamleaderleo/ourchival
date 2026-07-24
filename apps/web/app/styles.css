@@ -7,5 +7,6 @@
 @import "./styles/sessions.css";
 @import "./styles/session-batch.css";
 @import "./styles/conversations.css";
+@import "./styles/conversation-navigation.css";
 @import "./styles/workbench.css";
 @import "./styles/responsive.css";
