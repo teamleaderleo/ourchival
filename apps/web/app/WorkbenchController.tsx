@@ -118,9 +118,12 @@ function syncCaptureSessionNavigation(drawer: HTMLElement) {
   const locked = captureSessionMutationActive(
     batchActions.map((button) => button.disabled),
   );
+  const ariaDisabled = String(locked);
   for (const button of headerNavigationButtons(drawer)) {
-    button.disabled = locked;
-    button.setAttribute("aria-disabled", String(locked));
+    if (button.disabled !== locked) button.disabled = locked;
+    if (button.getAttribute("aria-disabled") !== ariaDisabled) {
+      button.setAttribute("aria-disabled", ariaDisabled);
+    }
   }
 }
 
