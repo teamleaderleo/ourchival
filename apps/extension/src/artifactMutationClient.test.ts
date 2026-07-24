@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   callArtifactMutation,
   commitArtifactMutation,
+  discardRejectedArtifact,
 } from "./artifactMutationClient";
 
 const endpoint = "https://example.convex.cloud/api/mutation";
@@ -70,6 +71,35 @@ describe("artifact mutation client", () => {
     );
 
     expect(result).toMatchObject({ ok: false, retryable: true });
+  });
+
+  it("requests indexed cleanup for an unclaimed rejected upload", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        status: "success",
+        value: { discarded: true, retained: false },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await discardRejectedArtifact(
+      endpoint,
+      "device-token",
+      "storage-1",
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { discarded: true, retained: false },
+    });
+    expect(requestBody(fetchMock.mock.calls[0]?.[1])).toEqual({
+      path: "artifactUploads:discardUnclaimed",
+      args: {
+        deviceToken: "device-token",
+        storageId: "storage-1",
+      },
+      format: "json",
+    });
   });
 });
 
