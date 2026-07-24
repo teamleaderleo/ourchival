@@ -66,6 +66,21 @@ export async function commitArtifactMutation<T>(
   return first;
 }
 
+export async function discardRejectedArtifact(
+  endpoint: string,
+  deviceToken: string,
+  storageId: string,
+) {
+  return await callArtifactMutation<{
+    discarded: boolean;
+    retained: boolean;
+    artifactId?: string;
+  }>(endpoint, "artifactUploads:discardUnclaimed", {
+    deviceToken,
+    storageId,
+  });
+}
+
 function failure(error: string, retryable: boolean): ArtifactMutationFailure {
   return {
     ok: false,
