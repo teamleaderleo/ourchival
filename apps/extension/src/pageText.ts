@@ -2,6 +2,7 @@ import type { PageReadableTextCapture } from "@ourchival/shared";
 import {
   callArtifactMutation,
   commitArtifactMutation,
+  discardRejectedArtifact,
 } from "./artifactMutationClient";
 import { trackArtifactResult } from "./artifactWarnings";
 import {
@@ -78,7 +79,16 @@ export async function uploadReadablePageText(
       source: capture.source,
       capturedAt: Date.parse(capture.capturedAt),
     });
-    if (!commit.ok) return await finish(commit);
+    if (!commit.ok) {
+      if (!commit.retryable) {
+        await discardRejectedArtifact(
+          endpoint,
+          connection.deviceToken,
+          uploadBody.storageId,
+        );
+      }
+      return await finish(commit);
+    }
 
     return await finish({
       uploaded: true as const,
