@@ -31,6 +31,14 @@ export type ConversationArchive = {
 
 export type ConversationImportFormat = "json" | "markdown";
 
+type ParsedConversation = {
+  title?: string;
+  provider?: ConversationProvider;
+  providerConversationId?: string;
+  sourceUrl?: string;
+  messages: ConversationMessage[];
+};
+
 const maxMessages = 5_000;
 const maxMessageLength = 200_000;
 const maxArchiveCharacters = 4_500_000;
@@ -50,7 +58,7 @@ export function parseConversationImport(args: {
     throw new Error("Conversation text is too large for this import path.");
   }
 
-  const parsed = args.format === "json"
+  const parsed: ParsedConversation = args.format === "json"
     ? parseJsonConversation(source)
     : parseMarkdownConversation(source);
   const messages = parsed.messages.slice(0, maxMessages).map((message, index) => ({
@@ -102,9 +110,7 @@ export function serializeConversationArchive(archive: ConversationArchive) {
   return JSON.stringify(archive);
 }
 
-function parseJsonConversation(source: string): Partial<ConversationArchive> & {
-  messages: ConversationMessage[];
-} {
+function parseJsonConversation(source: string): ParsedConversation {
   let root: any;
   try {
     root = JSON.parse(source);
@@ -180,9 +186,7 @@ function normalizeJsonMessage(
   };
 }
 
-function parseMarkdownConversation(source: string): {
-  messages: ConversationMessage[];
-} {
+function parseMarkdownConversation(source: string): ParsedConversation {
   const messages: ConversationMessage[] = [];
   let role: ConversationRole = "other";
   let author: string | undefined;
@@ -275,7 +279,7 @@ function normalizeProvider(value: string | undefined): ConversationProvider | un
 
 function deriveTitle(messages: ConversationMessage[]) {
   const firstUser = messages.find((message) => message.role === "user") ?? messages[0];
-  return firstUser.text.replace(/\s+/g, " ").slice(0, 90) || "Imported conversation";
+  return firstUser?.text.replace(/\s+/g, " ").slice(0, 90) || "Imported conversation";
 }
 
 function cleanTitle(value: string) {
