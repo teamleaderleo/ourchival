@@ -5,15 +5,12 @@ import {
 } from "./sessionReporting";
 
 const jpegQuality = 62;
+const maxScreenshotBytes = 12_000_000;
 
-type ConvexMutationResponse = {
+type ConvexMutationResponse<T> = {
   status?: "success" | "error";
   errorMessage?: string;
-  value?: {
-    artifactId?: string;
-    storageId?: string;
-    duplicate?: boolean;
-  };
+  value?: T;
 };
 
 export async function captureVisiblePageScreenshot(
@@ -52,34 +49,61 @@ export async function uploadPageScreenshot(
   }
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path: "pageSnapshots:saveBrowserScreenshot",
-        args: {
-          deviceToken: connection.deviceToken,
-          referenceId,
-          dataUrl: screenshot.dataUrl,
-          ...(screenshot.width ? { width: screenshot.width } : {}),
-          ...(screenshot.height ? { height: screenshot.height } : {}),
-          capturedAt: Date.parse(screenshot.capturedAt),
-        },
-        format: "json",
-      }),
-    });
-    const body = (await response.json().catch(() => ({}))) as ConvexMutationResponse;
-    if (!response.ok || body.status === "error") {
+    const file = await screenshotFile(screenshot.dataUrl);
+    if (file.size > maxScreenshotBytes) {
       return {
         uploaded: false,
-        reason: "request_failed" as const,
-        error: body.errorMessage ?? response.statusText,
+        reason: "file_too_large" as const,
+        error: "Screenshot is too large to upload.",
       };
     }
+    const contentHash = await sha256Hex(await file.arrayBuffer());
+    const create = await callConvexMutation<{
+      referenceId: string;
+      uploadUrl: string;
+    }>(endpoint, "pageSnapshots:createBrowserScreenshotUpload", {
+      deviceToken: connection.deviceToken,
+      referenceId,
+    });
+    if (!create.ok) return create;
+
+    const uploadResponse = await fetch(create.value.uploadUrl, {
+      method: "POST",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+    const uploadBody = (await uploadResponse.json().catch(() => ({}))) as {
+      storageId?: string;
+    };
+    if (!uploadResponse.ok || !uploadBody.storageId) {
+      return {
+        uploaded: false,
+        reason: "upload_failed" as const,
+        error: uploadResponse.statusText || "Screenshot file upload failed.",
+      };
+    }
+
+    const commit = await callConvexMutation<{
+      artifactId?: string;
+      storageId?: string;
+      duplicate?: boolean;
+    }>(endpoint, "pageSnapshots:commitBrowserScreenshot", {
+      deviceToken: connection.deviceToken,
+      referenceId,
+      storageId: uploadBody.storageId,
+      mimeType: file.type,
+      ...(screenshot.width ? { width: screenshot.width } : {}),
+      ...(screenshot.height ? { height: screenshot.height } : {}),
+      byteSize: file.size,
+      contentHash,
+      capturedAt: Date.parse(screenshot.capturedAt),
+    });
+    if (!commit.ok) return commit;
+
     return {
       uploaded: true as const,
-      duplicate: Boolean(body.value?.duplicate),
-      artifactId: body.value?.artifactId,
+      duplicate: Boolean(commit.value.duplicate),
+      artifactId: commit.value.artifactId,
     };
   } catch (error) {
     return {
@@ -90,7 +114,7 @@ export async function uploadPageScreenshot(
   }
 }
 
-function isScreenshotUrl(value: string | undefined) {
+export function isScreenshotUrl(value: string | undefined) {
   if (!value) return false;
   try {
     const url = new URL(value);
@@ -98,4 +122,49 @@ function isScreenshotUrl(value: string | undefined) {
   } catch {
     return false;
   }
+}
+
+export async function screenshotFile(dataUrl: string) {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  if (
+    blob.type !== "image/jpeg" &&
+    blob.type !== "image/png" &&
+    blob.type !== "image/webp"
+  ) {
+    throw new Error("Screenshot must be a JPEG, PNG, or WebP image.");
+  }
+  return blob;
+}
+
+export async function sha256Hex(value: ArrayBuffer) {
+  const digest = await crypto.subtle.digest("SHA-256", value);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function callConvexMutation<T>(
+  endpoint: string,
+  path: string,
+  args: Record<string, unknown>,
+): Promise<
+  | { ok: true; value: T }
+  | { uploaded: false; reason: "request_failed"; error: string; ok: false }
+> {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, args, format: "json" }),
+  });
+  const body = (await response.json().catch(() => ({}))) as ConvexMutationResponse<T>;
+  if (!response.ok || body.status === "error" || body.value === undefined) {
+    return {
+      ok: false,
+      uploaded: false,
+      reason: "request_failed",
+      error: body.errorMessage ?? response.statusText ?? "Convex mutation failed.",
+    };
+  }
+  return { ok: true, value: body.value };
 }
