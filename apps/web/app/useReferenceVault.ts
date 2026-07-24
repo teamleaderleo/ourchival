@@ -10,6 +10,7 @@ import {
   type ReferenceLane,
   type SavedReference,
 } from "./referenceVaultModel";
+import { restoreReferenceMove } from "./referenceUndoClient";
 import { type VaultView } from "./VaultNavigation";
 
 type VaultCounts = Record<VaultView, number>;
@@ -44,7 +45,8 @@ export type TriageDestination = "keep" | "later" | "archive" | "trash" | "restor
 type UndoMove = {
   referenceId: string;
   title: string;
-  previous: Pick<SavedReference, "triageState" | "archived" | "deleted">;
+  before: SavedReference;
+  after: SavedReference;
 };
 
 const pageSize = 48;
@@ -74,6 +76,7 @@ export function useReferenceVault() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [undoMove, setUndoMove] = useState<UndoMove | null>(null);
   const requestSerial = useRef(0);
+  const pendingSelectionRef = useRef<string | null>(null);
 
   function report(message: string, tone: StatusTone = "info") {
     setStatus(message);
@@ -214,7 +217,13 @@ export function useReferenceVault() {
       setCursorHistory(history);
       setContinueCursor(body.continueCursor ?? null);
       setHasMore(Boolean(body.hasMore));
-      setSelectedId(null);
+      const pendingSelection = pendingSelectionRef.current;
+      setSelectedId(
+        pendingSelection && incoming.some((item) => item._id === pendingSelection)
+          ? pendingSelection
+          : null,
+      );
+      pendingSelectionRef.current = null;
       if (body.counts) setCounts(body.counts);
       report(
         `Loaded page ${history.length + 1} with ${incoming.length} ${incoming.length === 1 ? "reference" : "references"}${body.hasMore ? "; older pages available." : "."}`,
@@ -279,17 +288,16 @@ export function useReferenceVault() {
       setAssetUrl("");
       setPageTitle("");
       setCaptureOpen(false);
+      pendingSelectionRef.current = body.referenceId ?? null;
 
       if (body.alreadySaved) {
         setActiveView("all");
-        setSelectedId(body.referenceId ?? null);
         setRefreshKey((key) => key + 1);
         report(formatDuplicateStatus(body.existingReference), "success");
         return;
       }
 
       setActiveView("inbox");
-      setSelectedId(body.referenceId ?? null);
       setRefreshKey((key) => key + 1);
       report(`Saved to Inbox. ${body.storageStatus ?? ""}`.trim(), "success");
     } catch (error) {
@@ -305,6 +313,7 @@ export function useReferenceVault() {
   async function patchReference(
     referenceId: string,
     patch: Partial<SavedReference>,
+    previousOverride?: SavedReference,
   ) {
     if (!siteUrl) {
       report("Add a Convex site URL in setup before editing.", "error");
@@ -312,7 +321,8 @@ export function useReferenceVault() {
       return false;
     }
 
-    const previous = references.find((item) => item._id === referenceId);
+    const previous =
+      previousOverride ?? references.find((item) => item._id === referenceId);
 
     try {
       const response = await fetch(
@@ -380,19 +390,16 @@ export function useReferenceVault() {
 
     const nextId = nextVisibleReferenceId(referenceId);
     const patch = triagePatch(reference, destination, Date.now());
-    const previous: UndoMove["previous"] = {
-      triageState: reference.triageState,
-      archived: reference.archived,
-      deleted: reference.deleted,
-    };
+    const after = { ...reference, ...patch };
 
-    if (!(await patchReference(referenceId, patch))) return false;
+    if (!(await patchReference(referenceId, patch, reference))) return false;
 
     setSelectedId(nextId);
     setUndoMove({
       referenceId,
       title: reference.title || reference.sourceUrl,
-      previous,
+      before: reference,
+      after,
     });
     report(triageStatus(destination), "success");
     return true;
@@ -401,24 +408,33 @@ export function useReferenceVault() {
   async function undoLastMove() {
     if (!undoMove) return;
 
-    const current = references.find((item) => item._id === undoMove.referenceId);
-    if (!current) {
-      setUndoMove(null);
-      return;
-    }
-
-    const patch: Partial<SavedReference> = {
-      triageState: undoMove.previous.triageState ?? "kept",
-      archived: Boolean(undoMove.previous.archived),
-      deleted: Boolean(undoMove.previous.deleted),
-    };
-
-    if (await patchReference(undoMove.referenceId, patch)) {
-      const restored = { ...current, ...patch };
+    try {
+      const restoredPatch = await restoreReferenceMove(undoMove.before);
+      const restored: SavedReference = {
+        ...undoMove.before,
+        ...restoredPatch,
+      };
+      setReferences((items) =>
+        items.map((item) =>
+          item._id === undoMove.referenceId ? restored : item,
+        ),
+      );
+      setCounts((current) =>
+        updateCountsForReferenceChange(current, undoMove.after, restored),
+      );
+      pendingSelectionRef.current = undoMove.referenceId;
+      setQuery("");
+      setDebouncedQuery("");
       setActiveView(viewForCollection(referenceCollection(restored)));
       setSelectedId(undoMove.referenceId);
+      setRefreshKey((key) => key + 1);
       report(`Restored “${undoMove.title}”.`, "success");
       setUndoMove(null);
+    } catch (error) {
+      report(
+        error instanceof Error ? error.message : "Could not restore the reference.",
+        "error",
+      );
     }
   }
 
@@ -465,9 +481,9 @@ export function useReferenceVault() {
   }
 
   function changeView(view: VaultView) {
+    pendingSelectionRef.current = null;
     setActiveView(view);
     setSelectedId(null);
-    setUndoMove(null);
   }
 
   return {
