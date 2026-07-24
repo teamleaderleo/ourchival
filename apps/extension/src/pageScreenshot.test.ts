@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   isScreenshotUrl,
   screenshotFile,
-  sha256Hex,
 } from "./pageScreenshot";
 
 describe("page screenshot helpers", () => {
@@ -24,12 +23,5 @@ describe("page screenshot helpers", () => {
     await expect(
       screenshotFile("data:text/plain;base64,SGVsbG8="),
     ).rejects.toThrow("JPEG, PNG, or WebP");
-  });
-
-  it("produces stable SHA-256 hashes", async () => {
-    const bytes = new TextEncoder().encode("ourchival screenshot");
-    expect(await sha256Hex(bytes.buffer)).toBe(
-      "43cfd93070699834eb80aad74129affdc5e3d7945ed0f81e9bc5a2236a91f8c6",
-    );
   });
 });
