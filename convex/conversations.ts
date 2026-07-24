@@ -83,7 +83,9 @@ export const commitImport = mutation({
         ? await ctx.db.get(existing.latestSnapshotId)
         : null;
       if (previousSnapshot?.contentHash === metadata.sha256) {
-        await ctx.storage.delete(args.storageId);
+        if (previousSnapshot.storageId !== args.storageId) {
+          await ctx.storage.delete(args.storageId);
+        }
         await ctx.db.patch(existing._id, {
           title,
           lastCapturedAt: capturedAt,
