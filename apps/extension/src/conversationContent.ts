@@ -1,4 +1,5 @@
 import { captureProviderConversation } from "./captureProviderConversation";
+import { providerCaptureDiagnostics } from "./providerConversation";
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const isCapture = message?.type === "OURCHIVAL_GET_CONVERSATION_CAPTURE";
@@ -16,6 +17,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       });
       return false;
     }
+    const diagnostics = providerCaptureDiagnostics(archive.messages);
     sendResponse(
       isDescription
         ? {
@@ -25,9 +27,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
               title: archive.title,
               messageCount: archive.messages.length,
               sourceUrl: archive.sourceUrl,
+              ...diagnostics,
             },
           }
-        : { ok: true, archive },
+        : { ok: true, archive, diagnostics },
     );
   } catch (error) {
     sendResponse({
