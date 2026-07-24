@@ -57,7 +57,6 @@ export async function uploadPageScreenshot(
         error: "Screenshot is too large to upload.",
       };
     }
-    const contentHash = await sha256Hex(await file.arrayBuffer());
     const create = await callConvexMutation<{
       referenceId: string;
       uploadUrl: string;
@@ -91,11 +90,8 @@ export async function uploadPageScreenshot(
       deviceToken: connection.deviceToken,
       referenceId,
       storageId: uploadBody.storageId,
-      mimeType: file.type,
       ...(screenshot.width ? { width: screenshot.width } : {}),
       ...(screenshot.height ? { height: screenshot.height } : {}),
-      byteSize: file.size,
-      contentHash,
       capturedAt: Date.parse(screenshot.capturedAt),
     });
     if (!commit.ok) return commit;
@@ -135,13 +131,6 @@ export async function screenshotFile(dataUrl: string) {
     throw new Error("Screenshot must be a JPEG, PNG, or WebP image.");
   }
   return blob;
-}
-
-export async function sha256Hex(value: ArrayBuffer) {
-  const digest = await crypto.subtle.digest("SHA-256", value);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 async function callConvexMutation<T>(
