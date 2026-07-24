@@ -1,0 +1,86 @@
+.workbench-dock {
+  position: fixed;
+  z-index: 60;
+  left: 20px;
+  bottom: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--panel), transparent 3%);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.workbench-dock-label {
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workbench-dock .capture-session-launcher,
+.workbench-dock .conversation-launcher {
+  position: static;
+  min-height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.workbench-dock .capture-session-launcher:hover,
+.workbench-dock .conversation-launcher:hover {
+  background: var(--panel-raised);
+}
+
+body:has(.capture-session-drawer) .workbench-dock .conversation-launcher,
+body:has(.conversation-drawer) .workbench-dock .capture-session-launcher {
+  display: none;
+}
+
+body:has(.capture-session-drawer) .workbench-dock-label::after {
+  content: " / Sessions";
+}
+
+body:has(.conversation-drawer) .workbench-dock-label::after {
+  content: " / Conversations";
+}
+
+.conversation-drawer {
+  right: auto;
+  left: 20px;
+}
+
+@media (max-width: 720px) {
+  .workbench-dock {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    justify-content: center;
+  }
+
+  .workbench-dock-label {
+    display: none;
+  }
+
+  .workbench-dock .capture-session-launcher,
+  .workbench-dock .conversation-launcher {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .capture-session-drawer,
+  .conversation-drawer {
+    right: 12px;
+    left: 12px;
+    bottom: 64px;
+    width: auto;
+    max-height: calc(100vh - 88px);
+  }
+}
