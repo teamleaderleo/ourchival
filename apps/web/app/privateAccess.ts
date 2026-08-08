@@ -1,25 +1,39 @@
 "use client";
 
-const accessKeyStorageKey = "ourchivalOwnerAccessKey";
+const recoveryKeyStorageKey = "ourchivalOwnerAccessKey";
 const accessChangedEvent = "ourchival-access-changed";
 const interceptorMarker = "__ourchivalPrivateFetchInstalled";
+let vaultAccessToken = "";
 
 export function getOwnerAccessKey() {
   if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(accessKeyStorageKey)?.trim() ?? "";
+  return window.localStorage.getItem(recoveryKeyStorageKey)?.trim() ?? "";
 }
 
 export function saveOwnerAccessKey(value: string) {
   if (typeof window === "undefined") return;
   const key = value.trim();
   if (getOwnerAccessKey() === key) return;
-  if (key) window.localStorage.setItem(accessKeyStorageKey, key);
-  else window.localStorage.removeItem(accessKeyStorageKey);
+  if (key) window.localStorage.setItem(recoveryKeyStorageKey, key);
+  else window.localStorage.removeItem(recoveryKeyStorageKey);
   window.dispatchEvent(new Event(accessChangedEvent));
 }
 
 export function clearOwnerAccessKey() {
   saveOwnerAccessKey("");
+}
+
+export function setVaultAccessToken(value: string | undefined) {
+  const token = value?.trim() ?? "";
+  if (vaultAccessToken === token) return;
+  vaultAccessToken = token;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(accessChangedEvent));
+  }
+}
+
+export function clearVaultAccessToken() {
+  setVaultAccessToken(undefined);
 }
 
 export function onOwnerAccessChange(listener: () => void) {
@@ -33,8 +47,8 @@ export function onOwnerAccessChange(listener: () => void) {
 }
 
 export function requireOwnerAccessKey() {
-  const key = getOwnerAccessKey();
-  if (!key) throw new Error("Unlock Ourchival before using the vault.");
+  const key = vaultAccessToken || getOwnerAccessKey();
+  if (!key) throw new Error("Sign in with Google or use the recovery key first.");
   return key;
 }
 
@@ -56,6 +70,10 @@ export function resolveConvexSiteUrl() {
   return convexUrl.replace(/\.convex\.cloud\/?$/, ".convex.site");
 }
 
+export function resolveConvexCloudUrl() {
+  return process.env.NEXT_PUBLIC_CONVEX_URL?.trim().replace(/\/$/, "") || undefined;
+}
+
 function installPrivateFetchInterceptor() {
   if (typeof window === "undefined") return;
   const markedWindow = window as unknown as Window & Record<string, unknown>;
@@ -63,15 +81,18 @@ function installPrivateFetchInterceptor() {
 
   const originalFetch = window.fetch.bind(window);
   window.fetch = async (input, init = {}) => {
-    const siteUrl = resolveConvexSiteUrl();
-    const accessKey = getOwnerAccessKey();
-    if (!siteUrl || !accessKey || !requestUrl(input).startsWith(siteUrl)) {
+    const url = requestUrl(input);
+    const protectedOrigins = [resolveConvexSiteUrl(), resolveConvexCloudUrl()].filter(
+      (value): value is string => Boolean(value),
+    );
+    const token = vaultAccessToken || getOwnerAccessKey();
+    if (!token || !protectedOrigins.some((origin) => url.startsWith(origin))) {
       return await originalFetch(input, init);
     }
 
     const headers = mergedHeaders(input, init.headers);
     if (!headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${accessKey}`);
+      headers.set("Authorization", `Bearer ${token}`);
     }
     return await originalFetch(input, { ...init, headers });
   };

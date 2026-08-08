@@ -1,12 +1,16 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
+import { makeFunctionReference } from "convex/server";
+import { useConvexAuth, useMutation } from "convex/react";
 import {
   clearOwnerAccessKey,
+  clearVaultAccessToken,
   getOwnerAccessKey,
-  onOwnerAccessChange,
   resolveConvexSiteUrl,
   saveOwnerAccessKey,
+  setVaultAccessToken,
 } from "./privateAccess";
 
 type ClipperDevice = {
@@ -18,27 +22,32 @@ type ClipperDevice = {
   extensionVersion?: string;
 };
 
+type VaultMode = "workos" | "recovery";
+
+type MintOwnerSessionResult = {
+  token: string;
+  expiresAt: number;
+  subject: string;
+};
+
+const mintOwnerSessionReference = makeFunctionReference<
+  "mutation",
+  Record<string, never>,
+  MintOwnerSessionResult
+>("workosSessions:mintOwnerSession");
+
 export function VaultAccessGate({ children }: { children: React.ReactNode }) {
-  const [accessKey, setAccessKey] = useState("");
+  const { user, loading: workosLoading, signOut } = useAuth();
+  const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
+  const mintOwnerSession = useMutation(mintOwnerSessionReference);
+  const [recoveryKey, setRecoveryKey] = useState("");
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
+  const [mode, setMode] = useState<VaultMode>();
   const [checking, setChecking] = useState(true);
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    const refresh = () => {
-      const stored = getOwnerAccessKey();
-      setAccessKey(stored);
-      if (stored) void verify(stored, true);
-      else {
-        setUnlocked(false);
-        setChecking(false);
-      }
-    };
-    refresh();
-    return onOwnerAccessChange(refresh);
-  }, []);
-
-  async function verify(key: string, quiet = false) {
+  const verifyRecovery = useCallback(async (key: string, quiet = false) => {
     const siteUrl = resolveConvexSiteUrl();
     if (!siteUrl) {
       setMessage("Add NEXT_PUBLIC_CONVEX_URL or NEXT_PUBLIC_CONVEX_SITE_URL first.");
@@ -47,7 +56,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     }
 
     setChecking(true);
-    if (!quiet) setMessage("Unlocking…");
+    if (!quiet) setMessage("Unlocking with the recovery key…");
     try {
       const response = await fetch(`${siteUrl}/auth-check`, {
         headers: { Authorization: `Bearer ${key.trim()}` },
@@ -59,15 +68,20 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
       if (!response.ok || body.ok === false) {
         clearOwnerAccessKey();
         setUnlocked(false);
-        setMessage(body.error ?? "That access key was rejected.");
+        setMode(undefined);
+        setMessage(body.error ?? "That recovery key was rejected.");
         return false;
       }
+      clearVaultAccessToken();
       saveOwnerAccessKey(key);
+      setRecoveryKey(key);
+      setMode("recovery");
       setUnlocked(true);
       setMessage("");
       return true;
     } catch (error) {
       setUnlocked(false);
+      setMode(undefined);
       setMessage(
         error instanceof Error ? error.message : "Ourchival could not be reached.",
       );
@@ -75,60 +89,199 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     } finally {
       setChecking(false);
     }
-  }
+  }, []);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+    async function mintWorkosVaultSession() {
+      setChecking(true);
+      setMessage("Opening your private vault…");
+      try {
+        const session = await mintOwnerSession({});
+        if (cancelled) return;
+        clearOwnerAccessKey();
+        setVaultAccessToken(session.token);
+        setMode("workos");
+        setUnlocked(true);
+        setMessage("");
+        const refreshDelay = Math.max(60_000, session.expiresAt - Date.now() - 90_000);
+        refreshTimer = setTimeout(() => void mintWorkosVaultSession(), refreshDelay);
+      } catch (error) {
+        if (cancelled) return;
+        clearVaultAccessToken();
+        setMode(undefined);
+        setUnlocked(false);
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "This WorkOS account could not open the vault.",
+        );
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    }
+
+    if (workosLoading) return () => undefined;
+
+    if (user) {
+      clearOwnerAccessKey();
+      if (convexLoading) return () => undefined;
+      if (!isAuthenticated) {
+        clearVaultAccessToken();
+        setUnlocked(false);
+        setMode(undefined);
+        setChecking(false);
+        setMessage("Convex could not verify the WorkOS session.");
+        return () => undefined;
+      }
+      void mintWorkosVaultSession();
+    } else {
+      clearVaultAccessToken();
+      const storedRecoveryKey = getOwnerAccessKey();
+      setRecoveryKey(storedRecoveryKey);
+      if (storedRecoveryKey) void verifyRecovery(storedRecoveryKey, true);
+      else {
+        setUnlocked(false);
+        setMode(undefined);
+        setChecking(false);
+        setMessage("");
+      }
+    }
+
+    return () => {
+      cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [convexLoading, isAuthenticated, mintOwnerSession, user, verifyRecovery, workosLoading]);
+
+  async function submitRecovery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accessKey.trim()) return;
-    await verify(accessKey);
+    if (!recoveryKey.trim()) return;
+    await verifyRecovery(recoveryKey);
   }
 
-  if (unlocked) {
-    return <UnlockedVault accessKey={accessKey}>{children}</UnlockedVault>;
+  async function exitVault() {
+    clearVaultAccessToken();
+    setUnlocked(false);
+    setMode(undefined);
+    if (mode === "workos") {
+      await signOut({ returnTo: "/" });
+      return;
+    }
+    clearOwnerAccessKey();
+    setRecoveryKey("");
+  }
+
+  if (unlocked && mode) {
+    const accountLabel =
+      mode === "workos"
+        ? user?.email || [user?.firstName, user?.lastName].filter(Boolean).join(" ")
+        : "Recovery access";
+    return (
+      <UnlockedVault
+        mode={mode}
+        accountLabel={accountLabel || "WorkOS account"}
+        onExit={exitVault}
+      >
+        {children}
+      </UnlockedVault>
+    );
+  }
+
+  if (checking || workosLoading || (user && convexLoading)) {
+    return (
+      <main className="access-screen">
+        <section className="access-card" aria-busy="true">
+          <div className="brand-mark" aria-hidden="true">O</div>
+          <p className="eyebrow">Private archive</p>
+          <h1>Opening Ourchival</h1>
+          <p>{message || "Checking your private session…"}</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (user) {
+    return (
+      <main className="access-screen">
+        <section className="access-card">
+          <div className="brand-mark" aria-hidden="true">O</div>
+          <p className="eyebrow">Account needs access</p>
+          <h1>This Google account is signed in</h1>
+          <p>
+            Add the WorkOS user ID below to the Convex owner allowlist, then reload the
+            vault.
+          </p>
+          <div className="access-identity">
+            <span>{user.email}</span>
+            <code>{user.id}</code>
+          </div>
+          {message ? <p className="access-message" role="alert">{message}</p> : null}
+          <button
+            type="button"
+            className="button ghost full-width"
+            onClick={() => void signOut({ returnTo: "/" })}
+          >
+            Sign out
+          </button>
+        </section>
+      </main>
+    );
   }
 
   return (
     <main className="access-screen">
-      <section className="access-card" aria-busy={checking}>
-        <div className="brand-mark" aria-hidden="true">
-          O
-        </div>
+      <section className="access-card">
+        <div className="brand-mark" aria-hidden="true">O</div>
         <p className="eyebrow">Private archive</p>
-        <h1>Unlock Ourchival</h1>
+        <h1>Sign in to Ourchival</h1>
         <p>
-          Enter the owner access key configured for this vault. It stays on this browser
-          until you lock the app.
+          Continue with Google through WorkOS. Ourchival then creates a short-lived vault
+          session for this browser.
         </p>
-        <form onSubmit={submit}>
-          <label>
-            Owner access key
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={accessKey}
-              onChange={(event) => setAccessKey(event.target.value)}
-              autoFocus
-            />
-          </label>
-          <button className="button primary" disabled={checking || !accessKey.trim()}>
-            {checking ? "Checking…" : "Unlock vault"}
-          </button>
-        </form>
-        {message ? (
-          <p className="access-message" role="alert">
-            {message}
-          </p>
+        <a className="button primary full-width" href="/sign-in">
+          Continue with Google
+        </a>
+        <button
+          type="button"
+          className="button ghost full-width"
+          onClick={() => setRecoveryOpen((open) => !open)}
+        >
+          {recoveryOpen ? "Hide recovery access" : "Use recovery key"}
+        </button>
+        {recoveryOpen ? (
+          <form onSubmit={submitRecovery}>
+            <label>
+              Owner recovery key
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={recoveryKey}
+                onChange={(event) => setRecoveryKey(event.target.value)}
+              />
+            </label>
+            <button className="button secondary" disabled={!recoveryKey.trim()}>
+              Unlock with recovery key
+            </button>
+          </form>
         ) : null}
+        {message ? <p className="access-message" role="alert">{message}</p> : null}
       </section>
     </main>
   );
 }
 
 function UnlockedVault({
-  accessKey,
+  mode,
+  accountLabel,
+  onExit,
   children,
 }: {
-  accessKey: string;
+  mode: VaultMode;
+  accountLabel: string;
+  onExit: () => Promise<void>;
   children: React.ReactNode;
 }) {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
@@ -138,27 +291,6 @@ function UnlockedVault({
   const [devices, setDevices] = useState<ClipperDevice[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    if (!siteUrl) return;
-    const originalFetch = window.fetch.bind(window);
-    const authorizedFetch: typeof window.fetch = async (input, init = {}) => {
-      const url = requestUrl(input);
-      if (!url.startsWith(siteUrl)) return await originalFetch(input, init);
-
-      const headers = new Headers(input instanceof Request ? input.headers : undefined);
-      new Headers(init.headers).forEach((value, key) => headers.set(key, value));
-      if (!headers.has("Authorization")) {
-        headers.set("Authorization", `Bearer ${accessKey}`);
-      }
-      return await originalFetch(input, { ...init, headers });
-    };
-
-    window.fetch = authorizedFetch;
-    return () => {
-      if (window.fetch === authorizedFetch) window.fetch = originalFetch;
-    };
-  }, [accessKey, siteUrl]);
 
   useEffect(() => {
     if (panelOpen) void loadDevices();
@@ -228,13 +360,10 @@ function UnlockedVault({
     }
   }
 
-  function lockVault() {
-    clearOwnerAccessKey();
-  }
-
   return (
     <>
       <div className="vault-session-controls">
+        <span className="vault-account-label" title={accountLabel}>{accountLabel}</span>
         <button
           type="button"
           className="button ghost"
@@ -242,8 +371,8 @@ function UnlockedVault({
         >
           Clipper access
         </button>
-        <button type="button" className="button ghost" onClick={lockVault}>
-          Lock
+        <button type="button" className="button ghost" onClick={() => void onExit()}>
+          {mode === "workos" ? "Sign out" : "Lock"}
         </button>
       </div>
 
@@ -324,12 +453,6 @@ function UnlockedVault({
       {children}
     </>
   );
-}
-
-function requestUrl(input: RequestInfo | URL) {
-  if (typeof input === "string") return input;
-  if (input instanceof URL) return input.toString();
-  return input.url;
 }
 
 function formatDate(value: number) {

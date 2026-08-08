@@ -2,16 +2,27 @@
 
 ## 1. Pull latest changes
 
+Use Node 22.11 or newer, then install the workspace:
+
 ```bash
 git pull
 pnpm install
 ```
 
-## 2. Optional: connect Google Drive storage
+## 2. Configure WorkOS AuthKit
 
-Follow [`GOOGLE_DRIVE.md`](GOOGLE_DRIVE.md) when you want originals to land in Drive.
+Follow [`WORKOS_AUTH.md`](WORKOS_AUTH.md) to connect a WorkOS environment and enable Google.
 
-Without Drive env vars, Ourchival falls back to Convex Storage when it can fetch image bytes.
+Add the local web values to `.env.local`:
+
+```bash
+WORKOS_CLIENT_ID=client_...
+WORKOS_API_KEY=sk_...
+WORKOS_COOKIE_PASSWORD=<at-least-32-random-characters>
+NEXT_PUBLIC_WORKOS_REDIRECT_URI=http://localhost:3000/callback
+```
+
+Keep the API key and cookie password outside commits, logs, screenshots, and `NEXT_PUBLIC_*` variables.
 
 ## 3. Start Convex
 
@@ -19,25 +30,28 @@ Without Drive env vars, Ourchival falls back to Convex Storage when it can fetch
 pnpm convex:dev
 ```
 
-Keep this terminal open. Convex will print the deployment URL and HTTP Actions site URL.
+Keep this terminal open. Convex will configure or link the WorkOS development environment and print the deployment URL and HTTP Actions site URL.
 
-If `.env.local` does not include the site URL, add it manually:
+If `.env.local` does not include the Convex URLs, add them manually:
 
 ```bash
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
 NEXT_PUBLIC_CONVEX_SITE_URL=https://your-deployment.convex.site
 ```
 
-The web app derives `.convex.site` from `.convex.cloud` when possible, but the explicit value is clearer.
-
-Configure private access for the active Convex development deployment:
+Configure short-lived vault sessions, recovery access, and local HTTP origins:
 
 ```bash
-npx convex env set OURCHIVAL_OWNER_ACCESS_KEY <long-random-value>
+npx convex env set OURCHIVAL_SESSION_SIGNING_SECRET <long-random-value>
+npx convex env set OURCHIVAL_OWNER_ACCESS_KEY <different-long-random-value>
 npx convex env set OURCHIVAL_ALLOWED_ORIGINS "http://localhost:3000"
 ```
 
-Keep the owner key outside `.env.local`, public environment variables, commits, logs, and screenshots.
+Generate each secret with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
 
 ## 4. Start the web app
 
@@ -53,9 +67,23 @@ Open:
 http://localhost:3000
 ```
 
-Enter the owner access key on **Unlock Ourchival**.
+Select **Continue with Google**. On the first sign-in, the vault shows the exact WorkOS user ID until it is allowlisted.
 
-## 5. Build the Edge extension
+Set that ID in Convex:
+
+```bash
+npx convex env set OURCHIVAL_ALLOWED_WORKOS_USER_IDS "user_01H..."
+```
+
+Reload the page. The allowed account should enter the vault without typing the recovery key.
+
+## 5. Optional: connect Google Drive storage
+
+Follow [`GOOGLE_DRIVE.md`](GOOGLE_DRIVE.md) when you want originals to land in Drive.
+
+Without Drive environment variables, Ourchival falls back to Convex Storage when it can fetch image bytes.
+
+## 6. Build the Edge extension
 
 For active extension work:
 
@@ -83,9 +111,9 @@ apps/extension/dist
 
 Reload the unpacked extension after rebuilding it.
 
-## 6. Pair the extension
+## 7. Pair the extension
 
-1. In the unlocked web vault, open **Clipper access**.
+1. In the signed-in web vault, open **Clipper access**.
 2. Create a one-time pairing code.
 3. Open the Ourchival Clipper popup.
 4. Enter the Convex site URL without `/capture`:
@@ -97,9 +125,9 @@ https://your-deployment.convex.site
 5. Enter a recognizable browser name and the pairing code.
 6. Select **Pair browser**.
 
-The extension stores a separate revocable device credential. It never stores the owner access key.
+The extension stores a separate revocable device credential. It never stores the WorkOS session, vault token, or recovery key.
 
-## 7. Test saving
+## 8. Test saving
 
 Right-click an image in Edge and choose:
 

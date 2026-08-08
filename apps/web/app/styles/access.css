@@ -39,11 +39,27 @@
   background: var(--bg);
   color: var(--text);
 }
+.access-card > .button { justify-content: center; text-decoration: none; }
 .access-message {
   margin: 0;
   color: var(--danger);
   font-size: 0.82rem;
   line-height: 1.45;
+}
+
+.access-identity {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--panel-raised);
+}
+.access-identity span { color: var(--muted-strong); font-size: 0.8rem; }
+.access-identity code {
+  overflow-wrap: anywhere;
+  color: var(--accent-strong);
+  font-size: 0.76rem;
 }
 
 .vault-session-controls {
@@ -52,13 +68,25 @@
   right: 20px;
   bottom: 20px;
   display: flex;
+  align-items: center;
   gap: 8px;
+  max-width: min(620px, calc(100vw - 40px));
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel), transparent 4%);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
+}
+
+.vault-account-label {
+  max-width: 190px;
+  overflow: hidden;
+  padding: 0 7px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .clipper-access-panel {
@@ -155,5 +183,6 @@
 
 @media (max-width: 640px) {
   .vault-session-controls { right: 12px; bottom: 12px; }
+  .vault-account-label { display: none; }
   .clipper-access-panel { right: 12px; bottom: 74px; width: calc(100vw - 24px); }
 }
