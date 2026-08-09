@@ -1,5 +1,6 @@
 import { parseXSnapshot, type ParsedXSource, type XDomSnapshot } from "@ourchival/parsers";
 import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
+import { buildXInlinePayloads, inlineXSourceKey } from "./inlineCapture";
 import { captureReadableText } from "./readableText";
 import { captureRedditThreadSnapshot } from "./redditSnapshot";
 
@@ -268,7 +269,7 @@ function scheduleInlineScan() {
 function mountXInlineButton(article: HTMLElement) {
   const snapshot = snapshotXArticle(article, undefined);
   const source = parseXSnapshot(snapshot);
-  const sourceKey = inlineSourceKey(source);
+  const sourceKey = inlineXSourceKey(source);
   if (!sourceKey) return;
 
   const replyAction = article.querySelector<HTMLElement>('[data-testid="reply"]');
@@ -349,7 +350,7 @@ function queueXArticleInline(article: HTMLElement, button: HTMLButtonElement) {
 
   const snapshot = snapshotXArticle(article, undefined);
   const source = parseXSnapshot(snapshot);
-  const sourceKey = inlineSourceKey(source);
+  const sourceKey = inlineXSourceKey(source);
   if (!sourceKey) {
     setInlineButtonState(button, "warning", "Could not identify this post.");
     return;
@@ -359,7 +360,11 @@ function queueXArticleInline(article: HTMLElement, button: HTMLButtonElement) {
     return;
   }
 
-  const payloads = buildXInlinePayloads(source, JSON.stringify(snapshot));
+  const payloads = buildXInlinePayloads(
+    source,
+    JSON.stringify(snapshot),
+    document.title,
+  );
   setInlineButtonState(button, "queued");
   inlineCaptureTail = inlineCaptureTail
     .catch(() => undefined)
@@ -401,43 +406,6 @@ async function captureXPayloadsInline(
       error instanceof Error ? error.message : "Ourchival capture failed.",
     );
   }
-}
-
-function buildXInlinePayloads(
-  source: ParsedXSource,
-  rawMetadata: string,
-): CapturePayload[] {
-  const capturedAt = new Date().toISOString();
-  const common = {
-    sourceUrl: source.sourceUrl,
-    ...(source.title ? { pageTitle: source.title } : { pageTitle: document.title }),
-    ...(source.authorName ? { authorName: source.authorName } : {}),
-    ...(source.authorHandle ? { authorHandle: source.authorHandle } : {}),
-    ...(source.authorUrl ? { authorUrl: source.authorUrl } : {}),
-    ...(source.postId ? { postId: source.postId } : {}),
-    ...(source.postText ? { postText: source.postText } : {}),
-    ...(source.publishedAt ? { publishedAt: source.publishedAt } : {}),
-    rawMetadata,
-    capturedAt,
-  };
-
-  if (source.mediaUrls.length === 0) {
-    return [{ kind: "post", ...common }];
-  }
-
-  return source.mediaUrls.map((assetUrl) => ({
-    kind: "image",
-    assetUrl,
-    ...(source.altTexts?.[assetUrl]
-      ? { altText: source.altTexts[assetUrl] }
-      : {}),
-    ...common,
-  }));
-}
-
-function inlineSourceKey(source: ParsedXSource) {
-  const id = source.postId?.trim() || source.sourceUrl?.trim();
-  return id ? `x:${id}` : undefined;
 }
 
 function setInlineButtonState(
