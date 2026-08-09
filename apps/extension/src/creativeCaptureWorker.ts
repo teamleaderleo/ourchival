@@ -59,29 +59,44 @@ const CREATIVE_QUEUE_RECOVERY_ALARM = "ourchival-creative-capture-recovery";
 const RECOVERY_DELAY_MINUTES = 0.5;
 let queueMutationTail: Promise<void> = Promise.resolve();
 let queueDraining = false;
+let activeQueueId: string | undefined;
 
 chrome.runtime.onMessage.addListener((message: QueueCaptureMessage, _sender, sendResponse) => {
   if (message?.type !== "OURCHIVAL_QUEUE_CAPTURE_PAYLOADS") return false;
 
-  queueMutationTail = queueMutationTail
-    .catch(() => undefined)
-    .then(async () => {
-      const item = createCreativeCaptureQueueItem({
-        id: createQueueId(),
-        ...(message.sourceKey ? { sourceKey: message.sourceKey } : {}),
-        source: message.source ?? "x_post",
-        payloads: message.payloads,
-      });
-      const queue = appendCreativeCaptureQueueItem(
-        await getCreativeCaptureQueue(),
-        item,
-      );
-      await saveCreativeCaptureQueue(queue);
+  const candidate = createCreativeCaptureQueueItem({
+    id: createQueueId(),
+    ...(message.sourceKey ? { sourceKey: message.sourceKey } : {}),
+    source: message.source ?? "x_post",
+    payloads: message.payloads,
+  });
+
+  void mutateCreativeCaptureQueue((queue) => {
+    const activeSameSource = candidate.sourceKey
+      ? queue.find(
+          (item) =>
+            item.id === activeQueueId && item.sourceKey === candidate.sourceKey,
+        )
+      : undefined;
+    if (activeSameSource) {
+      return { queue, result: activeSameSource };
+    }
+
+    const next = appendCreativeCaptureQueueItem(queue, candidate);
+    const persisted = candidate.sourceKey
+      ? next.find((item) => item.sourceKey === candidate.sourceKey)
+      : next.find((item) => item.id === candidate.id);
+    if (!persisted) {
+      throw new Error("Queued creative capture could not be resolved after persistence.");
+    }
+    return { queue: next, result: persisted };
+  })
+    .then(async (item) => {
       await ensureRecoveryWakeup();
       await saveCreativeCaptureEvent({
         queueId: item.id,
         ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
-        state: "queued",
+        state: activeQueueId === item.id ? "saving" : "queued",
         updatedAt: new Date().toISOString(),
       });
       sendResponse({ ok: true, queued: true, queueId: item.id });
@@ -109,17 +124,18 @@ async function drainCreativeCaptureQueue() {
   let attemptedIds = new Set<string>();
 
   try {
-    const queuedAtStart = await getCreativeCaptureQueue();
+    const queuedAtStart = await readCreativeCaptureQueue();
     const ids = queuedAtStart.map((item) => item.id);
     attemptedIds = new Set(ids);
 
     // Attempt each item that existed when this drain began once. Failures stay
     // queued for a later worker wake-up instead of hot-looping.
     for (const id of ids) {
-      const queue = await getCreativeCaptureQueue();
+      const queue = await readCreativeCaptureQueue();
       const item = queue.find((candidate) => candidate.id === id);
       if (!item) continue;
 
+      activeQueueId = item.id;
       await saveCreativeCaptureEvent({
         queueId: item.id,
         ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
@@ -129,10 +145,10 @@ async function drainCreativeCaptureQueue() {
 
       try {
         await captureQueuedGroup(item);
-        const latestQueue = await getCreativeCaptureQueue();
-        await saveCreativeCaptureQueue(
-          removeCreativeCaptureQueueItem(latestQueue, item.id),
-        );
+        await mutateCreativeCaptureQueue((current) => ({
+          queue: removeCreativeCaptureQueueItem(current, item.id),
+          result: undefined,
+        }));
         if (item.sourceKey) await rememberSavedSourceKey(item.sourceKey);
         await saveCreativeCaptureEvent({
           queueId: item.id,
@@ -142,10 +158,10 @@ async function drainCreativeCaptureQueue() {
         });
       } catch (error) {
         const message = errorMessage(error, "Creative capture failed.");
-        const latestQueue = await getCreativeCaptureQueue();
-        await saveCreativeCaptureQueue(
-          recordCreativeCaptureFailure(latestQueue, item.id, message),
-        );
+        await mutateCreativeCaptureQueue((current) => ({
+          queue: recordCreativeCaptureFailure(current, item.id, message),
+          result: undefined,
+        }));
         await saveCreativeCaptureEvent({
           queueId: item.id,
           ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
@@ -154,15 +170,17 @@ async function drainCreativeCaptureQueue() {
           error: message,
         });
         if (shouldStopDrain(error)) break;
+      } finally {
+        if (activeQueueId === item.id) activeQueueId = undefined;
       }
     }
   } finally {
     queueDraining = false;
-    // An enqueue that lands while a drain is active sees queueDraining=true and
-    // returns. Run one follow-up pass only for IDs that arrived after this pass
-    // began; failed IDs from this pass wait for a later wake-up.
+    activeQueueId = undefined;
+    // Run one follow-up pass only for IDs that arrived after this pass began;
+    // failed IDs from this pass wait for a later wake-up.
     try {
-      const remaining = await getCreativeCaptureQueue();
+      const remaining = await readCreativeCaptureQueue();
       if (remaining.length === 0) {
         await chrome.alarms.clear(CREATIVE_QUEUE_RECOVERY_ALARM);
       } else if (remaining.some((item) => !attemptedIds.has(item.id))) {
@@ -243,6 +261,39 @@ function createSessionState(
     successfulTabIds: [],
     failures: [],
   };
+}
+
+async function mutateCreativeCaptureQueue<T>(
+  mutation: (
+    queue: CreativeCaptureQueueItem[],
+  ) => { queue: CreativeCaptureQueueItem[]; result: T },
+): Promise<T> {
+  let resolveResult: ((value: T) => void) | undefined;
+  let rejectResult: ((reason: unknown) => void) | undefined;
+  const resultPromise = new Promise<T>((resolve, reject) => {
+    resolveResult = resolve;
+    rejectResult = reject;
+  });
+
+  queueMutationTail = queueMutationTail
+    .catch(() => undefined)
+    .then(async () => {
+      try {
+        const current = await getCreativeCaptureQueue();
+        const next = mutation(current);
+        await saveCreativeCaptureQueue(next.queue);
+        resolveResult?.(next.result);
+      } catch (error) {
+        rejectResult?.(error);
+      }
+    });
+
+  return await resultPromise;
+}
+
+async function readCreativeCaptureQueue() {
+  await queueMutationTail.catch(() => undefined);
+  return await getCreativeCaptureQueue();
 }
 
 async function getCaptureConnection(): Promise<CaptureConnection> {
@@ -338,7 +389,7 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-void getCreativeCaptureQueue().then((queue) => {
+void readCreativeCaptureQueue().then((queue) => {
   if (queue.length > 0) void ensureRecoveryWakeup();
 });
 void drainCreativeCaptureQueue();
