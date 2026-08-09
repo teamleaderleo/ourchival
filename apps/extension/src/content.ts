@@ -362,6 +362,7 @@ function mountXInlineButton(article: HTMLElement) {
   const button = document.createElement("button");
   button.type = "button";
   button.addEventListener("click", (event) => {
+    if (!event.isTrusted) return;
     event.preventDefault();
     event.stopPropagation();
     void queueXArticleInline(article, button);
