@@ -183,10 +183,14 @@ function snapshotXArticle(
     }),
   );
   const images = Array.from(article.querySelectorAll<HTMLImageElement>("img")).map(
-    (image) => ({
-      src: image.currentSrc || image.src,
-      alt: image.alt || undefined,
-    }),
+    (image) => {
+      const link = image.closest<HTMLAnchorElement>("a[href]");
+      return {
+        src: image.currentSrc || image.src,
+        alt: image.alt || undefined,
+        ...(link?.href ? { href: link.href } : {}),
+      };
+    },
   );
   const userNameText = article
     .querySelector<HTMLElement>('[data-testid="User-Name"]')
