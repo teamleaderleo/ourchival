@@ -8,7 +8,7 @@ export type XDomSnapshot = {
   clickedImageUrl?: string;
   timestamp?: string;
   links: Array<{ href: string; text?: string }>;
-  images: Array<{ src: string; alt?: string }>;
+  images: Array<{ src: string; alt?: string; href?: string }>;
 };
 
 export type ParsedXSource = ParsedSource & {
@@ -22,7 +22,7 @@ export function parseXSnapshot(snapshot: XDomSnapshot): ParsedXSource {
   const normalizedHandle = authorHandle?.replace(/^@/, "");
   const sourceUrl = status?.url ?? canonicalizeXUrl(snapshot.pageUrl);
   const authorName = findDisplayName(snapshot.userNameText, authorHandle);
-  const media = collectMedia(snapshot.images);
+  const media = collectMedia(snapshot.images, status?.postId);
   const clickedAssetUrl = snapshot.clickedImageUrl
     ? normalizeXMediaUrl(snapshot.clickedImageUrl)
     : undefined;
@@ -125,13 +125,20 @@ function findDisplayName(value: string | undefined, handle: string | undefined) 
   return lines[0];
 }
 
-function collectMedia(images: XDomSnapshot["images"]) {
+function collectMedia(
+  images: XDomSnapshot["images"],
+  primaryPostId: string | undefined,
+) {
   const urls: string[] = [];
   const altTexts: Record<string, string> = {};
   const seen = new Set<string>();
 
   for (const image of images) {
     if (!isXMediaUrl(image.src)) continue;
+    const linkedPostId = statusIdFromUrl(image.href);
+    if (primaryPostId && linkedPostId && linkedPostId !== primaryPostId) {
+      continue;
+    }
     const url = normalizeXMediaUrl(image.src);
     if (seen.has(url)) continue;
     seen.add(url);
@@ -140,6 +147,15 @@ function collectMedia(images: XDomSnapshot["images"]) {
   }
 
   return { urls, altTexts };
+}
+
+function statusIdFromUrl(value: string | undefined) {
+  if (!value) return undefined;
+  try {
+    return new URL(value, "https://x.com").pathname.match(/\/status\/(\d+)/i)?.[1];
+  } catch {
+    return undefined;
+  }
 }
 
 function isXMediaUrl(value: string) {
