@@ -419,12 +419,13 @@ function ConversationReader({
     );
   }
 
+  const currentArchive = archive;
   const visibleMessages = filteredMessages.slice(0, visibleCount);
   const remaining = filteredMessages.length - visibleMessages.length;
 
   async function copyMarkdown() {
     try {
-      await navigator.clipboard.writeText(conversationMarkdown(archive));
+      await navigator.clipboard.writeText(conversationMarkdown(currentArchive));
       setCopyState("copied");
       window.setTimeout(() => setCopyState("idle"), 1600);
     } catch {
