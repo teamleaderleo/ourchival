@@ -1,6 +1,7 @@
 import type { CapturePayload } from "@ourchival/shared";
 import { describe, expect, it } from "vitest";
 import {
+  MAX_CREATIVE_CAPTURE_QUEUE_BYTES,
   MAX_CREATIVE_CAPTURE_QUEUE_ITEMS,
   appendCreativeCaptureQueueItem,
   createCreativeCaptureQueueItem,
@@ -62,6 +63,23 @@ describe("creative capture queue", () => {
     expect(next).toHaveLength(MAX_CREATIVE_CAPTURE_QUEUE_ITEMS);
     expect(next.some((entry) => entry.id === "0")).toBe(false);
     expect(next.at(-1)).toEqual(replacement);
+  });
+
+  it("rejects a queue that would exceed the storage byte budget", () => {
+    const oversized = createCreativeCaptureQueueItem({
+      id: "oversized",
+      sourceKey: "x:oversized",
+      source: "x_post",
+      payloads: [
+        {
+          ...payload,
+          rawMetadata: "x".repeat(MAX_CREATIVE_CAPTURE_QUEUE_BYTES),
+        },
+      ],
+    });
+    expect(() => appendCreativeCaptureQueueItem([], oversized)).toThrow(
+      /storage budget/i,
+    );
   });
 
   it("records failures without dropping the queued capture", () => {
