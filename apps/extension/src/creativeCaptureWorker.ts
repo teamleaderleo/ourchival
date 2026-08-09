@@ -61,15 +61,24 @@ let queueMutationTail: Promise<void> = Promise.resolve();
 let queueDraining = false;
 let activeQueueId: string | undefined;
 
-chrome.runtime.onMessage.addListener((message: QueueCaptureMessage, _sender, sendResponse) => {
-  if (message?.type !== "OURCHIVAL_QUEUE_CAPTURE_PAYLOADS") return false;
+chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  if (!isCreativeQueueMessage(message)) return false;
 
-  const candidate = createCreativeCaptureQueueItem({
-    id: createQueueId(),
-    ...(message.sourceKey ? { sourceKey: message.sourceKey } : {}),
-    source: message.source ?? "x_post",
-    payloads: message.payloads,
-  });
+  let candidate: CreativeCaptureQueueItem;
+  try {
+    candidate = createCreativeCaptureQueueItem({
+      id: createQueueId(),
+      ...(message.sourceKey ? { sourceKey: message.sourceKey } : {}),
+      source: message.source ?? "x_post",
+      payloads: message.payloads,
+    });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error: errorMessage(error, "Could not validate this capture."),
+    });
+    return false;
+  }
 
   void mutateCreativeCaptureQueue((queue) => {
     const activeSameSource = candidate.sourceKey
@@ -91,14 +100,17 @@ chrome.runtime.onMessage.addListener((message: QueueCaptureMessage, _sender, sen
     }
     return { queue: next, result: persisted };
   })
-    .then(async (item) => {
-      await ensureRecoveryWakeup();
-      await saveCreativeCaptureEvent({
+    .then((item) => {
+      // Persistence is the acknowledgement boundary. These helpers improve
+      // recovery/visibility, but a transient helper failure must not turn a
+      // safely queued deliberate save into an apparent rejection.
+      void ensureRecoveryWakeup().catch(() => undefined);
+      void saveCreativeCaptureEvent({
         queueId: item.id,
         ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
         state: activeQueueId === item.id ? "saving" : "queued",
         updatedAt: new Date().toISOString(),
-      });
+      }).catch(() => undefined);
       sendResponse({ ok: true, queued: true, queueId: item.id });
       void drainCreativeCaptureQueue();
     })
@@ -381,6 +393,15 @@ async function ensureRecoveryWakeup() {
   });
 }
 
+function isCreativeQueueMessage(value: unknown): value is QueueCaptureMessage {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<QueueCaptureMessage>;
+  return (
+    candidate.type === "OURCHIVAL_QUEUE_CAPTURE_PAYLOADS" &&
+    Array.isArray(candidate.payloads)
+  );
+}
+
 function createQueueId() {
   return `${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -390,6 +411,6 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 void readCreativeCaptureQueue().then((queue) => {
-  if (queue.length > 0) void ensureRecoveryWakeup();
+  if (queue.length > 0) void ensureRecoveryWakeup().catch(() => undefined);
 });
 void drainCreativeCaptureQueue();
