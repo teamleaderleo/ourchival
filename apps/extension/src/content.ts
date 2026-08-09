@@ -1,5 +1,5 @@
 import { parseXSnapshot, type ParsedXSource, type XDomSnapshot } from "@ourchival/parsers";
-import type { PageSnapshot } from "@ourchival/shared";
+import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
 import { captureReadableText } from "./readableText";
 import { captureRedditThreadSnapshot } from "./redditSnapshot";
 
@@ -12,6 +12,22 @@ type ContextCapture = {
   rawMetadata?: string;
 };
 
+type InlineBatchResponse = {
+  ok?: boolean;
+  error?: string;
+  state?: {
+    saved: number;
+    duplicates: number;
+    failed: number;
+  };
+};
+
+type InlineButtonState = "ready" | "saving" | "saved" | "warning";
+
+const INLINE_SAVED_KEYS = "ourchival:inline-saved-source-keys:v1";
+const MAX_INLINE_SAVED_KEYS = 20_000;
+const inlineSavedKeys = new Set<string>();
+let inlineScanScheduled = false;
 let lastContextCapture: ContextCapture | undefined;
 
 function snapshotPage(): PageSnapshot {
@@ -189,6 +205,264 @@ function snapshotXArticle(
   };
 }
 
+function startInlineCreativeCapture() {
+  if (!isXPage()) return;
+
+  void loadInlineSavedKeys().finally(scheduleInlineScan);
+  scheduleInlineScan();
+
+  const observer = new MutationObserver(scheduleInlineScan);
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    const savedKeysChange = changes[INLINE_SAVED_KEYS];
+    if (areaName !== "local" || !savedKeysChange) return;
+    replaceInlineSavedKeys(savedKeysChange.newValue);
+    scheduleInlineScan();
+  });
+}
+
+function scheduleInlineScan() {
+  if (inlineScanScheduled) return;
+  inlineScanScheduled = true;
+  window.requestAnimationFrame(() => {
+    inlineScanScheduled = false;
+    scanXArticles();
+  });
+}
+
+function scanXArticles() {
+  for (const article of document.querySelectorAll<HTMLElement>("article")) {
+    mountXInlineButton(article);
+  }
+}
+
+function mountXInlineButton(article: HTMLElement) {
+  const snapshot = snapshotXArticle(article, undefined);
+  const source = parseXSnapshot(snapshot);
+  const sourceKey = inlineSourceKey(source);
+  if (!sourceKey) return;
+
+  const replyAction = article.querySelector<HTMLElement>('[data-testid="reply"]');
+  const actionRow = replyAction?.closest<HTMLElement>('[role="group"]');
+  if (!actionRow) return;
+
+  const existingHost = actionRow.querySelector<HTMLElement>(
+    ':scope > [data-ourchival-inline-capture="true"]',
+  );
+  if (existingHost?.dataset.ourchivalSourceKey === sourceKey) {
+    const button = existingHost.shadowRoot?.querySelector<HTMLButtonElement>("button");
+    if (button && inlineSavedKeys.has(sourceKey)) {
+      setInlineButtonState(button, "saved");
+    }
+    return;
+  }
+  existingHost?.remove();
+
+  const host = document.createElement("span");
+  host.dataset.ourchivalInlineCapture = "true";
+  host.dataset.ourchivalSourceKey = sourceKey;
+  host.style.display = "inline-flex";
+  host.style.alignItems = "center";
+  host.style.justifyContent = "center";
+  host.style.flex = "0 0 auto";
+
+  const shadow = host.attachShadow({ mode: "open" });
+  const style = document.createElement("style");
+  style.textContent = `
+    button {
+      all: initial;
+      box-sizing: border-box;
+      width: 30px;
+      height: 30px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 999px;
+      cursor: pointer;
+      color: rgb(113, 118, 123);
+      font: 700 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      transition: background-color 120ms ease, color 120ms ease, transform 80ms ease;
+    }
+    button:hover {
+      color: rgb(111, 91, 183);
+      background: rgba(111, 91, 183, 0.12);
+    }
+    button:active { transform: scale(0.92); }
+    button[data-state="saving"] { color: rgb(111, 91, 183); cursor: progress; }
+    button[data-state="saved"] { color: rgb(61, 107, 61); }
+    button[data-state="warning"] { color: rgb(138, 61, 61); }
+    @media (prefers-color-scheme: dark) {
+      button { color: rgb(113, 118, 123); }
+      button:hover { color: rgb(186, 168, 255); }
+      button[data-state="saved"] { color: rgb(112, 188, 112); }
+      button[data-state="warning"] { color: rgb(224, 119, 119); }
+    }
+  `;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void captureXArticleInline(article, button);
+  });
+  setInlineButtonState(
+    button,
+    inlineSavedKeys.has(sourceKey) ? "saved" : "ready",
+  );
+
+  shadow.append(style, button);
+  actionRow.append(host);
+}
+
+async function captureXArticleInline(
+  article: HTMLElement,
+  button: HTMLButtonElement,
+) {
+  if (button.dataset.state === "saving") return;
+
+  const snapshot = snapshotXArticle(article, undefined);
+  const source = parseXSnapshot(snapshot);
+  const sourceKey = inlineSourceKey(source);
+  if (!sourceKey) {
+    setInlineButtonState(button, "warning", "Could not identify this post.");
+    return;
+  }
+  if (inlineSavedKeys.has(sourceKey)) {
+    setInlineButtonState(button, "saved");
+    return;
+  }
+
+  setInlineButtonState(button, "saving");
+  const payloads = buildXInlinePayloads(source, JSON.stringify(snapshot));
+
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      type: "OURCHIVAL_CAPTURE_PAYLOADS",
+      payloads,
+      source: "x_post",
+    })) as InlineBatchResponse | undefined;
+
+    if (!response?.ok || !response.state) {
+      throw new Error(response?.error || "Ourchival capture failed.");
+    }
+    if (response.state.failed > 0) {
+      setInlineButtonState(
+        button,
+        "warning",
+        `${response.state.failed} item${response.state.failed === 1 ? "" : "s"} need retry.`,
+      );
+      return;
+    }
+
+    inlineSavedKeys.add(sourceKey);
+    await persistInlineSavedKeys();
+    setInlineButtonState(button, "saved");
+  } catch (error) {
+    setInlineButtonState(
+      button,
+      "warning",
+      error instanceof Error ? error.message : "Ourchival capture failed.",
+    );
+  }
+}
+
+function buildXInlinePayloads(
+  source: ParsedXSource,
+  rawMetadata: string,
+): CapturePayload[] {
+  const capturedAt = new Date().toISOString();
+  const common = {
+    sourceUrl: source.sourceUrl,
+    ...(source.title ? { pageTitle: source.title } : { pageTitle: document.title }),
+    ...(source.authorName ? { authorName: source.authorName } : {}),
+    ...(source.authorHandle ? { authorHandle: source.authorHandle } : {}),
+    ...(source.authorUrl ? { authorUrl: source.authorUrl } : {}),
+    ...(source.postId ? { postId: source.postId } : {}),
+    ...(source.postText ? { postText: source.postText } : {}),
+    ...(source.publishedAt ? { publishedAt: source.publishedAt } : {}),
+    rawMetadata,
+    capturedAt,
+  };
+
+  if (source.mediaUrls.length === 0) {
+    return [{ kind: "post", ...common }];
+  }
+
+  return source.mediaUrls.map((assetUrl) => ({
+    kind: "image",
+    assetUrl,
+    ...(source.altTexts?.[assetUrl]
+      ? { altText: source.altTexts[assetUrl] }
+      : {}),
+    ...common,
+  }));
+}
+
+function inlineSourceKey(source: ParsedXSource) {
+  const id = source.postId?.trim() || source.sourceUrl?.trim();
+  return id ? `x:${id}` : undefined;
+}
+
+function setInlineButtonState(
+  button: HTMLButtonElement,
+  state: InlineButtonState,
+  detail?: string,
+) {
+  button.dataset.state = state;
+  button.disabled = state === "saving";
+
+  if (state === "saving") {
+    button.textContent = "…";
+    button.title = "Saving to Ourchival…";
+    button.setAttribute("aria-label", "Saving to Ourchival");
+    return;
+  }
+  if (state === "saved") {
+    button.textContent = "✓";
+    button.title = "Saved to Ourchival";
+    button.setAttribute("aria-label", "Saved to Ourchival");
+    return;
+  }
+  if (state === "warning") {
+    button.textContent = "!";
+    button.title = detail || "Ourchival capture needs attention. Click to retry.";
+    button.setAttribute("aria-label", "Retry Ourchival capture");
+    button.disabled = false;
+    return;
+  }
+
+  button.textContent = "O";
+  button.title = "Save this post to Ourchival";
+  button.setAttribute("aria-label", "Save this post to Ourchival");
+}
+
+async function loadInlineSavedKeys() {
+  const stored = await chrome.storage.local.get(INLINE_SAVED_KEYS);
+  replaceInlineSavedKeys(stored[INLINE_SAVED_KEYS]);
+}
+
+function replaceInlineSavedKeys(value: unknown) {
+  inlineSavedKeys.clear();
+  if (!Array.isArray(value)) return;
+  for (const key of value) {
+    if (typeof key === "string" && key) inlineSavedKeys.add(key);
+  }
+}
+
+async function persistInlineSavedKeys() {
+  const keys = Array.from(inlineSavedKeys);
+  const bounded = keys.slice(Math.max(0, keys.length - MAX_INLINE_SAVED_KEYS));
+  if (bounded.length !== keys.length) {
+    inlineSavedKeys.clear();
+    for (const key of bounded) inlineSavedKeys.add(key);
+  }
+  await chrome.storage.local.set({ [INLINE_SAVED_KEYS]: bounded });
+}
+
 function metaContent(selector: string) {
   return document.querySelector<HTMLMetaElement>(selector)?.content.trim() || undefined;
 }
@@ -218,3 +492,5 @@ function isXPage() {
     host.endsWith(".twitter.com")
   );
 }
+
+startInlineCreativeCapture();
