@@ -17,13 +17,15 @@ export type ParsedXSource = ParsedSource & {
 };
 
 export function parseXSnapshot(snapshot: XDomSnapshot): ParsedXSource {
+  const visibleAuthorHandle = findHandle(snapshot.userNameText);
   const status = findStatus(
     snapshot.links,
     snapshot.pageUrl,
     snapshot.primaryStatusUrl,
+    visibleAuthorHandle?.replace(/^@/, ""),
   );
   const handle = status?.handle;
-  const authorHandle = handle ? `@${handle}` : findHandle(snapshot.userNameText);
+  const authorHandle = handle ? `@${handle}` : visibleAuthorHandle;
   const normalizedHandle = authorHandle?.replace(/^@/, "");
   const sourceUrl = status?.url ?? canonicalizeXUrl(snapshot.pageUrl);
   const authorName = findDisplayName(snapshot.userNameText, authorHandle);
@@ -77,32 +79,42 @@ function findStatus(
   links: XDomSnapshot["links"],
   pageUrl: string,
   primaryStatusUrl?: string,
+  preferredHandle?: string,
 ) {
   const candidates = [
     ...(primaryStatusUrl ? [primaryStatusUrl] : []),
     ...links.map((link) => link.href),
     pageUrl,
-  ];
+  ]
+    .map((candidate) => parseStatusCandidate(candidate, pageUrl))
+    .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
 
-  for (const candidate of candidates) {
-    try {
-      const url = new URL(candidate, pageUrl);
-      const match = url.pathname.match(/^\/([^/]+)\/status\/(\d+)/i);
-      if (!match) continue;
-      const handle = decodeURIComponent(match[1] ?? "");
-      const postId = match[2];
-      if (!handle || !postId) continue;
-      return {
-        handle,
-        postId,
-        url: `https://x.com/${encodeURIComponent(handle)}/status/${postId}`,
-      };
-    } catch {
-      continue;
-    }
+  if (preferredHandle) {
+    const matchingAuthor = candidates.find(
+      (candidate) => candidate.handle.toLowerCase() === preferredHandle.toLowerCase(),
+    );
+    if (matchingAuthor) return matchingAuthor;
   }
 
-  return undefined;
+  return candidates[0];
+}
+
+function parseStatusCandidate(candidate: string, pageUrl: string) {
+  try {
+    const url = new URL(candidate, pageUrl);
+    const match = url.pathname.match(/^\/([^/]+)\/status\/(\d+)/i);
+    if (!match) return undefined;
+    const handle = decodeURIComponent(match[1] ?? "");
+    const postId = match[2];
+    if (!handle || !postId) return undefined;
+    return {
+      handle,
+      postId,
+      url: `https://x.com/${encodeURIComponent(handle)}/status/${postId}`,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function canonicalizeXUrl(value: string) {
