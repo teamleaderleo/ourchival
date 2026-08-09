@@ -100,7 +100,7 @@ describe("creative capture queue", () => {
   });
 
   it("records failures without dropping the queued capture", () => {
-    const queue = recordCreativeCaptureFailure([item("one")], "offline");
+    const queue = recordCreativeCaptureFailure([item("one")], "one", "offline");
     expect(queue[0]).toMatchObject({ attempts: 1, lastError: "offline" });
   });
 
