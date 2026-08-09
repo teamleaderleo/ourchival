@@ -145,6 +145,7 @@ export type SourcePlatform =
   | "x"
   | "pinterest"
   | "pixiv"
+  | "danbooru"
   | "discord"
   | "manual"
   | "generic";
