@@ -5,8 +5,10 @@ import { captureReadableText } from "./readableText";
 import { captureRedditThreadSnapshot } from "./redditSnapshot";
 import {
   CREATIVE_CAPTURE_EVENT_KEY,
+  CREATIVE_CAPTURE_QUEUE_KEY,
   INLINE_SAVED_KEYS,
   type CreativeCaptureEvent,
+  type CreativeCaptureQueueItem,
 } from "./storage";
 
 type ContextCapture = {
@@ -28,6 +30,7 @@ type InlineQueueResponse = {
 type InlineButtonState = "ready" | "queued" | "saving" | "saved" | "warning";
 
 const inlineSavedKeys = new Set<string>();
+const inlineQueuedSources = new Map<string, string | undefined>();
 const pendingInlineArticles = new Set<HTMLElement>();
 let inlineScanScheduled = false;
 let lastContextCapture: ContextCapture | undefined;
@@ -211,7 +214,9 @@ function startInlineCreativeCapture() {
   if (!isXPage()) return;
 
   enqueueAllInlineArticles();
-  void loadInlineSavedKeys().finally(enqueueAllInlineArticles);
+  void Promise.all([loadInlineSavedKeys(), loadInlineQueueState()]).finally(
+    enqueueAllInlineArticles,
+  );
 
   const observer = new MutationObserver((records) => {
     for (const record of records) {
@@ -242,6 +247,12 @@ function startInlineCreativeCapture() {
     const savedKeysChange = changes[INLINE_SAVED_KEYS];
     if (savedKeysChange) {
       replaceInlineSavedKeys(savedKeysChange.newValue);
+      enqueueAllInlineArticles();
+    }
+
+    const queueChange = changes[CREATIVE_CAPTURE_QUEUE_KEY];
+    if (queueChange) {
+      replaceInlineQueueState(queueChange.newValue);
       enqueueAllInlineArticles();
     }
 
@@ -288,8 +299,11 @@ function mountXInlineButton(article: HTMLElement) {
   );
   if (existingHost?.dataset.ourchivalSourceKey === sourceKey) {
     const button = existingHost.shadowRoot?.querySelector<HTMLButtonElement>("button");
-    if (button && inlineSavedKeys.has(sourceKey)) {
-      setInlineButtonState(button, "saved");
+    const persisted = persistedInlineState(sourceKey);
+    if (button && persisted) {
+      if (button.dataset.state !== "saving" || persisted.state === "saved") {
+        setInlineButtonState(button, persisted.state, persisted.detail);
+      }
     }
     return;
   }
@@ -343,9 +357,11 @@ function mountXInlineButton(article: HTMLElement) {
     event.stopPropagation();
     void queueXArticleInline(article, button);
   });
+  const persisted = persistedInlineState(sourceKey);
   setInlineButtonState(
     button,
-    inlineSavedKeys.has(sourceKey) ? "saved" : "ready",
+    persisted?.state ?? "ready",
+    persisted?.detail,
   );
 
   shadow.append(style, button);
@@ -427,6 +443,17 @@ function updateInlineButtonsForSource(
   }
 }
 
+function persistedInlineState(sourceKey: string) {
+  if (inlineSavedKeys.has(sourceKey)) {
+    return { state: "saved" as const };
+  }
+  if (!inlineQueuedSources.has(sourceKey)) return undefined;
+  const lastError = inlineQueuedSources.get(sourceKey);
+  return lastError
+    ? { state: "warning" as const, detail: lastError }
+    : { state: "queued" as const };
+}
+
 function setInlineButtonState(
   button: HTMLButtonElement,
   state: InlineButtonState,
@@ -471,11 +498,25 @@ async function loadInlineSavedKeys() {
   replaceInlineSavedKeys(stored[INLINE_SAVED_KEYS]);
 }
 
+async function loadInlineQueueState() {
+  const stored = await chrome.storage.local.get(CREATIVE_CAPTURE_QUEUE_KEY);
+  replaceInlineQueueState(stored[CREATIVE_CAPTURE_QUEUE_KEY]);
+}
+
 function replaceInlineSavedKeys(value: unknown) {
   inlineSavedKeys.clear();
   if (!Array.isArray(value)) return;
   for (const key of value) {
     if (typeof key === "string" && key) inlineSavedKeys.add(key);
+  }
+}
+
+function replaceInlineQueueState(value: unknown) {
+  inlineQueuedSources.clear();
+  if (!Array.isArray(value)) return;
+  for (const candidate of value as CreativeCaptureQueueItem[]) {
+    if (!candidate?.sourceKey) continue;
+    inlineQueuedSources.set(candidate.sourceKey, candidate.lastError);
   }
 }
 
