@@ -7,6 +7,7 @@ export type XDomSnapshot = {
   userNameText?: string;
   clickedImageUrl?: string;
   timestamp?: string;
+  primaryStatusUrl?: string;
   links: Array<{ href: string; text?: string }>;
   images: Array<{ src: string; alt?: string; href?: string }>;
 };
@@ -16,7 +17,11 @@ export type ParsedXSource = ParsedSource & {
 };
 
 export function parseXSnapshot(snapshot: XDomSnapshot): ParsedXSource {
-  const status = findStatus(snapshot.links, snapshot.pageUrl);
+  const status = findStatus(
+    snapshot.links,
+    snapshot.pageUrl,
+    snapshot.primaryStatusUrl,
+  );
   const handle = status?.handle;
   const authorHandle = handle ? `@${handle}` : findHandle(snapshot.userNameText);
   const normalizedHandle = authorHandle?.replace(/^@/, "");
@@ -68,8 +73,13 @@ export function normalizeXMediaUrl(value: string) {
   }
 }
 
-function findStatus(links: XDomSnapshot["links"], pageUrl: string) {
+function findStatus(
+  links: XDomSnapshot["links"],
+  pageUrl: string,
+  primaryStatusUrl?: string,
+) {
   const candidates = [
+    ...(primaryStatusUrl ? [primaryStatusUrl] : []),
     ...links.map((link) => link.href),
     pageUrl,
   ];
