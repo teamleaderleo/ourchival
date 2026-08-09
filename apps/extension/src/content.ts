@@ -22,12 +22,14 @@ type InlineBatchResponse = {
   };
 };
 
-type InlineButtonState = "ready" | "saving" | "saved" | "warning";
+type InlineButtonState = "ready" | "queued" | "saving" | "saved" | "warning";
 
 const INLINE_SAVED_KEYS = "ourchival:inline-saved-source-keys:v1";
 const MAX_INLINE_SAVED_KEYS = 20_000;
 const inlineSavedKeys = new Set<string>();
+const pendingInlineArticles = new Set<HTMLElement>();
 let inlineScanScheduled = false;
+let inlineCaptureTail: Promise<void> = Promise.resolve();
 let lastContextCapture: ContextCapture | undefined;
 
 function snapshotPage(): PageSnapshot {
@@ -208,10 +210,27 @@ function snapshotXArticle(
 function startInlineCreativeCapture() {
   if (!isXPage()) return;
 
-  void loadInlineSavedKeys().finally(scheduleInlineScan);
-  scheduleInlineScan();
+  enqueueAllInlineArticles();
+  void loadInlineSavedKeys().finally(enqueueAllInlineArticles);
 
-  const observer = new MutationObserver(scheduleInlineScan);
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      if (record.target instanceof Element) {
+        const targetArticle = record.target.closest<HTMLElement>("article");
+        if (targetArticle) pendingInlineArticles.add(targetArticle);
+      }
+      for (const node of record.addedNodes) {
+        if (!(node instanceof Element)) continue;
+        if (node.matches("article")) {
+          pendingInlineArticles.add(node as HTMLElement);
+        }
+        for (const article of node.querySelectorAll<HTMLElement>("article")) {
+          pendingInlineArticles.add(article);
+        }
+      }
+    }
+    scheduleInlineScan();
+  });
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
@@ -221,23 +240,29 @@ function startInlineCreativeCapture() {
     const savedKeysChange = changes[INLINE_SAVED_KEYS];
     if (areaName !== "local" || !savedKeysChange) return;
     replaceInlineSavedKeys(savedKeysChange.newValue);
-    scheduleInlineScan();
+    enqueueAllInlineArticles();
   });
+}
+
+function enqueueAllInlineArticles() {
+  for (const article of document.querySelectorAll<HTMLElement>("article")) {
+    pendingInlineArticles.add(article);
+  }
+  scheduleInlineScan();
 }
 
 function scheduleInlineScan() {
-  if (inlineScanScheduled) return;
+  if (inlineScanScheduled || pendingInlineArticles.size === 0) return;
   inlineScanScheduled = true;
   window.requestAnimationFrame(() => {
     inlineScanScheduled = false;
-    scanXArticles();
+    const articles = Array.from(pendingInlineArticles);
+    pendingInlineArticles.clear();
+    for (const article of articles) {
+      if (article.isConnected) mountXInlineButton(article);
+    }
+    if (pendingInlineArticles.size > 0) scheduleInlineScan();
   });
-}
-
-function scanXArticles() {
-  for (const article of document.querySelectorAll<HTMLElement>("article")) {
-    mountXInlineButton(article);
-  }
 }
 
 function mountXInlineButton(article: HTMLElement) {
@@ -291,6 +316,7 @@ function mountXInlineButton(article: HTMLElement) {
       background: rgba(111, 91, 183, 0.12);
     }
     button:active { transform: scale(0.92); }
+    button[data-state="queued"],
     button[data-state="saving"] { color: rgb(111, 91, 183); cursor: progress; }
     button[data-state="saved"] { color: rgb(61, 107, 61); }
     button[data-state="warning"] { color: rgb(138, 61, 61); }
@@ -307,7 +333,7 @@ function mountXInlineButton(article: HTMLElement) {
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    void captureXArticleInline(article, button);
+    queueXArticleInline(article, button);
   });
   setInlineButtonState(
     button,
@@ -318,11 +344,8 @@ function mountXInlineButton(article: HTMLElement) {
   actionRow.append(host);
 }
 
-async function captureXArticleInline(
-  article: HTMLElement,
-  button: HTMLButtonElement,
-) {
-  if (button.dataset.state === "saving") return;
+function queueXArticleInline(article: HTMLElement, button: HTMLButtonElement) {
+  if (button.dataset.state === "queued" || button.dataset.state === "saving") return;
 
   const snapshot = snapshotXArticle(article, undefined);
   const source = parseXSnapshot(snapshot);
@@ -336,9 +359,19 @@ async function captureXArticleInline(
     return;
   }
 
-  setInlineButtonState(button, "saving");
   const payloads = buildXInlinePayloads(source, JSON.stringify(snapshot));
+  setInlineButtonState(button, "queued");
+  inlineCaptureTail = inlineCaptureTail
+    .catch(() => undefined)
+    .then(() => captureXPayloadsInline(sourceKey, payloads, button));
+}
 
+async function captureXPayloadsInline(
+  sourceKey: string,
+  payloads: CapturePayload[],
+  button: HTMLButtonElement,
+) {
+  setInlineButtonState(button, "saving");
   try {
     const response = (await chrome.runtime.sendMessage({
       type: "OURCHIVAL_CAPTURE_PAYLOADS",
@@ -413,8 +446,14 @@ function setInlineButtonState(
   detail?: string,
 ) {
   button.dataset.state = state;
-  button.disabled = state === "saving";
+  button.disabled = state === "queued" || state === "saving";
 
+  if (state === "queued") {
+    button.textContent = "…";
+    button.title = "Queued for Ourchival";
+    button.setAttribute("aria-label", "Queued for Ourchival");
+    return;
+  }
   if (state === "saving") {
     button.textContent = "…";
     button.title = "Saving to Ourchival…";
