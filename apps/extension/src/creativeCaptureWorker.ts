@@ -53,6 +53,8 @@ class CaptureHttpError extends Error {
 }
 
 const MAX_INLINE_SAVED_KEYS = 20_000;
+const CREATIVE_QUEUE_RECOVERY_ALARM = "ourchival-creative-capture-recovery";
+const RECOVERY_DELAY_MINUTES = 0.5;
 let queueMutationTail: Promise<void> = Promise.resolve();
 let queueDraining = false;
 
@@ -73,6 +75,7 @@ chrome.runtime.onMessage.addListener((message: QueueCaptureMessage, _sender, sen
         item,
       );
       await saveCreativeCaptureQueue(queue);
+      await ensureRecoveryWakeup();
       await saveCreativeCaptureEvent({
         queueId: item.id,
         ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
@@ -90,6 +93,12 @@ chrome.runtime.onMessage.addListener((message: QueueCaptureMessage, _sender, sen
     });
 
   return true;
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === CREATIVE_QUEUE_RECOVERY_ALARM) {
+    void drainCreativeCaptureQueue();
+  }
 });
 
 async function drainCreativeCaptureQueue() {
@@ -152,7 +161,9 @@ async function drainCreativeCaptureQueue() {
     // began; failed IDs from this pass wait for a later wake-up.
     try {
       const remaining = await getCreativeCaptureQueue();
-      if (remaining.some((item) => !attemptedIds.has(item.id))) {
+      if (remaining.length === 0) {
+        await chrome.alarms.clear(CREATIVE_QUEUE_RECOVERY_ALARM);
+      } else if (remaining.some((item) => !attemptedIds.has(item.id))) {
         void drainCreativeCaptureQueue();
       }
     } catch {
@@ -259,6 +270,14 @@ async function rememberSavedSourceKey(sourceKey: string) {
   await chrome.storage.local.set({ [INLINE_SAVED_KEYS]: next });
 }
 
+async function ensureRecoveryWakeup() {
+  const existing = await chrome.alarms.get(CREATIVE_QUEUE_RECOVERY_ALARM);
+  if (existing) return;
+  await chrome.alarms.create(CREATIVE_QUEUE_RECOVERY_ALARM, {
+    delayInMinutes: RECOVERY_DELAY_MINUTES,
+  });
+}
+
 function createQueueId() {
   return `${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -267,4 +286,7 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+void getCreativeCaptureQueue().then((queue) => {
+  if (queue.length > 0) void ensureRecoveryWakeup();
+});
 void drainCreativeCaptureQueue();
