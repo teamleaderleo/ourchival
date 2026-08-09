@@ -198,7 +198,11 @@ function snapshotXArticle(
   const articleText = article
     .querySelector<HTMLElement>('[data-testid="tweetText"]')
     ?.innerText.trim();
-  const timestamp = article.querySelector<HTMLTimeElement>("time[datetime]")?.dateTime;
+  const timestampElement = article.querySelector<HTMLTimeElement>("time[datetime]");
+  const timestamp = timestampElement?.dateTime;
+  const primaryStatusUrl = timestampElement
+    ?.closest<HTMLAnchorElement>("a[href]")
+    ?.href;
 
   return {
     pageUrl: location.href,
@@ -209,6 +213,7 @@ function snapshotXArticle(
       ? { clickedImageUrl: clickedImage.currentSrc || clickedImage.src }
       : {}),
     ...(timestamp ? { timestamp } : {}),
+    ...(primaryStatusUrl ? { primaryStatusUrl } : {}),
     links,
     images,
   };
