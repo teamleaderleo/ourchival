@@ -5,6 +5,7 @@ import {
   recordCreativeCaptureFailure,
   removeCreativeCaptureQueueItem,
 } from "./creativeCaptureQueue";
+import { reportCaptureSession } from "./sessionReporting";
 import {
   getCreativeCaptureQueue,
   getSettings,
@@ -15,6 +16,7 @@ import {
   saveLastCapture,
   saveLastResult,
   type BatchCaptureSource,
+  type BatchCaptureState,
   type CaptureResult,
   type CreativeCaptureQueueItem,
 } from "./storage";
@@ -175,22 +177,72 @@ async function drainCreativeCaptureQueue() {
 async function captureQueuedGroup(item: CreativeCaptureQueueItem) {
   const connection = await getCaptureConnection();
   const captureSessionId = `creative-${item.id}`;
+  const session = createSessionState(item, captureSessionId);
+  await reportCaptureSession(connection, session, { force: true });
 
-  for (const originalPayload of item.payloads) {
-    const payload: CapturePayload = {
-      ...originalPayload,
-      captureSessionId: originalPayload.captureSessionId ?? captureSessionId,
-    };
-    const result = await capturePayload(connection, payload);
-    await saveLastCapture(payload);
-    await saveLastResult(toCaptureResult(result));
-    if (!result.ok) {
-      throw new CaptureHttpError(
-        result.error || `Capture failed with status ${result.status}`,
-        result.status,
-      );
+  try {
+    for (const originalPayload of item.payloads) {
+      const payload: CapturePayload = {
+        ...originalPayload,
+        captureSessionId: originalPayload.captureSessionId ?? captureSessionId,
+      };
+      const result = await capturePayload(connection, payload);
+      await saveLastCapture(payload);
+      await saveLastResult(toCaptureResult(result));
+      session.completed += 1;
+      session.nextIndex = session.completed;
+
+      if (!result.ok) {
+        session.failed += 1;
+        session.running = false;
+        await reportCaptureSession(connection, session, { force: true });
+        throw new CaptureHttpError(
+          result.error || `Capture failed with status ${result.status}`,
+          result.status,
+        );
+      }
+
+      if (result.body.alreadySaved) session.duplicates += 1;
+      else session.saved += 1;
+      await reportCaptureSession(connection, session);
     }
+
+    session.running = false;
+    session.completedAt = new Date().toISOString();
+    await reportCaptureSession(connection, session, { force: true });
+  } catch (error) {
+    if (session.running) {
+      session.running = false;
+      await reportCaptureSession(connection, session, { force: true });
+    }
+    throw error;
   }
+}
+
+function createSessionState(
+  item: CreativeCaptureQueueItem,
+  captureSessionId: string,
+): BatchCaptureState {
+  return {
+    jobId: captureSessionId,
+    source: item.source,
+    running: true,
+    startedAt: item.queuedAt,
+    total: item.payloads.length,
+    completed: 0,
+    nextIndex: 0,
+    saved: 0,
+    duplicates: 0,
+    failed: 0,
+    skipped: 0,
+    items: item.payloads.map((payload) => ({
+      url: payload.sourceUrl,
+      title: payload.pageTitle,
+      payload,
+    })),
+    successfulTabIds: [],
+    failures: [],
+  };
 }
 
 async function getCaptureConnection(): Promise<CaptureConnection> {
