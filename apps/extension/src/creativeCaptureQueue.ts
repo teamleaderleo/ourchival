@@ -38,11 +38,23 @@ export function appendCreativeCaptureQueueItem(
   queue: CreativeCaptureQueueItem[],
   item: CreativeCaptureQueueItem,
 ) {
+  const replacesExisting = queue.some(
+    (existing) =>
+      existing.id === item.id ||
+      Boolean(item.sourceKey && existing.sourceKey === item.sourceKey),
+  );
   const withoutSameId = queue.filter((existing) => existing.id !== item.id);
   const withoutSameSource = item.sourceKey
     ? withoutSameId.filter((existing) => existing.sourceKey !== item.sourceKey)
     : withoutSameId;
-  return [...withoutSameSource, item].slice(-MAX_CREATIVE_CAPTURE_QUEUE_ITEMS);
+
+  if (!replacesExisting && withoutSameSource.length >= MAX_CREATIVE_CAPTURE_QUEUE_ITEMS) {
+    throw new Error(
+      `Creative capture queue is full (${MAX_CREATIVE_CAPTURE_QUEUE_ITEMS} items).`,
+    );
+  }
+
+  return [...withoutSameSource, item];
 }
 
 export function removeCreativeCaptureQueueItem(
