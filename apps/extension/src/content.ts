@@ -31,6 +31,7 @@ type InlineButtonState = "ready" | "queued" | "saving" | "saved" | "warning";
 
 const inlineSavedKeys = new Set<string>();
 const inlineQueuedSources = new Map<string, string | undefined>();
+const inlineButtons = new WeakMap<HTMLElement, HTMLButtonElement>();
 const pendingInlineArticles = new Set<HTMLElement>();
 let inlineScanScheduled = false;
 let lastContextCapture: ContextCapture | undefined;
@@ -307,14 +308,14 @@ function mountXInlineButton(article: HTMLElement) {
     ':scope > [data-ourchival-inline-capture="true"]',
   );
   if (existingHost?.dataset.ourchivalSourceKey === sourceKey) {
-    const button = existingHost.shadowRoot?.querySelector<HTMLButtonElement>("button");
+    const button = inlineButtons.get(existingHost);
     const persisted = persistedInlineState(sourceKey);
-    if (button && persisted) {
-      if (button.dataset.state !== "saving" || persisted.state === "saved") {
+    if (button) {
+      if (persisted && (button.dataset.state !== "saving" || persisted.state === "saved")) {
         setInlineButtonState(button, persisted.state, persisted.detail);
       }
+      return;
     }
-    return;
   }
   existingHost?.remove();
 
@@ -326,7 +327,7 @@ function mountXInlineButton(article: HTMLElement) {
   host.style.justifyContent = "center";
   host.style.flex = "0 0 auto";
 
-  const shadow = host.attachShadow({ mode: "open" });
+  const shadow = host.attachShadow({ mode: "closed" });
   const style = document.createElement("style");
   style.textContent = `
     button {
@@ -374,6 +375,7 @@ function mountXInlineButton(article: HTMLElement) {
     persisted?.detail,
   );
 
+  inlineButtons.set(host, button);
   shadow.append(style, button);
   actionRow.append(host);
 }
@@ -448,7 +450,7 @@ function updateInlineButtonsForSource(
     '[data-ourchival-inline-capture="true"]',
   )) {
     if (host.dataset.ourchivalSourceKey !== sourceKey) continue;
-    const button = host.shadowRoot?.querySelector<HTMLButtonElement>("button");
+    const button = inlineButtons.get(host);
     if (button) setInlineButtonState(button, state, detail);
   }
 }
