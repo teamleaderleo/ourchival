@@ -51,7 +51,7 @@ describe("conversation imports", () => {
     ]);
   });
 
-  it("creates stable fingerprints and normalized JSON", () => {
+  it("creates stable identity/content fingerprints and normalized JSON", () => {
     const archive = parseConversationImport({
       format: "markdown",
       text: "User: Hello\nAssistant: Hi",
@@ -59,7 +59,9 @@ describe("conversation imports", () => {
     const first = conversationMessageFingerprints(archive);
     const second = conversationMessageFingerprints(archive);
     expect(first).toEqual(second);
-    expect(first.every((value) => /^[a-f0-9]{32}$/.test(value))).toBe(true);
+    expect(
+      first.every((value) => /^[su]:[a-f0-9]{32}:[a-f0-9]{32}$/.test(value)),
+    ).toBe(true);
     expect(JSON.parse(serializeConversationArchive(archive)).messages).toHaveLength(2);
   });
 
