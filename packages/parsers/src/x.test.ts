@@ -18,6 +18,7 @@ describe("parseXSnapshot", () => {
         {
           src: "https://pbs.twimg.com/media/ABC?name=small&format=jpg",
           alt: "Character lit by a blue sunset",
+          href: "https://x.com/moon_painter/status/123/photo/1",
         },
         {
           src: "https://pbs.twimg.com/profile_images/avatar.jpg",
@@ -48,6 +49,33 @@ describe("parseXSnapshot", () => {
       "https://pbs.twimg.com/media/ABC?format=jpg&name=orig":
         "Character lit by a blue sunset",
     });
+  });
+
+  it("excludes media linked to a different quoted post", () => {
+    const parsed = parseXSnapshot({
+      pageUrl: "https://x.com/home",
+      userNameText: "Outer Artist\n@outer",
+      articleText: "Look at this reference",
+      links: [
+        { href: "https://x.com/outer/status/123" },
+        { href: "https://x.com/quoted/status/999" },
+      ],
+      images: [
+        {
+          src: "https://pbs.twimg.com/media/OUTER?format=jpg&name=small",
+          href: "https://x.com/outer/status/123/photo/1",
+        },
+        {
+          src: "https://pbs.twimg.com/media/QUOTED?format=jpg&name=small",
+          href: "https://x.com/quoted/status/999/photo/1",
+        },
+      ],
+    });
+
+    expect(parsed.sourceUrl).toBe("https://x.com/outer/status/123");
+    expect(parsed.mediaUrls).toEqual([
+      "https://pbs.twimg.com/media/OUTER?format=jpg&name=orig",
+    ]);
   });
 
   it("falls back to the page URL when post links are missing", () => {
