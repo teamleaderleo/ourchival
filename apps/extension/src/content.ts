@@ -1,8 +1,13 @@
 import { parseXSnapshot, type ParsedXSource, type XDomSnapshot } from "@ourchival/parsers";
-import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
+import type { PageSnapshot } from "@ourchival/shared";
 import { buildXInlinePayloads, inlineXSourceKey } from "./inlineCapture";
 import { captureReadableText } from "./readableText";
 import { captureRedditThreadSnapshot } from "./redditSnapshot";
+import {
+  CREATIVE_CAPTURE_EVENT_KEY,
+  INLINE_SAVED_KEYS,
+  type CreativeCaptureEvent,
+} from "./storage";
 
 type ContextCapture = {
   pageTitle: string;
@@ -13,24 +18,18 @@ type ContextCapture = {
   rawMetadata?: string;
 };
 
-type InlineBatchResponse = {
+type InlineQueueResponse = {
   ok?: boolean;
+  queued?: boolean;
+  queueId?: string;
   error?: string;
-  state?: {
-    saved: number;
-    duplicates: number;
-    failed: number;
-  };
 };
 
 type InlineButtonState = "ready" | "queued" | "saving" | "saved" | "warning";
 
-const INLINE_SAVED_KEYS = "ourchival:inline-saved-source-keys:v1";
-const MAX_INLINE_SAVED_KEYS = 20_000;
 const inlineSavedKeys = new Set<string>();
 const pendingInlineArticles = new Set<HTMLElement>();
 let inlineScanScheduled = false;
-let inlineCaptureTail: Promise<void> = Promise.resolve();
 let lastContextCapture: ContextCapture | undefined;
 
 function snapshotPage(): PageSnapshot {
@@ -238,10 +237,18 @@ function startInlineCreativeCapture() {
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+
     const savedKeysChange = changes[INLINE_SAVED_KEYS];
-    if (areaName !== "local" || !savedKeysChange) return;
-    replaceInlineSavedKeys(savedKeysChange.newValue);
-    enqueueAllInlineArticles();
+    if (savedKeysChange) {
+      replaceInlineSavedKeys(savedKeysChange.newValue);
+      enqueueAllInlineArticles();
+    }
+
+    const eventChange = changes[CREATIVE_CAPTURE_EVENT_KEY];
+    if (eventChange) {
+      applyCreativeCaptureEvent(eventChange.newValue);
+    }
   });
 }
 
@@ -334,7 +341,7 @@ function mountXInlineButton(article: HTMLElement) {
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    queueXArticleInline(article, button);
+    void queueXArticleInline(article, button);
   });
   setInlineButtonState(
     button,
@@ -345,7 +352,10 @@ function mountXInlineButton(article: HTMLElement) {
   actionRow.append(host);
 }
 
-function queueXArticleInline(article: HTMLElement, button: HTMLButtonElement) {
+async function queueXArticleInline(
+  article: HTMLElement,
+  button: HTMLButtonElement,
+) {
   if (button.dataset.state === "queued" || button.dataset.state === "saving") return;
 
   const snapshot = snapshotXArticle(article, undefined);
@@ -366,45 +376,54 @@ function queueXArticleInline(article: HTMLElement, button: HTMLButtonElement) {
     document.title,
   );
   setInlineButtonState(button, "queued");
-  inlineCaptureTail = inlineCaptureTail
-    .catch(() => undefined)
-    .then(() => captureXPayloadsInline(sourceKey, payloads, button));
-}
 
-async function captureXPayloadsInline(
-  sourceKey: string,
-  payloads: CapturePayload[],
-  button: HTMLButtonElement,
-) {
-  setInlineButtonState(button, "saving");
   try {
     const response = (await chrome.runtime.sendMessage({
-      type: "OURCHIVAL_CAPTURE_PAYLOADS",
+      type: "OURCHIVAL_QUEUE_CAPTURE_PAYLOADS",
       payloads,
       source: "x_post",
-    })) as InlineBatchResponse | undefined;
+      sourceKey,
+    })) as InlineQueueResponse | undefined;
 
-    if (!response?.ok || !response.state) {
-      throw new Error(response?.error || "Ourchival capture failed.");
+    if (!response?.ok || !response.queued) {
+      throw new Error(response?.error || "Could not queue this Ourchival capture.");
     }
-    if (response.state.failed > 0) {
-      setInlineButtonState(
-        button,
-        "warning",
-        `${response.state.failed} item${response.state.failed === 1 ? "" : "s"} need retry.`,
-      );
-      return;
-    }
-
-    inlineSavedKeys.add(sourceKey);
-    await persistInlineSavedKeys();
-    setInlineButtonState(button, "saved");
   } catch (error) {
     setInlineButtonState(
       button,
       "warning",
-      error instanceof Error ? error.message : "Ourchival capture failed.",
+      error instanceof Error ? error.message : "Could not queue this Ourchival capture.",
     );
+  }
+}
+
+function applyCreativeCaptureEvent(value: unknown) {
+  if (!value || typeof value !== "object") return;
+  const event = value as Partial<CreativeCaptureEvent>;
+  if (!event.sourceKey || !event.state) return;
+
+  const state: InlineButtonState =
+    event.state === "saving"
+      ? "saving"
+      : event.state === "saved"
+        ? "saved"
+        : event.state === "warning"
+          ? "warning"
+          : "queued";
+  updateInlineButtonsForSource(event.sourceKey, state, event.error);
+}
+
+function updateInlineButtonsForSource(
+  sourceKey: string,
+  state: InlineButtonState,
+  detail?: string,
+) {
+  for (const host of document.querySelectorAll<HTMLElement>(
+    '[data-ourchival-inline-capture="true"]',
+  )) {
+    if (host.dataset.ourchivalSourceKey !== sourceKey) continue;
+    const button = host.shadowRoot?.querySelector<HTMLButtonElement>("button");
+    if (button) setInlineButtonState(button, state, detail);
   }
 }
 
@@ -458,16 +477,6 @@ function replaceInlineSavedKeys(value: unknown) {
   for (const key of value) {
     if (typeof key === "string" && key) inlineSavedKeys.add(key);
   }
-}
-
-async function persistInlineSavedKeys() {
-  const keys = Array.from(inlineSavedKeys);
-  const bounded = keys.slice(Math.max(0, keys.length - MAX_INLINE_SAVED_KEYS));
-  if (bounded.length !== keys.length) {
-    inlineSavedKeys.clear();
-    for (const key of bounded) inlineSavedKeys.add(key);
-  }
-  await chrome.storage.local.set({ [INLINE_SAVED_KEYS]: bounded });
 }
 
 function metaContent(selector: string) {
