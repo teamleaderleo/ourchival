@@ -39,14 +39,30 @@ export function appendCreativeCaptureQueueItem(
   queue: CreativeCaptureQueueItem[],
   item: CreativeCaptureQueueItem,
 ) {
+  const existingSameSource = item.sourceKey
+    ? queue.find((existing) => existing.sourceKey === item.sourceKey)
+    : undefined;
+  const normalizedItem = existingSameSource
+    ? {
+        ...item,
+        id: existingSameSource.id,
+        queuedAt: existingSameSource.queuedAt,
+      }
+    : item;
   const replacesExisting = queue.some(
     (existing) =>
-      existing.id === item.id ||
-      Boolean(item.sourceKey && existing.sourceKey === item.sourceKey),
+      existing.id === normalizedItem.id ||
+      Boolean(
+        normalizedItem.sourceKey && existing.sourceKey === normalizedItem.sourceKey,
+      ),
   );
-  const withoutSameId = queue.filter((existing) => existing.id !== item.id);
-  const withoutSameSource = item.sourceKey
-    ? withoutSameId.filter((existing) => existing.sourceKey !== item.sourceKey)
+  const withoutSameId = queue.filter(
+    (existing) => existing.id !== normalizedItem.id,
+  );
+  const withoutSameSource = normalizedItem.sourceKey
+    ? withoutSameId.filter(
+        (existing) => existing.sourceKey !== normalizedItem.sourceKey,
+      )
     : withoutSameId;
 
   if (!replacesExisting && withoutSameSource.length >= MAX_CREATIVE_CAPTURE_QUEUE_ITEMS) {
@@ -55,7 +71,7 @@ export function appendCreativeCaptureQueueItem(
     );
   }
 
-  const next = [...withoutSameSource, item];
+  const next = [...withoutSameSource, normalizedItem];
   if (serializedByteLength(next) > MAX_CREATIVE_CAPTURE_QUEUE_BYTES) {
     throw new Error(
       `Creative capture queue exceeds its ${MAX_CREATIVE_CAPTURE_QUEUE_BYTES}-byte storage budget.`,
