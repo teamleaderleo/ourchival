@@ -36,12 +36,24 @@ describe("creative capture queue", () => {
     });
   });
 
-  it("replaces an older queued item for the same source", () => {
+  it("refreshes a queued source while preserving its stable queue identity", () => {
     const first = item("first", "x:123");
-    const replacement = item("replacement", "x:123");
-    expect(appendCreativeCaptureQueueItem([first], replacement)).toEqual([
-      replacement,
-    ]);
+    const replacement = createCreativeCaptureQueueItem({
+      id: "replacement",
+      sourceKey: "x:123",
+      source: "x_post",
+      payloads: [{ ...payload, postText: "new snapshot" }],
+      queuedAt: "2026-08-09T01:00:00.000Z",
+    });
+    const next = appendCreativeCaptureQueueItem([first], replacement);
+    expect(next).toHaveLength(1);
+    expect(next[0]).toMatchObject({
+      id: "first",
+      sourceKey: "x:123",
+      queuedAt: first.queuedAt,
+      attempts: 0,
+    });
+    expect(next[0]?.payloads[0]).toMatchObject({ postText: "new snapshot" });
   });
 
   it("rejects a new distinct save when the queue is full", () => {
@@ -54,15 +66,20 @@ describe("creative capture queue", () => {
     expect(queue[0]?.id).toBe("0");
   });
 
-  it("still replaces the same source when the queue is full", () => {
+  it("still refreshes the same source when the queue is full", () => {
     const queue = Array.from({ length: MAX_CREATIVE_CAPTURE_QUEUE_ITEMS }, (_, index) =>
       item(String(index)),
     );
-    const replacement = item("replacement", "x:0");
+    const replacement = createCreativeCaptureQueueItem({
+      id: "replacement",
+      sourceKey: "x:0",
+      source: "x_post",
+      payloads: [{ ...payload, postText: "updated" }],
+    });
     const next = appendCreativeCaptureQueueItem(queue, replacement);
     expect(next).toHaveLength(MAX_CREATIVE_CAPTURE_QUEUE_ITEMS);
-    expect(next.some((entry) => entry.id === "0")).toBe(false);
-    expect(next.at(-1)).toEqual(replacement);
+    expect(next.at(-1)).toMatchObject({ id: "0", sourceKey: "x:0" });
+    expect(next.at(-1)?.payloads[0]).toMatchObject({ postText: "updated" });
   });
 
   it("rejects a queue that would exceed the storage byte budget", () => {
