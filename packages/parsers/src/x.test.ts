@@ -52,10 +52,27 @@ describe("parseXSnapshot", () => {
     });
   });
 
-  it("prefers the timestamp status link over quoted status links", () => {
+  it("prefers the timestamp status link over unrelated status links", () => {
     const parsed = parseXSnapshot({
       pageUrl: "https://x.com/home",
       primaryStatusUrl: "https://x.com/outer/status/123",
+      userNameText: "Outer Artist\n@outer",
+      links: [
+        { href: "https://x.com/quoted/status/999" },
+        { href: "https://x.com/outer/status/123" },
+      ],
+      images: [],
+    });
+
+    expect(parsed.sourceUrl).toBe("https://x.com/outer/status/123");
+    expect(parsed.postId).toBe("123");
+    expect(parsed.authorHandle).toBe("@outer");
+  });
+
+  it("uses the visible author to recover when the preferred status URL is quoted", () => {
+    const parsed = parseXSnapshot({
+      pageUrl: "https://x.com/home",
+      primaryStatusUrl: "https://x.com/quoted/status/999",
       userNameText: "Outer Artist\n@outer",
       links: [
         { href: "https://x.com/quoted/status/999" },
