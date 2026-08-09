@@ -64,8 +64,8 @@ export function WorkbenchController() {
         return;
       }
 
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
       if (document.activeElement === drawer) {
         event.preventDefault();
         (event.shiftKey ? last : first).focus();
