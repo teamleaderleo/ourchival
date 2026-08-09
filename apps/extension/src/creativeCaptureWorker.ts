@@ -11,6 +11,7 @@ import {
   getSettings,
   INLINE_SAVED_KEYS,
   normalizeCaptureEndpoint,
+  saveCreativeCaptureCompletion,
   saveCreativeCaptureEvent,
   saveCreativeCaptureQueue,
   saveLastCapture,
@@ -180,27 +181,22 @@ async function drainCreativeCaptureQueue() {
           continue;
         }
 
-        // Remote capture has completed. Removing the durable queue entry is the
-        // only critical local success write; Saved-cache/UI updates are helpers.
+        // Remote capture has completed. Queue removal and Saved identity become
+        // one serialized storage transaction so the overlay cannot observe an
+        // intermediate state where neither is present.
         try {
-          await mutateCreativeCaptureQueue((current) => ({
-            queue: removeCreativeCaptureQueueItem(current, item.id),
-            result: undefined,
-          }));
+          await completeCreativeCapture(item);
         } catch (error) {
           void saveCreativeCaptureEvent({
             queueId: item.id,
             ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
             state: "warning",
             updatedAt: new Date().toISOString(),
-            error: `Saved remotely; local queue cleanup failed: ${errorMessage(error, "storage error")}`,
+            error: `Saved remotely; local completion failed: ${errorMessage(error, "storage error")}`,
           }).catch(() => undefined);
           break;
         }
 
-        if (item.sourceKey) {
-          void rememberSavedSourceKey(item.sourceKey).catch(() => undefined);
-        }
         void saveCreativeCaptureEvent({
           queueId: item.id,
           ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
@@ -304,28 +300,45 @@ async function mutateCreativeCaptureQueue<T>(
   mutation: (
     queue: CreativeCaptureQueueItem[],
   ) => { queue: CreativeCaptureQueueItem[]; result: T },
-): Promise<T> {
-  let resolveResult: ((value: T) => void) | undefined;
-  let rejectResult: ((reason: unknown) => void) | undefined;
-  const resultPromise = new Promise<T>((resolve, reject) => {
-    resolveResult = resolve;
-    rejectResult = reject;
+) {
+  return await serializeQueueOperation(async () => {
+    const current = await getCreativeCaptureQueue();
+    const next = mutation(current);
+    await saveCreativeCaptureQueue(next.queue);
+    return next.result;
   });
+}
 
-  queueMutationTail = queueMutationTail
-    .catch(() => undefined)
-    .then(async () => {
-      try {
-        const current = await getCreativeCaptureQueue();
-        const next = mutation(current);
-        await saveCreativeCaptureQueue(next.queue);
-        resolveResult?.(next.result);
-      } catch (error) {
-        rejectResult?.(error);
-      }
-    });
+async function completeCreativeCapture(item: CreativeCaptureQueueItem) {
+  await serializeQueueOperation(async () => {
+    const currentQueue = await getCreativeCaptureQueue();
+    const nextQueue = removeCreativeCaptureQueueItem(currentQueue, item.id);
+    if (!item.sourceKey) {
+      await saveCreativeCaptureQueue(nextQueue);
+      return;
+    }
 
-  return await resultPromise;
+    const stored = await chrome.storage.local.get(INLINE_SAVED_KEYS);
+    const currentSaved = Array.isArray(stored[INLINE_SAVED_KEYS])
+      ? (stored[INLINE_SAVED_KEYS] as unknown[]).filter(
+          (value): value is string => typeof value === "string" && value.length > 0,
+        )
+      : [];
+    const nextSaved = [
+      ...currentSaved.filter((value) => value !== item.sourceKey),
+      item.sourceKey,
+    ].slice(-MAX_INLINE_SAVED_KEYS);
+    await saveCreativeCaptureCompletion(nextQueue, nextSaved);
+  });
+}
+
+function serializeQueueOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const run = queueMutationTail.catch(() => undefined).then(operation);
+  queueMutationTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 async function readCreativeCaptureQueue() {
@@ -395,19 +408,6 @@ function shouldStopDrain(error: unknown) {
     error.status === 429 ||
     error.status >= 500
   );
-}
-
-async function rememberSavedSourceKey(sourceKey: string) {
-  const stored = await chrome.storage.local.get(INLINE_SAVED_KEYS);
-  const current = Array.isArray(stored[INLINE_SAVED_KEYS])
-    ? (stored[INLINE_SAVED_KEYS] as unknown[]).filter(
-        (value): value is string => typeof value === "string" && value.length > 0,
-      )
-    : [];
-  const next = [...current.filter((value) => value !== sourceKey), sourceKey].slice(
-    -MAX_INLINE_SAVED_KEYS,
-  );
-  await chrome.storage.local.set({ [INLINE_SAVED_KEYS]: next });
 }
 
 async function ensureRecoveryWakeup() {
