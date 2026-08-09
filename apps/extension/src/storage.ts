@@ -69,6 +69,24 @@ export type BatchCaptureState = {
   failures: BatchCaptureFailure[];
 };
 
+export type CreativeCaptureQueueItem = {
+  id: string;
+  sourceKey?: string;
+  source: BatchCaptureSource;
+  payloads: CapturePayload[];
+  queuedAt: string;
+  attempts: number;
+  lastError?: string;
+};
+
+export type CreativeCaptureEvent = {
+  queueId: string;
+  sourceKey?: string;
+  state: "queued" | "saving" | "saved" | "warning";
+  updatedAt: string;
+  error?: string;
+};
+
 export type ExtensionSettings = {
   captureEndpoint?: string;
   deviceToken?: string;
@@ -79,6 +97,9 @@ export const SETTINGS_KEY = "ourchivalSettings";
 export const LAST_CAPTURE_KEY = "lastCapture";
 export const LAST_RESULT_KEY = "lastCaptureResult";
 export const LAST_BATCH_KEY = "lastBatchCapture";
+export const CREATIVE_CAPTURE_QUEUE_KEY = "ourchival:creative-capture-queue:v1";
+export const CREATIVE_CAPTURE_EVENT_KEY = "ourchival:creative-capture-event:v1";
+export const INLINE_SAVED_KEYS = "ourchival:inline-saved-source-keys:v1";
 
 export async function getSettings(): Promise<ExtensionSettings> {
   const values = await chrome.storage.local.get(SETTINGS_KEY);
@@ -99,6 +120,20 @@ export async function saveLastResult(result: CaptureResult) {
 
 export async function saveBatchState(state: BatchCaptureState) {
   await chrome.storage.local.set({ [LAST_BATCH_KEY]: state });
+}
+
+export async function getCreativeCaptureQueue(): Promise<CreativeCaptureQueueItem[]> {
+  const stored = await chrome.storage.local.get(CREATIVE_CAPTURE_QUEUE_KEY);
+  const value = stored[CREATIVE_CAPTURE_QUEUE_KEY];
+  return Array.isArray(value) ? (value as CreativeCaptureQueueItem[]) : [];
+}
+
+export async function saveCreativeCaptureQueue(queue: CreativeCaptureQueueItem[]) {
+  await chrome.storage.local.set({ [CREATIVE_CAPTURE_QUEUE_KEY]: queue });
+}
+
+export async function saveCreativeCaptureEvent(event: CreativeCaptureEvent) {
+  await chrome.storage.local.set({ [CREATIVE_CAPTURE_EVENT_KEY]: event });
 }
 
 export async function getPopupState() {
