@@ -69,8 +69,8 @@ describe("conversation import helpers", () => {
   it("mixes stable edits with inferred additions", () => {
     expect(
       conversationRevisionCounts(
-        [stable("a", "1"), unstable("x", "5")],
-        [stable("a", "2"), unstable("x", "5"), unstable("y", "6")],
+        [stable("a", "1"), unstable("d", "5")],
+        [stable("a", "2"), unstable("d", "5"), unstable("e", "6")],
       ),
     ).toEqual({
       addedCount: 1,
