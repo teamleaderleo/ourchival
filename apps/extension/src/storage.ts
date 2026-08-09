@@ -132,6 +132,16 @@ export async function saveCreativeCaptureQueue(queue: CreativeCaptureQueueItem[]
   await chrome.storage.local.set({ [CREATIVE_CAPTURE_QUEUE_KEY]: queue });
 }
 
+export async function saveCreativeCaptureCompletion(
+  queue: CreativeCaptureQueueItem[],
+  savedSourceKeys: string[],
+) {
+  await chrome.storage.local.set({
+    [CREATIVE_CAPTURE_QUEUE_KEY]: queue,
+    [INLINE_SAVED_KEYS]: savedSourceKeys,
+  });
+}
+
 export async function saveCreativeCaptureEvent(event: CreativeCaptureEvent) {
   await chrome.storage.local.set({ [CREATIVE_CAPTURE_EVENT_KEY]: event });
 }
