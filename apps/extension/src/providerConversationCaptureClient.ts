@@ -1,0 +1,156 @@
+import { buildConversationFingerprints } from "@ourchival/shared";
+import {
+  convexMutationUrl,
+  type SessionReportConnection,
+} from "./sessionReporting";
+import type { ProviderConversationArchive } from "./providerConversation";
+
+const maxConversationBytes = 5_000_000;
+
+class ConversationMutationError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "ConversationMutationError";
+  }
+}
+
+type ConvexMutationResponse<T> = {
+  status?: "success" | "error";
+  errorMessage?: string;
+  value?: T;
+};
+
+type ProviderCaptureResult = {
+  conversationId: string;
+  referenceId: string;
+  snapshotId: string;
+  duplicate: boolean;
+  addedCount: number;
+  changedCount: number;
+  removedCount: number;
+};
+
+export async function uploadProviderConversation(
+  connection: SessionReportConnection,
+  archive: ProviderConversationArchive,
+) {
+  const endpoint = convexMutationUrl(connection.endpoint);
+  if (!endpoint) throw new Error("The configured Convex endpoint is unsupported.");
+  const file = new Blob([JSON.stringify(archive)], {
+    type: "application/json;charset=utf-8",
+  });
+  if (file.size < 20 || file.size > maxConversationBytes) {
+    throw new Error("The captured conversation is too large to upload.");
+  }
+
+  const upload = await callMutation<{ uploadUrl: string }>(
+    endpoint,
+    "providerConversationCaptures:createUpload",
+    { deviceToken: connection.deviceToken },
+  );
+  const uploadResponse = await fetch(upload.uploadUrl, {
+    method: "POST",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+  const uploadBody = (await uploadResponse.json().catch(() => ({}))) as {
+    storageId?: string;
+  };
+  if (!uploadResponse.ok || !uploadBody.storageId) {
+    throw new Error(uploadResponse.statusText || "Conversation file upload failed.");
+  }
+
+  const fingerprintBundle = buildConversationFingerprints(archive.messages);
+  const commitArgs = {
+    deviceToken: connection.deviceToken,
+    storageId: uploadBody.storageId,
+    provider: archive.provider,
+    providerConversationId: archive.providerConversationId,
+    sourceUrl: archive.sourceUrl,
+    title: archive.title,
+    adapter: `${archive.provider}.dom.v2;identity=${fingerprintBundle.confidence}`,
+    messageCount: archive.messages.length,
+    messageFingerprints: fingerprintBundle.fingerprints,
+    capturedAt: Date.parse(archive.capturedAt),
+  };
+  try {
+    const result = await commitProviderCapture(endpoint, commitArgs);
+    return { ...result, identityConfidence: fingerprintBundle.confidence };
+  } catch (firstError) {
+    if (!isRetryableMutationError(firstError)) throw firstError;
+    try {
+      const result = await commitProviderCapture(endpoint, commitArgs);
+      return { ...result, identityConfidence: fingerprintBundle.confidence };
+    } catch {
+      throw firstError;
+    }
+  }
+}
+
+export function providerMessageFingerprint(
+  message: ProviderConversationArchive["messages"][number],
+) {
+  return buildConversationFingerprints([message]).fingerprints[0]!;
+}
+
+function commitProviderCapture(
+  endpoint: string,
+  args: Record<string, unknown>,
+) {
+  return callMutation<ProviderCaptureResult>(
+    endpoint,
+    "providerConversationCaptures:commitCapture",
+    args,
+  );
+}
+
+async function callMutation<T>(
+  endpoint: string,
+  path: string,
+  args: Record<string, unknown>,
+) {
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, args, format: "json" }),
+    });
+  } catch (error) {
+    throw new ConversationMutationError(
+      error instanceof Error ? error.message : "Conversation request failed.",
+      true,
+    );
+  }
+
+  const body = (await response.json().catch(() => ({}))) as ConvexMutationResponse<T>;
+  if (body.status === "error") {
+    throw new ConversationMutationError(
+      body.errorMessage || "Conversation mutation was rejected.",
+      false,
+    );
+  }
+  if (!response.ok) {
+    throw new ConversationMutationError(
+      body.errorMessage || response.statusText || "Conversation mutation failed.",
+      response.status === 408 ||
+        response.status === 425 ||
+        response.status === 429 ||
+        response.status >= 500,
+    );
+  }
+  if (body.value === undefined) {
+    throw new ConversationMutationError(
+      "Conversation mutation returned no result.",
+      true,
+    );
+  }
+  return body.value;
+}
+
+function isRetryableMutationError(error: unknown) {
+  return error instanceof ConversationMutationError && error.retryable;
+}

@@ -105,6 +105,7 @@
       .action-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
       .import-actions, .batch-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
       .batch-actions:empty { display: none; }
+      .conversation-capture-action { display: grid; gap: 6px; }
 
       button, .file-button {
         min-height: 36px;
@@ -189,5 +190,7 @@
   <body>
     <div id="root"></div>
     <script type="module" src="./popup.js"></script>
+    <script type="module" src="./conversationPopup.js"></script>
+    <script type="module" src="./artifactWarningPopup.js"></script>
   </body>
 </html>

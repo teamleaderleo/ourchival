@@ -1,11 +1,11 @@
-import { CaptureSessionPanel } from "./CaptureSessionPanel";
 import { ReferenceVault } from "./ReferenceVault";
 import { VaultAccessGate } from "./VaultAccessGate";
+import { WorkbenchDock } from "./WorkbenchDock";
 
 export default function HomePage() {
   return (
     <VaultAccessGate>
-      <CaptureSessionPanel />
+      <WorkbenchDock />
       <ReferenceVault />
     </VaultAccessGate>
   );

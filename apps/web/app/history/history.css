@@ -1,0 +1,105 @@
+.conversation-history-page {
+  display: grid;
+  gap: 20px;
+  min-height: 100vh;
+  padding: clamp(20px, 4vw, 48px);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.conversation-history-page > header,
+.conversation-history-page section > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.conversation-history-page h1,
+.conversation-history-page h2,
+.conversation-history-page p {
+  margin: 0;
+}
+
+.conversation-history-page > header p:last-child {
+  max-width: 680px;
+  margin-top: 7px;
+  color: var(--muted);
+}
+
+.conversation-history-page-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 0;
+}
+
+.conversation-history-page-layout > aside,
+.conversation-history-page-layout > section {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.conversation-history-page-layout > aside {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  max-height: calc(100vh - 180px);
+  overflow: auto;
+}
+
+.conversation-history-page-layout > aside > p {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.conversation-history-page-layout > section {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.conversation-history-page-layout > section > header span {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.conversation-history-page-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--panel-raised);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.conversation-history-page-row:hover,
+.conversation-history-page-row.active {
+  border-color: color-mix(in srgb, var(--accent), var(--line) 45%);
+  background: color-mix(in srgb, var(--panel-raised), var(--accent-soft) 18%);
+}
+
+.conversation-history-page-row span,
+.conversation-history-page-row small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+@media (max-width: 760px) {
+  .conversation-history-page-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .conversation-history-page-layout > aside {
+    max-height: 280px;
+  }
+}

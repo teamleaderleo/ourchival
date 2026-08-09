@@ -11,6 +11,18 @@ export type CaptureSessionReviewState =
   | "completed"
   | "deferred";
 
+export type CaptureSessionReviewDestination =
+  | "inbox"
+  | "keep"
+  | "later"
+  | "archive"
+  | "trash";
+
+export type CaptureSessionBatchDestination = Exclude<
+  CaptureSessionReviewDestination,
+  "inbox"
+>;
+
 export type CaptureSession = {
   _id: string;
   sessionKey: string;
@@ -41,20 +53,63 @@ export type CaptureSessionReference = {
   authorHandle?: string;
   capturedAt: number;
   triageState?: "inbox" | "kept" | "later";
+  reviewedAt?: number;
   archived: boolean;
+  deleted: boolean;
   favorite: boolean;
   previewUrl?: string | null;
   description?: string | null;
   siteName?: string | null;
 };
 
+export type CaptureSessionReviewResult = {
+  reference: Pick<
+    CaptureSessionReference,
+    "_id" | "triageState" | "reviewedAt" | "archived" | "deleted" | "favorite"
+  >;
+  hasRemaining: boolean;
+  reviewState: CaptureSessionReviewState;
+};
+
+export type CaptureSessionBatchResult = {
+  updated: number;
+  hasRemaining: boolean;
+  reviewState: CaptureSessionReviewState;
+};
+
+type CaptureSessionReferencePage = {
+  references: CaptureSessionReference[];
+  continueCursor: string;
+  isDone: boolean;
+};
+
 type AccessArgs = { accessKey: string };
 type ListArgs = AccessArgs & { limit?: number };
 type SyncArgs = AccessArgs & { referenceLimit?: number };
-type DetailArgs = AccessArgs & { sessionKey: string; limit?: number };
+type DetailArgs = AccessArgs & {
+  sessionKey: string;
+  limit?: number;
+  cursor?: string;
+};
 type ReviewArgs = AccessArgs & {
   sessionId: string;
   reviewState: CaptureSessionReviewState;
+};
+type ReviewReferenceArgs = AccessArgs & {
+  sessionKey: string;
+  referenceId: string;
+  destination?: CaptureSessionReviewDestination;
+  favorite?: boolean;
+};
+type FavoriteReferenceArgs = AccessArgs & {
+  sessionKey: string;
+  referenceId: string;
+  favorite: boolean;
+};
+type ReviewPendingBatchArgs = AccessArgs & {
+  sessionKey: string;
+  destination: CaptureSessionBatchDestination;
+  limit?: number;
 };
 
 const listRecentReference = makeFunctionReference<
@@ -70,13 +125,28 @@ const syncRecentReference = makeFunctionReference<
 const getReferencesReference = makeFunctionReference<
   "query",
   DetailArgs,
-  CaptureSessionReference[]
+  CaptureSessionReferencePage
 >("captureSessions:getReferences");
 const setReviewStateReference = makeFunctionReference<
   "mutation",
   ReviewArgs,
   CaptureSession
 >("captureSessions:setReviewState");
+const reviewReferenceReference = makeFunctionReference<
+  "mutation",
+  ReviewReferenceArgs,
+  CaptureSessionReviewResult
+>("captureSessions:reviewReference");
+const favoriteReferenceReference = makeFunctionReference<
+  "mutation",
+  FavoriteReferenceArgs,
+  CaptureSessionReviewResult
+>("captureSessionFavorites:setFavorite");
+const reviewPendingBatchReference = makeFunctionReference<
+  "mutation",
+  ReviewPendingBatchArgs,
+  CaptureSessionBatchResult
+>("captureSessionBatch:reviewPending");
 
 let client: ConvexHttpClient | undefined;
 
@@ -120,12 +190,17 @@ export function useCaptureSessions(limit = 24) {
 
 export function useCaptureSessionReferences(sessionKey?: string) {
   const [references, setReferences] = useState<CaptureSessionReference[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
     if (!sessionKey) {
       setReferences([]);
+      setCursor(undefined);
+      setHasMore(false);
       return [];
     }
     setLoading(true);
@@ -133,10 +208,12 @@ export function useCaptureSessionReferences(sessionKey?: string) {
     try {
       const next = await getClient().query(
         getReferencesReference,
-        withOwnerAccess({ sessionKey, limit: 300 }),
+        withOwnerAccess({ sessionKey, limit: 96 }),
       );
-      setReferences(next);
-      return next;
+      setReferences(next.references);
+      setCursor(next.isDone ? undefined : next.continueCursor);
+      setHasMore(!next.isDone);
+      return next.references;
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not load session references.",
@@ -147,11 +224,87 @@ export function useCaptureSessionReferences(sessionKey?: string) {
     }
   }, [sessionKey]);
 
+  const loadMore = useCallback(async () => {
+    if (!sessionKey || !cursor || loadingMore) return [];
+    setLoadingMore(true);
+    setError("");
+    try {
+      const next = await getClient().query(
+        getReferencesReference,
+        withOwnerAccess({ sessionKey, limit: 96, cursor }),
+      );
+      setReferences((current) => mergeReferences(current, next.references));
+      setCursor(next.isDone ? undefined : next.continueCursor);
+      setHasMore(!next.isDone);
+      return next.references;
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not load older session references.",
+      );
+      return [];
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [cursor, loadingMore, sessionKey]);
+
+  const applyReferencePatch = useCallback(
+    (patch: CaptureSessionReviewResult["reference"]) => {
+      setReferences((current) =>
+        current.map((reference) =>
+          reference._id === patch._id ? { ...reference, ...patch } : reference,
+        ),
+      );
+    },
+    [],
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  return { references, loading, error, refresh };
+  return {
+    references,
+    loading,
+    loadingMore,
+    error,
+    refresh,
+    loadMore,
+    hasMore,
+    applyReferencePatch,
+  };
+}
+
+export async function reviewCaptureSessionReference(args: {
+  sessionKey: string;
+  referenceId: string;
+  destination?: CaptureSessionReviewDestination;
+  favorite?: boolean;
+}) {
+  if (!args.destination && typeof args.favorite === "boolean") {
+    return await getClient().mutation(
+      favoriteReferenceReference,
+      withOwnerAccess({
+        sessionKey: args.sessionKey,
+        referenceId: args.referenceId,
+        favorite: args.favorite,
+      }),
+    );
+  }
+  return await getClient().mutation(
+    reviewReferenceReference,
+    withOwnerAccess(args),
+  );
+}
+
+export async function reviewCaptureSessionPendingBatch(args: {
+  sessionKey: string;
+  destination: CaptureSessionBatchDestination;
+  limit?: number;
+}) {
+  return await getClient().mutation(
+    reviewPendingBatchReference,
+    withOwnerAccess(args),
+  );
 }
 
 export async function setCaptureSessionReviewState(
@@ -162,6 +315,17 @@ export async function setCaptureSessionReviewState(
     setReviewStateReference,
     withOwnerAccess({ sessionId, reviewState }),
   );
+}
+
+function mergeReferences(
+  current: CaptureSessionReference[],
+  incoming: CaptureSessionReference[],
+) {
+  const seen = new Set(current.map((reference) => reference._id));
+  return [
+    ...current,
+    ...incoming.filter((reference) => !seen.has(reference._id)),
+  ];
 }
 
 function getClient() {

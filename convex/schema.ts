@@ -105,6 +105,94 @@ export default defineSchema({
     .index("by_drive_file_id", ["driveFileId"])
     .index("by_derivative_status", ["derivativeStatus"]),
 
+  referenceArtifacts: defineTable({
+    referenceId: v.id("references"),
+    kind: v.union(
+      v.literal("page_screenshot"),
+      v.literal("page_snapshot"),
+      v.literal("readable_text"),
+    ),
+    captureMethod: v.union(
+      v.literal("browser"),
+      v.literal("remote"),
+      v.literal("import"),
+    ),
+    provider: v.optional(v.string()),
+    version: v.optional(v.string()),
+    storageId: v.optional(v.id("_storage")),
+    mimeType: v.optional(v.string()),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    byteSize: v.optional(v.number()),
+    contentHash: v.optional(v.string()),
+    status: v.union(
+      v.literal("processing"),
+      v.literal("ready"),
+      v.literal("failed"),
+    ),
+    error: v.optional(v.string()),
+    retention: v.union(
+      v.literal("review"),
+      v.literal("pinned"),
+      v.literal("archival"),
+    ),
+    capturedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_reference", ["referenceId"])
+    .index("by_reference_kind", ["referenceId", "kind"])
+    .index("by_storage_id", ["storageId"])
+    .index("by_status", ["status"])
+    .index("by_retention", ["retention"]),
+
+  conversations: defineTable({
+    referenceId: v.id("references"),
+    provider: v.union(
+      v.literal("generic"),
+      v.literal("chatgpt"),
+      v.literal("claude"),
+      v.literal("gemini"),
+    ),
+    providerConversationId: v.optional(v.string()),
+    canonicalUrl: v.optional(v.string()),
+    title: v.string(),
+    latestSnapshotId: v.optional(v.id("conversationSnapshots")),
+    snapshotCount: v.number(),
+    firstCapturedAt: v.number(),
+    lastCapturedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_reference", ["referenceId"])
+    .index("by_provider_external", ["provider", "providerConversationId"])
+    .index("by_canonical_url", ["canonicalUrl"])
+    .index("by_updated_at", ["updatedAt"]),
+
+  conversationSnapshots: defineTable({
+    conversationId: v.id("conversations"),
+    storageId: v.id("_storage"),
+    contentHash: v.string(),
+    messageCount: v.number(),
+    messageFingerprints: v.array(v.string()),
+    captureMethod: v.union(v.literal("import"), v.literal("browser")),
+    format: v.union(
+      v.literal("json"),
+      v.literal("markdown"),
+      v.literal("provider"),
+    ),
+    adapter: v.string(),
+    previousSnapshotId: v.optional(v.id("conversationSnapshots")),
+    addedCount: v.number(),
+    changedCount: v.number(),
+    removedCount: v.number(),
+    capturedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_conversation_hash", ["conversationId", "contentHash"])
+    .index("by_captured_at", ["capturedAt"]),
+
   boards: defineTable({
     name: v.string(),
     description: v.optional(v.string()),

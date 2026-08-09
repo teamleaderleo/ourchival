@@ -1,6 +1,18 @@
 import type { ParsedXSource } from "@ourchival/parsers";
-import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
+import type {
+  CapturePayload,
+  PageReadableTextCapture,
+  PageSnapshot,
+  PageStructuredSnapshotCapture,
+} from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
+import {
+  captureVisiblePageScreenshot,
+  uploadPageScreenshot,
+} from "./pageScreenshot";
+import { uploadStructuredPageSnapshot } from "./pageStructuredSnapshot";
+import { uploadReadablePageText } from "./pageText";
+import { reportCaptureSession } from "./sessionReporting";
 import {
   getSettings,
   LAST_BATCH_KEY,
@@ -102,6 +114,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
+  const saveWholePage = info.menuItemId === "save-page-to-ourchival";
+  const pageScreenshot = saveWholePage
+    ? await captureVisiblePageScreenshot(tab)
+    : undefined;
+  const readableText = saveWholePage
+    ? readableTextCapture(context?.pageSnapshot)
+    : undefined;
+  const structuredSnapshot = saveWholePage
+    ? structuredSnapshotCapture(context?.pageSnapshot)
+    : undefined;
   const payload =
     info.menuItemId === "save-post-to-ourchival" &&
     context?.parsedSource?.platform === "x"
@@ -113,6 +135,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     const connection = await getCaptureConnection();
     const result = await capturePayload(connection, payload);
+    if (result.ok) {
+      await uploadPageArtifacts(connection, result.body.referenceId, {
+        pageScreenshot,
+        readableText,
+        structuredSnapshot,
+      });
+    }
     await markResult(toCaptureResult(result));
   } catch (error) {
     await markResult({
@@ -179,6 +208,17 @@ async function getContextCapture(tabId: number | undefined) {
   }
 }
 
+async function getPageSnapshot(tabId: number | undefined) {
+  if (typeof tabId !== "number") return undefined;
+  try {
+    return (await chrome.tabs.sendMessage(tabId, {
+      type: "OURCHIVAL_SNAPSHOT_PAGE",
+    })) as PageSnapshot | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function captureTabs(mode: TabCaptureMode) {
   const tabs = await queryTabs(mode);
   const source: BatchCaptureSource =
@@ -187,9 +227,40 @@ async function captureTabs(mode: TabCaptureMode) {
       : mode === "selected"
         ? "selected_tabs"
         : "window";
+  const currentSnapshot = mode === "current"
+    ? await getPageSnapshot(tabs[0]?.id)
+    : undefined;
+  const pageScreenshot = mode === "current"
+    ? await captureVisiblePageScreenshot(tabs[0])
+    : undefined;
+  const readableText = readableTextCapture(currentSnapshot);
+  const structuredSnapshot = structuredSnapshotCapture(currentSnapshot);
+
   return await runBatch(
     source,
-    tabs.map((tab) => ({ url: tab.url, title: tab.title, tabId: tab.id })),
+    tabs.map((tab, index) => {
+      const currentPayload =
+        index === 0 && currentSnapshot && tab.url
+          ? {
+              kind: "page" as const,
+              sourceUrl: tab.url,
+              ...pageSnapshotFields(currentSnapshot),
+              ...(!currentSnapshot.title && tab.title
+                ? { pageTitle: tab.title }
+                : {}),
+              capturedAt: new Date().toISOString(),
+            }
+          : undefined;
+      return {
+        url: tab.url,
+        title: tab.title,
+        tabId: tab.id,
+        ...(currentPayload ? { payload: currentPayload } : {}),
+        ...(index === 0 && pageScreenshot ? { pageScreenshot } : {}),
+        ...(index === 0 && readableText ? { readableText } : {}),
+        ...(index === 0 && structuredSnapshot ? { structuredSnapshot } : {}),
+      };
+    }),
   );
 }
 
@@ -260,6 +331,7 @@ async function continueBatch(
 
   activeJobId = state.jobId;
   state.running = true;
+  await reportCaptureSession(connection, state, { force: true });
   await chrome.action.setBadgeText({ text: "…" });
   await chrome.action.setBadgeBackgroundColor({ color: "#6f5bb7" });
 
@@ -271,8 +343,10 @@ async function continueBatch(
 
       if (!isCapturableUrl(sourceUrl)) {
         state.skipped += 1;
+        clearPageArtifacts(item);
         advanceCheckpoint(state);
         await saveBatchState({ ...state });
+        await reportCaptureSession(connection, state);
         continue;
       }
 
@@ -294,6 +368,7 @@ async function continueBatch(
         if (result.body.alreadySaved) state.duplicates += 1;
         else state.saved += 1;
         if (typeof item.tabId === "number") state.successfulTabIds.push(item.tabId);
+        await uploadPageArtifacts(connection, result.body.referenceId, item);
         await saveLastCapture(payload);
         await saveLastResult(toCaptureResult(result));
       } catch (error) {
@@ -304,16 +379,20 @@ async function continueBatch(
           ...(item.payload ? { payload: item.payload } : {}),
           message: errorMessage(error, "Capture failed."),
         });
+      } finally {
+        clearPageArtifacts(item);
       }
 
       advanceCheckpoint(state);
       await saveBatchState({ ...state });
+      await reportCaptureSession(connection, state);
     }
 
     state.running = false;
     state.completedAt = new Date().toISOString();
     state.currentLabel = undefined;
     await saveBatchState({ ...state });
+    await reportCaptureSession(connection, state, { force: true });
     const successful = state.saved + state.duplicates;
     await chrome.action.setBadgeText({
       text:
@@ -329,9 +408,40 @@ async function continueBatch(
       color: state.failed ? "#8a5d3d" : "#3d6b3d",
     });
     return state;
+  } catch (error) {
+    state.running = false;
+    state.currentLabel = errorMessage(error, "The bulk capture was interrupted.");
+    await saveBatchState({ ...state });
+    await reportCaptureSession(connection, state, { force: true });
+    throw error;
   } finally {
     if (activeJobId === state.jobId) activeJobId = undefined;
   }
+}
+
+async function uploadPageArtifacts(
+  connection: CaptureConnection,
+  referenceId: string | undefined,
+  artifacts: Pick<
+    BatchCaptureItem,
+    "pageScreenshot" | "readableText" | "structuredSnapshot"
+  >,
+) {
+  await Promise.all([
+    uploadPageScreenshot(connection, referenceId, artifacts.pageScreenshot),
+    uploadReadablePageText(connection, referenceId, artifacts.readableText),
+    uploadStructuredPageSnapshot(
+      connection,
+      referenceId,
+      artifacts.structuredSnapshot,
+    ),
+  ]);
+}
+
+function clearPageArtifacts(item: BatchCaptureItem) {
+  item.pageScreenshot = undefined;
+  item.readableText = undefined;
+  item.structuredSnapshot = undefined;
 }
 
 function advanceCheckpoint(state: BatchCaptureState) {
@@ -510,6 +620,23 @@ function pageSnapshotFields(
     ...(snapshot.author ? { pageAuthor: snapshot.author } : {}),
     ...(snapshot.contentType ? { contentType: snapshot.contentType } : {}),
   };
+}
+
+function readableTextCapture(
+  snapshot: PageSnapshot | undefined,
+): PageReadableTextCapture | undefined {
+  if (!snapshot?.readableText || !snapshot.readableTextSource) return undefined;
+  return {
+    text: snapshot.readableText,
+    source: snapshot.readableTextSource,
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+function structuredSnapshotCapture(
+  snapshot: PageSnapshot | undefined,
+): PageStructuredSnapshotCapture | undefined {
+  return snapshot?.structuredSnapshot;
 }
 
 function buildXPayload(

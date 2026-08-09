@@ -1,0 +1,42 @@
+.capture-session-batch-actions {
+  display: grid;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 68%);
+  border-radius: 15px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--accent-soft), var(--panel-raised) 76%);
+}
+
+.capture-session-batch-actions > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.capture-session-batch-actions strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.capture-session-batch-actions span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.capture-session-batch-actions > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+@media (max-width: 760px) {
+  .capture-session-batch-actions > div:last-child {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .capture-session-batch-actions > div:last-child {
+    grid-template-columns: 1fr;
+  }
+}
