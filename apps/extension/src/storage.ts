@@ -3,6 +3,7 @@ import type {
   PageReadableTextCapture,
   PageScreenshotCapture,
   PageStructuredSnapshotCapture,
+  SourcePlatform,
 } from "@ourchival/shared";
 
 export type CaptureResult = {
@@ -31,7 +32,8 @@ export type BatchCaptureSource =
   | "url_list"
   | "bookmarks"
   | "retry"
-  | "x_post";
+  | "x_post"
+  | "creative_item";
 
 export type BatchCaptureItem = {
   url?: string;
@@ -72,11 +74,13 @@ export type BatchCaptureState = {
 export type CreativeCaptureQueueItem = {
   id: string;
   sourceKey?: string;
-  source: BatchCaptureSource;
+  platform: SourcePlatform;
   payloads: CapturePayload[];
   queuedAt: string;
   attempts: number;
   lastError?: string;
+  /** Legacy #67 field retained only while reading older persisted queue entries. */
+  source?: BatchCaptureSource;
 };
 
 export type CreativeCaptureEvent = {
@@ -125,7 +129,11 @@ export async function saveBatchState(state: BatchCaptureState) {
 export async function getCreativeCaptureQueue(): Promise<CreativeCaptureQueueItem[]> {
   const stored = await chrome.storage.local.get(CREATIVE_CAPTURE_QUEUE_KEY);
   const value = stored[CREATIVE_CAPTURE_QUEUE_KEY];
-  return Array.isArray(value) ? (value as CreativeCaptureQueueItem[]) : [];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .map(normalizeCreativeQueueItem)
+    .filter((item): item is CreativeCaptureQueueItem => Boolean(item));
 }
 
 export async function saveCreativeCaptureQueue(queue: CreativeCaptureQueueItem[]) {
@@ -171,4 +179,64 @@ export function normalizeSiteRoot(value: string | undefined) {
   return trimmed
     .replace(/\/(capture|clipper-exchange)\/?$/i, "")
     .replace(/\/$/, "");
+}
+
+function normalizeCreativeQueueItem(
+  value: Record<string, unknown>,
+): CreativeCaptureQueueItem | undefined {
+  if (
+    typeof value.id !== "string" ||
+    !value.id ||
+    !Array.isArray(value.payloads) ||
+    typeof value.queuedAt !== "string"
+  ) {
+    return undefined;
+  }
+  const legacySource = isBatchCaptureSource(value.source) ? value.source : undefined;
+  const platform = isSourcePlatform(value.platform)
+    ? value.platform
+    : legacySource === "x_post"
+      ? "x"
+      : "generic";
+
+  return {
+    id: value.id,
+    ...(typeof value.sourceKey === "string" && value.sourceKey
+      ? { sourceKey: value.sourceKey }
+      : {}),
+    platform,
+    payloads: value.payloads as CapturePayload[],
+    queuedAt: value.queuedAt,
+    attempts:
+      typeof value.attempts === "number" && Number.isFinite(value.attempts)
+        ? value.attempts
+        : 0,
+    ...(typeof value.lastError === "string" ? { lastError: value.lastError } : {}),
+    ...(legacySource ? { source: legacySource } : {}),
+  };
+}
+
+function isSourcePlatform(value: unknown): value is SourcePlatform {
+  return (
+    value === "x" ||
+    value === "pinterest" ||
+    value === "pixiv" ||
+    value === "danbooru" ||
+    value === "discord" ||
+    value === "manual" ||
+    value === "generic"
+  );
+}
+
+function isBatchCaptureSource(value: unknown): value is BatchCaptureSource {
+  return (
+    value === "current_tab" ||
+    value === "selected_tabs" ||
+    value === "window" ||
+    value === "url_list" ||
+    value === "bookmarks" ||
+    value === "retry" ||
+    value === "x_post" ||
+    value === "creative_item"
+  );
 }
