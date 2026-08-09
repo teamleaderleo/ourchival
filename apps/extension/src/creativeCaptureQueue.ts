@@ -6,6 +6,7 @@ import type {
 
 export const MAX_CREATIVE_CAPTURE_QUEUE_ITEMS = 500;
 export const MAX_CREATIVE_CAPTURE_PAYLOADS_PER_ITEM = 16;
+export const MAX_CREATIVE_CAPTURE_QUEUE_BYTES = 4_000_000;
 
 export function createCreativeCaptureQueueItem(args: {
   id: string;
@@ -54,7 +55,13 @@ export function appendCreativeCaptureQueueItem(
     );
   }
 
-  return [...withoutSameSource, item];
+  const next = [...withoutSameSource, item];
+  if (serializedByteLength(next) > MAX_CREATIVE_CAPTURE_QUEUE_BYTES) {
+    throw new Error(
+      `Creative capture queue exceeds its ${MAX_CREATIVE_CAPTURE_QUEUE_BYTES}-byte storage budget.`,
+    );
+  }
+  return next;
 }
 
 export function removeCreativeCaptureQueueItem(
@@ -78,4 +85,8 @@ export function recordCreativeCaptureFailure(
         }
       : item,
   );
+}
+
+function serializedByteLength(value: unknown) {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
