@@ -43,13 +43,25 @@ describe("creative capture queue", () => {
     ]);
   });
 
-  it("bounds the queue to the newest items", () => {
-    let queue = [] as ReturnType<typeof item>[];
-    for (let index = 0; index <= MAX_CREATIVE_CAPTURE_QUEUE_ITEMS; index += 1) {
-      queue = appendCreativeCaptureQueueItem(queue, item(String(index)));
-    }
-    expect(queue).toHaveLength(MAX_CREATIVE_CAPTURE_QUEUE_ITEMS);
-    expect(queue[0]?.id).toBe("1");
+  it("rejects a new distinct save when the queue is full", () => {
+    const queue = Array.from({ length: MAX_CREATIVE_CAPTURE_QUEUE_ITEMS }, (_, index) =>
+      item(String(index)),
+    );
+    expect(() =>
+      appendCreativeCaptureQueueItem(queue, item("overflow")),
+    ).toThrow(/queue is full/i);
+    expect(queue[0]?.id).toBe("0");
+  });
+
+  it("still replaces the same source when the queue is full", () => {
+    const queue = Array.from({ length: MAX_CREATIVE_CAPTURE_QUEUE_ITEMS }, (_, index) =>
+      item(String(index)),
+    );
+    const replacement = item("replacement", "x:0");
+    const next = appendCreativeCaptureQueueItem(queue, replacement);
+    expect(next).toHaveLength(MAX_CREATIVE_CAPTURE_QUEUE_ITEMS);
+    expect(next.some((entry) => entry.id === "0")).toBe(false);
+    expect(next.at(-1)).toEqual(replacement);
   });
 
   it("records failures without dropping the queued capture", () => {
