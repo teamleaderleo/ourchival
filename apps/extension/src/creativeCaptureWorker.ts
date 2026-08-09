@@ -112,7 +112,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
         updatedAt: new Date().toISOString(),
       }).catch(() => undefined);
       sendResponse({ ok: true, queued: true, queueId: item.id });
-      void drainCreativeCaptureQueue();
+      void drainCreativeCaptureQueue().catch(() => undefined);
     })
     .catch((error) => {
       sendResponse({
@@ -126,7 +126,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CREATIVE_QUEUE_RECOVERY_ALARM) {
-    void drainCreativeCaptureQueue();
+    void drainCreativeCaptureQueue().catch(() => undefined);
   }
 });
 
@@ -148,40 +148,65 @@ async function drainCreativeCaptureQueue() {
       if (!item) continue;
 
       activeQueueId = item.id;
-      await saveCreativeCaptureEvent({
+      void saveCreativeCaptureEvent({
         queueId: item.id,
         ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
         state: "saving",
         updatedAt: new Date().toISOString(),
-      });
+      }).catch(() => undefined);
 
       try {
-        await captureQueuedGroup(item);
-        await mutateCreativeCaptureQueue((current) => ({
-          queue: removeCreativeCaptureQueueItem(current, item.id),
-          result: undefined,
-        }));
-        if (item.sourceKey) await rememberSavedSourceKey(item.sourceKey);
-        await saveCreativeCaptureEvent({
+        try {
+          await captureQueuedGroup(item);
+        } catch (error) {
+          const message = errorMessage(error, "Creative capture failed.");
+          let queueWriteFailed = false;
+          try {
+            await mutateCreativeCaptureQueue((current) => ({
+              queue: recordCreativeCaptureFailure(current, item.id, message),
+              result: undefined,
+            }));
+          } catch {
+            queueWriteFailed = true;
+          }
+          void saveCreativeCaptureEvent({
+            queueId: item.id,
+            ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
+            state: "warning",
+            updatedAt: new Date().toISOString(),
+            error: message,
+          }).catch(() => undefined);
+          if (queueWriteFailed || shouldStopDrain(error)) break;
+          continue;
+        }
+
+        // Remote capture has completed. Removing the durable queue entry is the
+        // only critical local success write; Saved-cache/UI updates are helpers.
+        try {
+          await mutateCreativeCaptureQueue((current) => ({
+            queue: removeCreativeCaptureQueueItem(current, item.id),
+            result: undefined,
+          }));
+        } catch (error) {
+          void saveCreativeCaptureEvent({
+            queueId: item.id,
+            ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
+            state: "warning",
+            updatedAt: new Date().toISOString(),
+            error: `Saved remotely; local queue cleanup failed: ${errorMessage(error, "storage error")}`,
+          }).catch(() => undefined);
+          break;
+        }
+
+        if (item.sourceKey) {
+          void rememberSavedSourceKey(item.sourceKey).catch(() => undefined);
+        }
+        void saveCreativeCaptureEvent({
           queueId: item.id,
           ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
           state: "saved",
           updatedAt: new Date().toISOString(),
-        });
-      } catch (error) {
-        const message = errorMessage(error, "Creative capture failed.");
-        await mutateCreativeCaptureQueue((current) => ({
-          queue: recordCreativeCaptureFailure(current, item.id, message),
-          result: undefined,
-        }));
-        await saveCreativeCaptureEvent({
-          queueId: item.id,
-          ...(item.sourceKey ? { sourceKey: item.sourceKey } : {}),
-          state: "warning",
-          updatedAt: new Date().toISOString(),
-          error: message,
-        });
-        if (shouldStopDrain(error)) break;
+        }).catch(() => undefined);
       } finally {
         if (activeQueueId === item.id) activeQueueId = undefined;
       }
@@ -196,7 +221,7 @@ async function drainCreativeCaptureQueue() {
       if (remaining.length === 0) {
         await chrome.alarms.clear(CREATIVE_QUEUE_RECOVERY_ALARM);
       } else if (remaining.some((item) => !attemptedIds.has(item.id))) {
-        void drainCreativeCaptureQueue();
+        void drainCreativeCaptureQueue().catch(() => undefined);
       }
     } catch {
       // The persisted queue remains available for the next worker startup.
@@ -410,7 +435,9 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-void readCreativeCaptureQueue().then((queue) => {
-  if (queue.length > 0) void ensureRecoveryWakeup().catch(() => undefined);
-});
-void drainCreativeCaptureQueue();
+void readCreativeCaptureQueue()
+  .then((queue) => {
+    if (queue.length > 0) void ensureRecoveryWakeup().catch(() => undefined);
+  })
+  .catch(() => undefined);
+void drainCreativeCaptureQueue().catch(() => undefined);
