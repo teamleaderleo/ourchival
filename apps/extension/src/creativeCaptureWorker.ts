@@ -42,6 +42,16 @@ type CaptureConnection = {
   deviceToken: string;
 };
 
+class CaptureHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "CaptureHttpError";
+  }
+}
+
 const MAX_INLINE_SAVED_KEYS = 20_000;
 let queueMutationTail: Promise<void> = Promise.resolve();
 let queueDraining = false;
@@ -85,13 +95,15 @@ chrome.runtime.onMessage.addListener((message: QueueCaptureMessage, _sender, sen
 async function drainCreativeCaptureQueue() {
   if (queueDraining) return;
   queueDraining = true;
+  let attemptedIds = new Set<string>();
 
   try {
     const queuedAtStart = await getCreativeCaptureQueue();
     const ids = queuedAtStart.map((item) => item.id);
+    attemptedIds = new Set(ids);
 
     // Attempt each item that existed when this drain began once. Failures stay
-    // queued for the next worker start or later enqueue instead of hot-looping.
+    // queued for a later worker wake-up instead of hot-looping.
     for (const id of ids) {
       const queue = await getCreativeCaptureQueue();
       const item = queue.find((candidate) => candidate.id === id);
@@ -130,10 +142,22 @@ async function drainCreativeCaptureQueue() {
           updatedAt: new Date().toISOString(),
           error: message,
         });
+        if (shouldStopDrain(error)) break;
       }
     }
   } finally {
     queueDraining = false;
+    // An enqueue that lands while a drain is active sees queueDraining=true and
+    // returns. Run one follow-up pass only for IDs that arrived after this pass
+    // began; failed IDs from this pass wait for a later wake-up.
+    try {
+      const remaining = await getCreativeCaptureQueue();
+      if (remaining.some((item) => !attemptedIds.has(item.id))) {
+        void drainCreativeCaptureQueue();
+      }
+    } catch {
+      // The persisted queue remains available for the next worker startup.
+    }
   }
 }
 
@@ -150,7 +174,10 @@ async function captureQueuedGroup(item: CreativeCaptureQueueItem) {
     await saveLastCapture(payload);
     await saveLastResult(toCaptureResult(result));
     if (!result.ok) {
-      throw new Error(result.error || `Capture failed with status ${result.status}`);
+      throw new CaptureHttpError(
+        result.error || `Capture failed with status ${result.status}`,
+        result.status,
+      );
     }
   }
 }
@@ -207,6 +234,16 @@ function toCaptureResult(
     existingReference: result.body.existingReference,
     savedAt: new Date().toISOString(),
   };
+}
+
+function shouldStopDrain(error: unknown) {
+  if (!(error instanceof CaptureHttpError)) return true;
+  return (
+    error.status === 401 ||
+    error.status === 403 ||
+    error.status === 429 ||
+    error.status >= 500
+  );
 }
 
 async function rememberSavedSourceKey(sourceKey: string) {
