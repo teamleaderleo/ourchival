@@ -1,6 +1,7 @@
 @import "./styles/base.css";
 @import "./styles/access.css";
 @import "./styles/layout.css";
+@import "./styles/tag-filter.css";
 @import "./styles/cards.css";
 @import "./styles/quick-look.css";
 @import "./styles/enrichment.css";
