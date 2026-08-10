@@ -80,9 +80,9 @@ export function ReferenceQuickLook({
             'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
           ) ?? [],
         );
-        if (focusable.length > 0) {
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (first && last) {
           if (event.shiftKey && document.activeElement === first) {
             event.preventDefault();
             last.focus();
