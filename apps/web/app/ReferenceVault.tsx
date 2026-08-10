@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ReferenceCard } from "./ReferenceCards";
+import { ReferenceQuickLook } from "./ReferenceQuickLook";
 import { SavedSearchPanel } from "./SavedSearchPanel";
 import { SelectedReference } from "./SelectedReference";
 import { TagFilterBar } from "./TagFilterBar";
@@ -13,11 +14,46 @@ export function ReferenceVault() {
   const vault = useReferenceVault();
   const [linkDomain, setLinkDomain] = useState("");
   const [linkType, setLinkType] = useState("");
+  const [quickLookId, setQuickLookId] = useState<string | null>(null);
   const currentViewLabel = viewLabels[vault.activeView];
   const isReviewView = vault.activeView === "inbox" || vault.activeView === "later";
   const displayedCount = vault.query
     ? `${vault.filteredReferences.length}${vault.hasMore ? "+" : ""}`
     : String(vault.activeCount);
+  const quickLookReference = quickLookId
+    ? vault.filteredReferences.find((reference) => reference._id === quickLookId) ?? null
+    : null;
+
+  useEffect(() => {
+    function handleQuickLookKey(event: KeyboardEvent) {
+      if (event.key !== " " || quickLookReference) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      if (!vault.selectedReference) return;
+      event.preventDefault();
+      setQuickLookId(vault.selectedReference._id);
+    }
+
+    window.addEventListener("keydown", handleQuickLookKey);
+    return () => window.removeEventListener("keydown", handleQuickLookKey);
+  }, [quickLookReference, vault.selectedReference]);
+
+  function openQuickLook(referenceId: string) {
+    vault.setSelectedId(referenceId);
+    setQuickLookId(referenceId);
+  }
+
+  function selectQuickLookReference(referenceId: string) {
+    vault.setSelectedId(referenceId);
+    setQuickLookId(referenceId);
+  }
 
   function applyLinkFilters() {
     const freeText = stripLinkFilterTokens(vault.query);
@@ -357,6 +393,7 @@ export function ReferenceVault() {
                   reference={reference}
                   selected={reference._id === vault.selectedReference?._id}
                   onSelect={() => vault.setSelectedId(reference._id)}
+                  onQuickLook={() => openQuickLook(reference._id)}
                   onToggleFavorite={() => void vault.toggleFavorite(reference)}
                 />
               ))
@@ -416,6 +453,17 @@ export function ReferenceVault() {
           )}
         </aside>
       </section>
+
+      {quickLookReference ? (
+        <ReferenceQuickLook
+          reference={quickLookReference}
+          references={vault.filteredReferences}
+          onSelect={selectQuickLookReference}
+          onClose={() => setQuickLookId(null)}
+          onOpen={vault.markReferenceOpened}
+          onToggleFavorite={vault.toggleFavorite}
+        />
+      ) : null}
     </div>
   );
 }
