@@ -1,0 +1,67 @@
+.inspector-organization {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.inspector-organization > details {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-raised), transparent 28%);
+}
+
+.inspector-organization > details > summary {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  color: var(--muted-strong);
+  cursor: pointer;
+  list-style: none;
+}
+
+.inspector-organization > details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.inspector-organization > details > summary::before {
+  content: "▸";
+  flex: none;
+  color: var(--muted);
+  font-size: 0.62rem;
+  transition: transform 120ms ease;
+}
+
+.inspector-organization > details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.inspector-organization > details > summary > span {
+  margin-right: auto;
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 760;
+}
+
+.inspector-organization > details > summary > small {
+  color: var(--muted);
+  font-size: 0.59rem;
+}
+
+.inspector-organization-body {
+  display: grid;
+  border-top: 1px solid color-mix(in srgb, var(--line), transparent 28%);
+}
+
+.inspector-organization-body > :first-child {
+  border-top: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inspector-organization > details > summary::before {
+    transition: none;
+  }
+}
