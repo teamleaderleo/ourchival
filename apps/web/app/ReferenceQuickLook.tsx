@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   referenceDisplayTitle,
   referenceMode,
@@ -25,6 +25,8 @@ export function ReferenceQuickLook({
   onToggleFavorite: (reference: SavedReference) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const index = useMemo(
     () => references.findIndex((item) => item._id === reference._id),
     [reference._id, references],
@@ -49,8 +51,15 @@ export function ReferenceQuickLook({
   }, [imageUrl]);
 
   useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     document.documentElement.classList.add("quick-look-open");
-    return () => document.documentElement.classList.remove("quick-look-open");
+    closeButtonRef.current?.focus();
+    return () => {
+      document.documentElement.classList.remove("quick-look-open");
+      previousFocus?.focus();
+    };
   }, []);
 
   useEffect(() => {
@@ -65,6 +74,26 @@ export function ReferenceQuickLook({
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
+      if (event.key === "Tab") {
+        const focusable = Array.from(
+          panelRef.current?.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
+          ) ?? [],
+        );
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+        event.stopPropagation();
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -110,6 +139,7 @@ export function ReferenceQuickLook({
       }}
     >
       <section
+        ref={panelRef}
         className="quick-look-panel"
         role="dialog"
         aria-modal="true"
@@ -135,6 +165,7 @@ export function ReferenceQuickLook({
               {reference.favorite ? "★" : "☆"}
             </button>
             <button
+              ref={closeButtonRef}
               type="button"
               className="button ghost quick-look-close"
               onClick={onClose}
