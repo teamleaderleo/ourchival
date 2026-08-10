@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { InspectorOrganization } from "./InspectorOrganization";
 import { ReferenceCard } from "./ReferenceCards";
 import { ReferenceQuickLook } from "./ReferenceQuickLook";
 import { SavedSearchPanel } from "./SavedSearchPanel";
@@ -435,14 +436,20 @@ export function ReferenceVault() {
             ) : null}
           </div>
           {vault.selectedReference ? (
-            <SelectedReference
-              key={vault.selectedReference._id}
-              reference={vault.selectedReference}
-              onMove={vault.moveReference}
-              onOpen={vault.markReferenceOpened}
-              onToggleFavorite={vault.toggleFavorite}
-              onSaveDetails={vault.saveDetails}
-            />
+            <>
+              <SelectedReference
+                key={vault.selectedReference._id}
+                reference={vault.selectedReference}
+                onMove={vault.moveReference}
+                onOpen={vault.markReferenceOpened}
+                onToggleFavorite={vault.toggleFavorite}
+                onSaveDetails={vault.saveDetails}
+              />
+              <InspectorOrganization
+                key={`organization:${vault.selectedReference._id}`}
+                reference={vault.selectedReference}
+              />
+            </>
           ) : (
             <div className="inspector-empty">
               <span aria-hidden="true">↖</span>
