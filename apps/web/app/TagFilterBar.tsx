@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { BatchOrganizationBar } from "./BatchOrganizationBar";
 import { BoardPanel } from "./BoardPanel";
 import { EnrichmentQueuePanel } from "./EnrichmentQueuePanel";
@@ -15,6 +16,12 @@ export function TagFilterBar({
 }) {
   const tags = useAllReferenceTags();
   const activeSlug = tagToken(query);
+  const [tagSearch, setTagSearch] = useState("");
+  const activeTag = tags.find((tag) => tag.slug === activeSlug);
+  const visibleTags = useMemo(
+    () => tagChoices(tags, tagSearch, activeSlug, 12),
+    [activeSlug, tagSearch, tags],
+  );
 
   function applyTag(slug: string) {
     const text = stripTagToken(query);
@@ -24,7 +31,7 @@ export function TagFilterBar({
   return (
     <>
       {tags.length > 0 ? (
-        <div className="tag-filter-bar" aria-label="Filter by tag">
+        <div className="tag-filter-bar searchable" aria-label="Filter by tag">
           <label>
             <span>Tag</span>
             <select
@@ -39,17 +46,55 @@ export function TagFilterBar({
               ))}
             </select>
           </label>
-          <div className="tag-filter-chips" aria-label="Recent tag choices">
-            {tags.slice(0, 8).map((tag) => (
-              <button
-                key={tag._id}
-                type="button"
-                className={activeSlug === tag.slug ? "active" : ""}
-                onClick={() => applyTag(activeSlug === tag.slug ? "" : tag.slug)}
-              >
-                #{tag.name}
+          <label className="tag-filter-search">
+            <span>Find</span>
+            <div>
+              <input
+                type="search"
+                value={tagSearch}
+                onChange={(event) => setTagSearch(event.target.value)}
+                placeholder="Search tag catalog…"
+                aria-label="Search tag catalog"
+              />
+              {tagSearch ? (
+                <button
+                  type="button"
+                  onClick={() => setTagSearch("")}
+                  aria-label="Clear tag search"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+          </label>
+          <div className="tag-filter-chips" aria-label="Tag choices">
+            {visibleTags.length > 0 ? (
+              visibleTags.map((tag) => (
+                <button
+                  key={tag._id}
+                  type="button"
+                  className={activeSlug === tag.slug ? "active" : ""}
+                  onClick={() => applyTag(activeSlug === tag.slug ? "" : tag.slug)}
+                  title={activeSlug === tag.slug ? `Clear #${tag.name}` : `Filter by #${tag.name}`}
+                >
+                  #{tag.name}
+                </button>
+              ))
+            ) : (
+              <span className="tag-filter-empty">No matching tags</span>
+            )}
+          </div>
+          <div className="tag-filter-status" aria-live="polite">
+            <span>
+              {tagSearch.trim()
+                ? `${visibleTags.length} shown · ${tags.length} total`
+                : `${tags.length} tags`}
+            </span>
+            {activeTag ? (
+              <button type="button" onClick={() => applyTag("")}>
+                Clear #{activeTag.name}
               </button>
-            ))}
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -59,6 +104,25 @@ export function TagFilterBar({
       <EnrichmentQueuePanel />
     </>
   );
+}
+
+export function tagChoices<T extends { slug: string; name: string }>(
+  tags: T[],
+  search: string,
+  activeSlug: string,
+  limit: number,
+) {
+  const normalized = search.trim().toLocaleLowerCase();
+  const active = tags.find((tag) => tag.slug === activeSlug);
+  const matches = normalized
+    ? tags.filter((tag) =>
+        `${tag.name} ${tag.slug}`.toLocaleLowerCase().includes(normalized),
+      )
+    : tags;
+  const ordered = active
+    ? [active, ...matches.filter((tag) => tag.slug !== active.slug)]
+    : matches;
+  return ordered.slice(0, Math.max(1, limit));
 }
 
 function tagToken(value: string) {
