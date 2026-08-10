@@ -21,11 +21,13 @@ export function ReferenceCard({
   reference,
   selected,
   onSelect,
+  onQuickLook,
   onToggleFavorite,
 }: {
   reference: SavedReference;
   selected: boolean;
   onSelect: () => void;
+  onQuickLook?: () => void;
   onToggleFavorite: () => void;
 }) {
   const asset = reference.assets[0];
@@ -61,9 +63,16 @@ export function ReferenceCard({
         className="card-select"
         aria-pressed={selected}
         onClick={onSelect}
+        onDoubleClick={onQuickLook}
+        title={onQuickLook ? "Select · double-click for Quick Look" : undefined}
       >
         <div className="thumb-wrap">
-          <ThumbImage imageUrl={imageUrl} title={title} kind={reference.kind} />
+          <ThumbImage
+            imageUrl={imageUrl}
+            title={title}
+            kind={reference.kind}
+            priority={selected}
+          />
           <span className="kind-badge">
             {referenceKindLabel(reference.kind)}
           </span>
@@ -137,6 +146,17 @@ export function ReferenceCard({
       >
         {reference.favorite ? "★" : "☆"}
       </button>
+      {onQuickLook ? (
+        <button
+          type="button"
+          className="quick-look-toggle"
+          aria-label={`Quick look ${title}`}
+          title="Quick Look"
+          onClick={onQuickLook}
+        >
+          ⤢
+        </button>
+      ) : null}
       {selected ? (
         <div className="selected-card-organization">
           <ReferenceBoardAssignment reference={reference} />
@@ -157,10 +177,12 @@ export function ThumbImage({
   imageUrl,
   title,
   kind,
+  priority = false,
 }: {
   imageUrl?: string | null;
   title?: string;
   kind: string;
+  priority?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   const { resolvedUrl, loading } = usePrivateImageUrl(imageUrl);
@@ -187,7 +209,9 @@ export function ThumbImage({
       className="thumb"
       src={resolvedUrl}
       alt={title ?? "Saved reference"}
-      loading="lazy"
+      loading={priority ? "eager" : "lazy"}
+      decoding="async"
+      fetchPriority={priority ? "high" : "auto"}
       onError={() => setFailed(true)}
     />
   );
@@ -211,6 +235,7 @@ function Favicon({
       src={imageUrl}
       alt=""
       loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
     />
   );
