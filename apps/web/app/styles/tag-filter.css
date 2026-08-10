@@ -1,0 +1,80 @@
+.tag-filter-bar.searchable {
+  grid-template-columns: minmax(145px, 0.34fr) minmax(190px, 0.46fr) minmax(0, 1fr);
+}
+
+.tag-filter-search > div {
+  position: relative;
+  min-width: 0;
+}
+
+.tag-filter-search input {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 30px 6px 8px;
+  font-size: 0.73rem;
+}
+
+.tag-filter-search button {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transform: translateY(-50%);
+}
+
+.tag-filter-search button:hover {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.tag-filter-empty {
+  padding: 5px 2px;
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.tag-filter-status {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--line), transparent 30%);
+  padding-top: 7px;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.tag-filter-status button {
+  border: 0;
+  border-radius: 7px;
+  padding: 4px 7px;
+  background: transparent;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font: inherit;
+}
+
+.tag-filter-status button:hover {
+  background: var(--accent-soft);
+}
+
+@media (max-width: 920px) {
+  .tag-filter-bar.searchable {
+    grid-template-columns: 1fr;
+  }
+
+  .tag-filter-status {
+    grid-column: 1;
+  }
+}
