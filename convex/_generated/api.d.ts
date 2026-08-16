@@ -10,6 +10,7 @@
 
 import type * as boards from "../boards.js";
 import type * as http from "../http.js";
+import type * as httpData from "../httpData.js";
 import type * as lib_drive from "../lib/drive.js";
 import type * as lib_platform from "../lib/platform.js";
 import type * as references from "../references.js";
@@ -24,6 +25,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   boards: typeof boards;
   http: typeof http;
+  httpData: typeof httpData;
   "lib/drive": typeof lib_drive;
   "lib/platform": typeof lib_platform;
   references: typeof references;

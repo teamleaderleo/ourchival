@@ -5,6 +5,7 @@ export type CaptureResult = {
   status?: number;
   message?: string;
   storageStatus?: string;
+  alreadySaved?: boolean;
   referenceId?: string;
   assetId?: string | null;
   savedAt: string;

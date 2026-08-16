@@ -9,6 +9,14 @@ type DriveConfig = {
   parentFolderId?: string;
 };
 
+type DriveEnvironment = {
+  [key: string]: string | undefined;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REFRESH_TOKEN?: string;
+  GOOGLE_DRIVE_PARENT_FOLDER_ID?: string;
+};
+
 type DriveFile = {
   id: string;
   name?: string;
@@ -26,10 +34,16 @@ export type DriveUploadResult = {
   file?: DriveFile;
 };
 
-export function getDriveConfig(): DriveConfig | undefined {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+export type DriveConfigurationStatus = {
+  driveConfigured: boolean;
+  parentFolderConfigured: boolean;
+  storageMode: "google_drive" | "convex_fallback";
+};
+
+export function getDriveConfig(env: DriveEnvironment = process.env): DriveConfig | undefined {
+  const clientId = env.GOOGLE_CLIENT_ID;
+  const clientSecret = env.GOOGLE_CLIENT_SECRET;
+  const refreshToken = env.GOOGLE_REFRESH_TOKEN;
 
   if (!clientId || !clientSecret || !refreshToken) return undefined;
 
@@ -37,7 +51,19 @@ export function getDriveConfig(): DriveConfig | undefined {
     clientId,
     clientSecret,
     refreshToken,
-    parentFolderId: process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID,
+    parentFolderId: env.GOOGLE_DRIVE_PARENT_FOLDER_ID,
+  };
+}
+
+export function getDriveConfigurationStatus(
+  env: DriveEnvironment = process.env,
+): DriveConfigurationStatus {
+  const driveConfigured = Boolean(getDriveConfig(env));
+
+  return {
+    driveConfigured,
+    parentFolderConfigured: Boolean(env.GOOGLE_DRIVE_PARENT_FOLDER_ID),
+    storageMode: driveConfigured ? "google_drive" : "convex_fallback",
   };
 }
 

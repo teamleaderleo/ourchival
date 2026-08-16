@@ -92,13 +92,62 @@
         border-color: #5f7f54;
       }
 
+      .status.duplicate {
+        border-color: #8a7359;
+      }
+
+      .receipt {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+        padding: 10px;
+        background: #11100e;
+        border: 1px solid #3a332d;
+        border-radius: 12px;
+      }
+
+      .receipt strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+      }
+
+      .receipt p {
+        margin: 3px 0 0;
+        color: #b8aa9a;
+        font-size: 11px;
+      }
+
+      .receipt-kind {
+        padding: 5px 7px;
+        border-radius: 999px;
+        background: #2b261f;
+        color: #d8b792;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      details {
+        color: #b8aa9a;
+        font-size: 11px;
+      }
+
+      summary {
+        cursor: pointer;
+      }
+
       pre {
         white-space: pre-wrap;
         background: #11100e;
         border: 1px solid #3a332d;
         border-radius: 12px;
         padding: 12px;
-        max-height: 220px;
+        max-height: 150px;
         overflow: auto;
         font-size: 11px;
       }

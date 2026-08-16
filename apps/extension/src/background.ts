@@ -31,6 +31,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const payload = buildCapturePayload(info, tab);
 
   await saveLastCapture(payload);
+  await chrome.action.setBadgeText({ text: "…" });
+  await chrome.action.setBadgeBackgroundColor({ color: "#7b684f" });
 
   const settings = await getSettings();
   const endpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
@@ -59,15 +61,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       referenceId?: string;
       assetId?: string | null;
       storageStatus?: string;
+      status?: "saved" | "already_saved";
+      alreadySaved?: boolean;
     };
 
+    const ok = response.ok && body.ok !== false;
+    const alreadySaved = body.status === "already_saved" || body.alreadySaved === true;
+
     await markResult({
-      ok: response.ok && body.ok !== false,
+      ok,
       status: response.status,
-      message: response.ok
-        ? ["Saved to Ourchival.", body.storageStatus].filter(Boolean).join(" ")
+      message: ok
+        ? friendlyCaptureMessage(body.storageStatus, alreadySaved)
         : body.error ?? response.statusText,
       storageStatus: body.storageStatus,
+      alreadySaved,
       referenceId: body.referenceId,
       assetId: body.assetId,
       savedAt: new Date().toISOString(),
@@ -117,6 +125,19 @@ function buildCapturePayload(
 
 async function markResult(result: CaptureResult) {
   await saveLastResult(result);
-  await chrome.action.setBadgeText({ text: result.ok ? "✓" : "!" });
-  await chrome.action.setBadgeBackgroundColor({ color: result.ok ? "#3d6b3d" : "#8a3d3d" });
+  await chrome.action.setBadgeText({ text: result.alreadySaved ? "=" : result.ok ? "✓" : "!" });
+  await chrome.action.setBadgeBackgroundColor({
+    color: result.alreadySaved ? "#7b684f" : result.ok ? "#3d6b3d" : "#8a3d3d",
+  });
+}
+
+function friendlyCaptureMessage(storageStatus: string | undefined, alreadySaved: boolean) {
+  if (alreadySaved) return "Already in Reliquary — no duplicate added.";
+  if (storageStatus === "link only") return "Link tucked into Reliquary.";
+  if (storageStatus?.includes("Google Drive")) return "Saved to Reliquary · Google Drive original.";
+  if (storageStatus?.includes("Convex Storage")) return "Saved to Reliquary · Convex fallback original.";
+  if (storageStatus?.startsWith("fetch failed")) return "Metadata saved · image fetch was blocked.";
+  if (storageStatus === "remote asset too large") return "Metadata saved · image was too large to copy.";
+
+  return ["Saved to Reliquary.", storageStatus].filter(Boolean).join(" ");
 }

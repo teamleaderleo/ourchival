@@ -19,6 +19,10 @@ async function render() {
   const capture = state[LAST_CAPTURE_KEY] as CapturePayload | undefined;
   const result = state[LAST_RESULT_KEY] as CaptureResult | undefined;
   const normalizedEndpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
+  const captureTitle = capture?.pageTitle?.trim() || hostForUrl(capture?.sourceUrl) || capture?.sourceUrl;
+  const captureMeta = capture
+    ? [hostForUrl(capture.sourceUrl), formatCapturedAt(capture.capturedAt)].filter(Boolean).join(" · ")
+    : "";
 
   root.innerHTML = `
     <main>
@@ -39,14 +43,26 @@ async function render() {
         <p class="hint">Using: ${escapeHtml(normalizedEndpoint ?? "missing endpoint")}</p>
       </form>
 
-      <section class="status ${result?.ok ? "ok" : ""}">
-        <strong>${result?.ok ? "Last save worked" : "Ready"}</strong>
+      <section class="status ${result?.alreadySaved ? "duplicate" : result?.ok ? "ok" : ""}">
+        <strong>${result?.alreadySaved ? "Already in Reliquary" : result?.ok ? "Last save worked" : result ? "Last save needs attention" : "Ready"}</strong>
         <p>${escapeHtml(result?.message ?? "Right-click an image or page to save it.")}</p>
       </section>
 
       <section>
         <h2>Last capture</h2>
-        <pre>${escapeHtml(JSON.stringify(capture ?? {}, null, 2))}</pre>
+        ${capture
+          ? `<div class="receipt">
+              <span class="receipt-kind">${escapeHtml(captureKindLabel(capture.kind))}</span>
+              <div>
+                <strong>${escapeHtml(captureTitle ?? "Untitled capture")}</strong>
+                <p>${escapeHtml(captureMeta)}</p>
+              </div>
+            </div>
+            <details>
+              <summary>Debug details</summary>
+              <pre>${escapeHtml(JSON.stringify(capture, null, 2))}</pre>
+            </details>`
+          : `<p class="hint">Nothing captured yet. The next right-click save will leave a receipt here.</p>`}
       </section>
     </main>
   `;
@@ -76,6 +92,34 @@ function escapeHtml(value: string) {
 
     return entities[char] ?? char;
   });
+}
+
+function captureKindLabel(kind: CapturePayload["kind"]) {
+  if (kind === "image") return "Image";
+  if (kind === "link") return "Link";
+  if (kind === "page") return "Page";
+  if (kind === "post") return "Post";
+  return "Save";
+}
+
+function hostForUrl(value: string | undefined) {
+  if (!value) return "";
+
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function formatCapturedAt(value: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 render();

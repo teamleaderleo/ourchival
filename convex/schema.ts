@@ -15,6 +15,7 @@ export default defineSchema({
     title: v.optional(v.string()),
     notes: v.optional(v.string()),
     sourceUrl: v.string(),
+    captureKey: v.optional(v.string()),
     canonicalUrl: v.optional(v.string()),
     platform: v.union(
       v.literal("x"),
@@ -37,6 +38,7 @@ export default defineSchema({
     deleted: v.boolean(),
   })
     .index("by_source_url", ["sourceUrl"])
+    .index("by_capture_key", ["captureKey"])
     .index("by_captured_at", ["capturedAt"])
     .searchIndex("search_references", {
       searchField: "title",

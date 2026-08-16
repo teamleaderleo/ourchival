@@ -16,6 +16,22 @@ type ReferencesResponse = {
   error?: string;
 };
 
+type StorageStatusResponse = {
+  ok: boolean;
+  driveConfigured?: boolean;
+  parentFolderConfigured?: boolean;
+  storageMode?: "google_drive" | "convex_fallback";
+  captureEndpoint?: string;
+  error?: string;
+};
+
+type StorageStatus = {
+  driveConfigured: boolean;
+  parentFolderConfigured: boolean;
+  storageMode: "google_drive" | "convex_fallback";
+  captureEndpoint: string;
+};
+
 type StatusTone = "info" | "success" | "error";
 
 const projectShelves = [
@@ -33,6 +49,9 @@ const lanes: Array<{ id: ReferenceLane; label: string }> = [
 
 export function ReferenceVault() {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
+  const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
+  const [storageStatusError, setStorageStatusError] = useState<string | null>(null);
+  const [endpointCopyStatus, setEndpointCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [references, setReferences] = useState<SavedReference[]>([]);
   const [status, setStatus] = useState("Loading saved references…");
   const [statusTone, setStatusTone] = useState<StatusTone>("info");
@@ -52,6 +71,19 @@ export function ReferenceVault() {
     setStatusTone(tone);
   }
 
+  async function copyCaptureEndpoint() {
+    if (!siteUrl) return;
+
+    try {
+      await navigator.clipboard.writeText(captureEndpoint);
+      setEndpointCopyStatus("copied");
+    } catch {
+      setEndpointCopyStatus("error");
+    }
+
+    window.setTimeout(() => setEndpointCopyStatus("idle"), 2400);
+  }
+
   const filteredReferences = useMemo(
     () => filterReferences(references, { query, favoritesOnly, lane }),
     [query, references, favoritesOnly, lane],
@@ -61,6 +93,62 @@ export function ReferenceVault() {
   const favoriteCount = references.filter((reference) => reference.favorite).length;
   const imageCount = filterReferences(references, { lane: "images" }).length;
   const linkCount = filterReferences(references, { lane: "links" }).length;
+  const captureEndpoint =
+    storageStatus?.captureEndpoint ??
+    (siteUrl ? `${siteUrl}/capture` : "Missing Convex site URL");
+
+  useEffect(() => {
+    if (!siteUrl) {
+      setStorageStatus(null);
+      setStorageStatusError("Add a Convex site URL to check Drive storage.");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadStorageStatus() {
+      try {
+        const response = await fetch(`${siteUrl}/storage-status`, { cache: "no-store" });
+        const body = (await response.json().catch(() => ({}))) as StorageStatusResponse;
+
+        if (
+          !response.ok ||
+          body.ok === false ||
+          typeof body.driveConfigured !== "boolean" ||
+          typeof body.parentFolderConfigured !== "boolean" ||
+          (body.storageMode !== "google_drive" &&
+            body.storageMode !== "convex_fallback")
+        ) {
+          throw new Error(body.error ?? response.statusText ?? "Could not load storage status.");
+        }
+
+        if (cancelled) return;
+
+        setStorageStatus({
+          driveConfigured: body.driveConfigured,
+          parentFolderConfigured: body.parentFolderConfigured,
+          storageMode: body.storageMode,
+          captureEndpoint:
+            typeof body.captureEndpoint === "string" &&
+            body.captureEndpoint.trim()
+              ? body.captureEndpoint.trim()
+              : `${siteUrl}/capture`,
+        });
+        setStorageStatusError(null);
+      } catch (error) {
+        if (cancelled) return;
+
+        setStorageStatus(null);
+        setStorageStatusError(error instanceof Error ? error.message : "Could not load storage status.");
+      }
+    }
+
+    void loadStorageStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [siteUrl]);
 
   useEffect(() => {
     if (!siteUrl) {
@@ -132,6 +220,9 @@ export function ReferenceVault() {
       const body = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
+        status?: "saved" | "already_saved";
+        alreadySaved?: boolean;
+        referenceId?: string;
         storageStatus?: string;
       };
 
@@ -144,7 +235,12 @@ export function ReferenceVault() {
       setAssetUrl("");
       setPageTitle("");
       setRefreshKey((key) => key + 1);
-      report(`Saved reference. ${body.storageStatus ?? ""}`.trim(), "success");
+      if (body.status === "already_saved" || body.alreadySaved) {
+        if (body.referenceId) setSelectedId(body.referenceId);
+        report("Already in Reliquary — no duplicate added.", "info");
+      } else {
+        report(`Saved reference. ${body.storageStatus ?? ""}`.trim(), "success");
+      }
     } catch (error) {
       report(error instanceof Error ? error.message : "Could not save reference.", "error");
     } finally {
@@ -222,14 +318,56 @@ export function ReferenceVault() {
 
   return (
     <>
-      <section className="endpoint-panel">
+      <section className="endpoint-panel" aria-live="polite">
         <div>
-          <p className="eyebrow">Clipper endpoint</p>
-          <code>{siteUrl ? `${siteUrl}/capture` : "Missing Convex site URL"}</code>
+          <p className="eyebrow">Storage</p>
+          <h2>
+            {storageStatus?.driveConfigured
+              ? "Google Drive configured"
+              : storageStatus
+                ? "Convex fallback in use"
+                : "Checking storage…"}
+          </h2>
+          <div className="storage-chips" aria-label="Storage configuration">
+            <span className={`storage-chip ${storageStatus?.driveConfigured ? "ready" : ""}`}>
+              Originals: {storageStatus?.driveConfigured ? "Google Drive" : storageStatus ? "Convex fallback" : "checking"}
+            </span>
+            <span className="storage-chip">
+              Folder: {storageStatus?.driveConfigured ? (storageStatus.parentFolderConfigured ? "configured" : "Drive root") : "—"}
+            </span>
+          </div>
+          <p className={storageStatusError ? "status-error" : undefined}>
+            {storageStatusError
+              ? storageStatusError
+              : storageStatus?.driveConfigured
+                ? `New image captures try Google Drive first${storageStatus.parentFolderConfigured ? " in its configured folder" : " at the Drive root"}. Convex Storage is used if a Drive upload fails.`
+                : storageStatus
+                  ? "Drive is not configured, so fetched originals are saved to Convex Storage instead."
+                  : "Checking whether Google Drive or Convex Storage will receive new originals."}
+          </p>
         </div>
-        <p>
-          Paste this into the Edge extension popup. The gallery refreshes every few seconds while your dev server is open.
-        </p>
+        <div className="endpoint-details">
+          <p className="eyebrow">Clipper endpoint</p>
+          <div className="endpoint-actions">
+            <code>{captureEndpoint}</code>
+            <button
+              type="button"
+              className="endpoint-copy"
+              disabled={!siteUrl}
+              onClick={() => void copyCaptureEndpoint()}
+            >
+              {endpointCopyStatus === "copied"
+                ? "Copied ✓"
+                : endpointCopyStatus === "error"
+                  ? "Copy failed"
+                  : "Copy"}
+            </button>
+          </div>
+          <p>
+            Paste this into the Edge extension popup. The gallery refreshes
+            every few seconds while your dev server is open.
+          </p>
+        </div>
       </section>
 
       <form className="manual-capture" onSubmit={saveManualReference}>

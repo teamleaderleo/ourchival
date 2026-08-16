@@ -138,6 +138,67 @@ h1 {
   margin: 0;
 }
 
+.endpoint-panel h2 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+
+.storage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.storage-chip {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.storage-chip.ready {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent), transparent 55%);
+  background: color-mix(in srgb, var(--accent), transparent 90%);
+}
+
+.endpoint-details {
+  display: grid;
+  gap: 10px;
+}
+
+.endpoint-details .eyebrow {
+  margin: 0;
+}
+
+.endpoint-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.endpoint-actions code {
+  min-width: 0;
+  flex: 1;
+}
+
+.endpoint-copy {
+  flex: none;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.endpoint-copy:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent), transparent 42%);
+  color: var(--accent);
+}
+
 button {
   background: var(--text);
   color: var(--bg);

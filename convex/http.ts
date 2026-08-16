@@ -1,6 +1,8 @@
 import { httpRouter } from "convex/server";
-import { httpAction } from "./_generated/server";
-import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
+import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import { httpAction, type ActionCtx } from "./_generated/server";
+import { fetchDriveFile, getDriveConfigurationStatus, uploadBlobToDrive } from "./lib/drive";
 import { detectPlatform } from "./lib/platform";
 
 const http = httpRouter();
@@ -31,7 +33,7 @@ type UpdateReferenceBody = {
 type StoredRemoteAsset = {
   status: string;
   storageProvider: "google_drive" | "convex" | "linked";
-  storageId?: any;
+  storageId?: Id<"_storage">;
   mimeType?: string;
   fileSize?: number;
   driveFileId?: string;
@@ -41,6 +43,8 @@ type StoredRemoteAsset = {
   driveThumbnailLink?: string;
   driveMimeType?: string;
 };
+
+type PersistedRemoteAsset = Omit<StoredRemoteAsset, "status">;
 
 http.route({
   path: "/capture",
@@ -64,6 +68,30 @@ http.route({
   path: "/drive-file",
   method: "OPTIONS",
   handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
+});
+
+http.route({
+  path: "/storage-status",
+  method: "OPTIONS",
+  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
+});
+
+http.route({
+  path: "/storage-status",
+  method: "GET",
+  handler: httpAction(async (_ctx, request) => {
+    const origin = new URL(request.url).origin;
+
+    return jsonResponse(
+      {
+        ok: true,
+        ...getDriveConfigurationStatus(),
+        captureEndpoint: `${origin}/capture`,
+      },
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  }),
 });
 
 http.route({
@@ -102,35 +130,16 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     const origin = new URL(request.url).origin;
-    const references = await ctx.db
-      .query("references")
-      .withIndex("by_captured_at")
-      .order("desc")
-      .take(120);
-
-    const visibleReferences = references.filter((reference) => !reference.deleted);
-
-    const items = await Promise.all(
-      visibleReferences.map(async (reference) => {
-        const assets = await ctx.db
-          .query("assets")
-          .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
-          .collect();
-
-        const assetsWithUrls = await Promise.all(
-          assets.map(async (asset) => ({
-            ...asset,
-            storedUrl: asset.driveFileId
-              ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
-              : asset.originalStorageId
-                ? await ctx.storage.getUrl(asset.originalStorageId)
-                : null,
-          })),
-        );
-
-        return { ...reference, assets: assetsWithUrls };
-      }),
-    );
+    const references = await ctx.runQuery(internal.httpData.listReferences, {});
+    const items = references.map((reference) => ({
+      ...reference,
+      assets: reference.assets.map((asset) => ({
+        ...asset,
+        storedUrl: asset.driveFileId
+          ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
+          : asset.storedUrl,
+      })),
+    }));
 
     return jsonResponse({ ok: true, references: items });
   }),
@@ -162,7 +171,14 @@ http.route({
       ...(typeof body.archived === "boolean" ? { archived: body.archived } : {}),
     };
 
-    await ctx.db.patch(referenceId as any, patch);
+    const updated = await ctx.runMutation(internal.httpData.updateReference, {
+      referenceId,
+      ...patch,
+    });
+
+    if (!updated) {
+      return jsonResponse({ ok: false, error: "Reference not found" }, 404);
+    }
 
     return jsonResponse({ ok: true });
   }),
@@ -179,10 +195,13 @@ http.route({
       return jsonResponse({ ok: false, error: "id is required" }, 400);
     }
 
-    await ctx.db.patch(referenceId as any, {
-      deleted: true,
-      archived: true,
+    const deleted = await ctx.runMutation(internal.httpData.softDeleteReference, {
+      referenceId,
     });
+
+    if (!deleted) {
+      return jsonResponse({ ok: false, error: "Reference not found" }, 404);
+    }
 
     return jsonResponse({ ok: true });
   }),
@@ -213,61 +232,62 @@ http.route({
     const kind = body.kind ?? (assetUrl ? "image" : "link");
     const platform = detectPlatform(sourceUrl);
 
-    const referenceId = await ctx.db.insert("references", {
-      kind,
-      ...(pageTitle ? { title: pageTitle } : {}),
+    const existingCapture = await ctx.runQuery(internal.httpData.findDuplicate, {
       sourceUrl,
-      platform,
-      capturedAt,
-      boardIds: [],
-      tagIds: [],
-      favorite: false,
-      archived: false,
-      deleted: false,
+      ...(assetUrl ? { assetUrl } : {}),
     });
 
-    let assetId = null;
+    if (existingCapture) {
+      return alreadySavedResponse(existingCapture);
+    }
+
+    let storedAsset: StoredRemoteAsset | undefined;
     let storageStatus = assetUrl ? "asset pending" : "link only";
 
     if (assetUrl) {
-      const storedAsset = await fetchAndStoreRemoteAsset(ctx, {
+      storedAsset = await fetchAndStoreRemoteAsset(ctx, {
         assetUrl,
         sourceUrl,
         title: pageTitle,
       });
       storageStatus = storedAsset.status;
-
-      assetId = await ctx.db.insert("assets", {
-        referenceId,
-        storageProvider: storedAsset.storageProvider,
-        originalUrl: assetUrl,
-        ...(storedAsset.storageId ? { originalStorageId: storedAsset.storageId } : {}),
-        ...(storedAsset.mimeType ? { mimeType: storedAsset.mimeType } : {}),
-        ...(storedAsset.fileSize ? { fileSize: storedAsset.fileSize } : {}),
-        ...(storedAsset.driveFileId ? { driveFileId: storedAsset.driveFileId } : {}),
-        ...(storedAsset.driveFolderId ? { driveFolderId: storedAsset.driveFolderId } : {}),
-        ...(storedAsset.driveWebViewLink ? { driveWebViewLink: storedAsset.driveWebViewLink } : {}),
-        ...(storedAsset.driveWebContentLink ? { driveWebContentLink: storedAsset.driveWebContentLink } : {}),
-        ...(storedAsset.driveThumbnailLink ? { driveThumbnailLink: storedAsset.driveThumbnailLink } : {}),
-        ...(storedAsset.driveMimeType ? { driveMimeType: storedAsset.driveMimeType } : {}),
-        dominantColors: [],
-      });
     }
 
-    await ctx.db.insert("sourceSnapshots", {
-      referenceId,
+    const capture = await ctx.runMutation(internal.httpData.createCapture, {
+      kind,
+      sourceUrl,
+      ...(assetUrl ? { assetUrl } : {}),
       ...(pageTitle ? { pageTitle } : {}),
       ...(selectedText ? { selectedText } : {}),
+      capturedAt,
+      platform,
       jsonMetadata: JSON.stringify({ ...body, storageStatus }),
-      createdAt: Date.now(),
+      ...(storedAsset ? { storedAsset: persistStoredAsset(storedAsset) } : {}),
     });
 
-    return jsonResponse({ ok: true, referenceId, assetId, storageStatus }, 201);
+    if (capture.alreadySaved) {
+      if (storedAsset?.storageProvider === "convex" && storedAsset.storageId) {
+        await ctx.storage.delete(storedAsset.storageId);
+      }
+
+      return alreadySavedResponse(capture);
+    }
+
+    return jsonResponse(
+      {
+        ok: true,
+        status: "saved",
+        referenceId: capture.referenceId,
+        assetId: capture.assetId,
+        storageStatus,
+      },
+      201,
+    );
   }),
 });
 
 async function fetchAndStoreRemoteAsset(
-  ctx: { storage: { store: (blob: Blob) => Promise<any> } },
+  ctx: Pick<ActionCtx, "storage">,
   args: { assetUrl: string; sourceUrl: string; title?: string },
 ): Promise<StoredRemoteAsset> {
   try {
@@ -337,12 +357,47 @@ async function fetchAndStoreRemoteAsset(
   }
 }
 
-function jsonResponse(body: unknown, status = 200) {
+function persistStoredAsset(asset: StoredRemoteAsset): PersistedRemoteAsset {
+  return {
+    storageProvider: asset.storageProvider,
+    ...(asset.storageId ? { storageId: asset.storageId } : {}),
+    ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
+    ...(asset.fileSize ? { fileSize: asset.fileSize } : {}),
+    ...(asset.driveFileId ? { driveFileId: asset.driveFileId } : {}),
+    ...(asset.driveFolderId ? { driveFolderId: asset.driveFolderId } : {}),
+    ...(asset.driveWebViewLink ? { driveWebViewLink: asset.driveWebViewLink } : {}),
+    ...(asset.driveWebContentLink
+      ? { driveWebContentLink: asset.driveWebContentLink }
+      : {}),
+    ...(asset.driveThumbnailLink
+      ? { driveThumbnailLink: asset.driveThumbnailLink }
+      : {}),
+    ...(asset.driveMimeType ? { driveMimeType: asset.driveMimeType } : {}),
+  };
+}
+
+function alreadySavedResponse(capture: {
+  referenceId: Id<"references">;
+  assetId: Id<"assets"> | null;
+}) {
+  return jsonResponse({
+    ok: true,
+    status: "already_saved",
+    already_saved: true,
+    alreadySaved: true,
+    referenceId: capture.referenceId,
+    assetId: capture.assetId,
+    storageStatus: "already_saved",
+  });
+}
+
+function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       ...corsHeaders,
       "Content-Type": "application/json",
+      ...headers,
     },
   });
 }
