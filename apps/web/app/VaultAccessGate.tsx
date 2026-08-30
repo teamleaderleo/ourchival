@@ -360,17 +360,20 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           className="button ghost"
+          aria-expanded={panelOpen}
+          aria-controls="vault-account-panel"
           onClick={() => setPanelOpen((open) => !open)}
         >
-          Clipper access
-        </button>
-        <button type="button" className="button ghost" onClick={lockVault}>
-          Lock
+          Account
         </button>
       </div>
 
       {panelOpen ? (
-        <aside className="clipper-access-panel" aria-label="Clipper access">
+        <aside
+          id="vault-account-panel"
+          className="clipper-access-panel"
+          aria-label="Account and Clipper access"
+        >
           <div className="clipper-access-heading">
             <div>
               <p className="eyebrow">Private capture</p>
@@ -447,6 +450,17 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
             ) : (
               <p>No browsers paired yet.</p>
             )}
+          </div>
+
+          <div className="clipper-access-footer">
+            <span>Finished on this device?</span>
+            <button
+              type="button"
+              className="button ghost"
+              onClick={lockVault}
+            >
+              Lock vault
+            </button>
           </div>
         </aside>
       ) : null}
