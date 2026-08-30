@@ -8,7 +8,8 @@ import { useReferenceVault } from "../useReferenceVault";
 import styles from "./ReviewDeck.module.css";
 import { blueArchiveReviewCandidates } from "./blueArchiveReviewCandidates";
 
-const reviewQuery = "BAReview";
+const reviewMarker = "BAReview";
+const reviewQuery = `${reviewMarker} type:image`;
 
 type ImportProgress = {
   done: number;
@@ -75,9 +76,12 @@ export function BlueArchiveReviewDeck() {
 
   async function importSeed() {
     if (!vault.siteUrl || importing) return;
+    const candidates = blueArchiveReviewCandidates.filter((candidate) =>
+      Boolean(candidate.originalImageUrl ?? candidate.previewImageUrl),
+    );
     const progress: ImportProgress = {
       done: 0,
-      total: blueArchiveReviewCandidates.length,
+      total: candidates.length,
       saved: 0,
       existing: 0,
       failed: 0,
@@ -88,9 +92,9 @@ export function BlueArchiveReviewDeck() {
 
     let nextIndex = 0;
     async function worker() {
-      while (nextIndex < blueArchiveReviewCandidates.length) {
+      while (nextIndex < candidates.length) {
         const index = nextIndex++;
-        const candidate = blueArchiveReviewCandidates[index]!;
+        const candidate = candidates[index]!;
         const assetUrl = candidate.originalImageUrl ?? candidate.previewImageUrl;
         try {
           const response = await fetch(`${vault.siteUrl}/capture`, {
@@ -101,7 +105,7 @@ export function BlueArchiveReviewDeck() {
               sourceUrl: candidate.sourceUrl,
               assetUrl,
               previewImageUrl: candidate.previewImageUrl ?? assetUrl,
-              pageTitle: `${reviewQuery} · ${candidate.character} · ${candidate.title}`,
+              pageTitle: `${reviewMarker} · ${candidate.character} · ${candidate.title}`,
               authorName: candidate.artist,
               rawMetadata: JSON.stringify({
                 seed: "blue-archive-review-2026-08-30",
@@ -157,14 +161,14 @@ export function BlueArchiveReviewDeck() {
             className={vault.activeView === "inbox" ? styles.active : undefined}
             onClick={() => switchLane("inbox")}
           >
-            New {vault.inboxCount ? `(${vault.inboxCount})` : ""}
+            New
           </button>
           <button
             type="button"
             className={vault.activeView === "later" ? styles.active : undefined}
             onClick={() => switchLane("later")}
           >
-            Maybe {vault.laterCount ? `(${vault.laterCount})` : ""}
+            Maybe
           </button>
         </div>
       </header>
