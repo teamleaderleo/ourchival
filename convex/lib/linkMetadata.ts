@@ -36,6 +36,13 @@ export async function fetchLinkMetadata(
   const timer = setTimeout(() => controller.abort(), fetchTimeoutMs);
 
   try {
+    const firstPartyMetadata = await fetchFirstPartyMetadata(
+      sourceUrl,
+      metadataFetchedAt,
+      controller.signal,
+    );
+    if (firstPartyMetadata) return firstPartyMetadata;
+
     const { response, finalUrl } = await fetchPublicResponse(sourceUrl, {
       signal: controller.signal,
       headers: {
@@ -115,6 +122,103 @@ export async function fetchLinkMetadata(
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchFirstPartyMetadata(
+  sourceUrl: string,
+  metadataFetchedAt: number,
+  signal: AbortSignal,
+) {
+  const postId = hoyolabPostId(sourceUrl);
+  if (!postId) return undefined;
+
+  try {
+    const apiUrl = `https://bbs-api-os.hoyolab.com/community/post/wapi/getPostFull?post_id=${encodeURIComponent(postId)}`;
+    const { response } = await fetchPublicResponse(apiUrl, {
+      signal,
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Ourchival-Link-Metadata/1.0",
+      },
+    });
+    if (!response.ok) return undefined;
+    const body = await response.json();
+    return parseHoyolabPostMetadata(body, sourceUrl, metadataFetchedAt);
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseHoyolabPostMetadata(
+  body: unknown,
+  sourceUrl: string,
+  metadataFetchedAt = Date.now(),
+): LinkMetadata | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const root = body as Record<string, any>;
+  if (root.retcode !== 0) return undefined;
+  const detail = root.data?.post;
+  const post = detail?.post;
+  if (!post || typeof post !== "object") return undefined;
+
+  const previewImageUrl = firstPublicImageUrl(
+    detail.image_list?.[0]?.url,
+    detail.cover_list?.[0]?.url,
+    post.cover,
+    contentImageUrl(post.content),
+  );
+  const title = cleanMetadataText(post.subject);
+  const description = cleanMetadataText(post.desc);
+  const author = cleanMetadataText(detail.user?.nickname);
+
+  return {
+    canonicalUrl: sourceUrl,
+    ...(title ? { title } : {}),
+    ...(description ? { description } : {}),
+    siteName: "HoYoLAB",
+    faviconUrl: "https://www.hoyolab.com/favicon.ico",
+    ...(previewImageUrl ? { previewImageUrl } : {}),
+    ...(author ? { author } : {}),
+    contentType: "text/html",
+    httpStatus: 200,
+    metadataStatus:
+      title || description || previewImageUrl || author ? "ready" : "missing",
+    metadataFetchedAt,
+  };
+}
+
+function hoyolabPostId(value: string) {
+  try {
+    const url = new URL(value);
+    if (!/^(?:www\.)?hoyolab\.com$/i.test(url.hostname)) return undefined;
+    return url.pathname.match(/^\/article\/(\d+)/)?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+function contentImageUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    const content = JSON.parse(value) as { imgs?: unknown[] };
+    return content.imgs?.find((item): item is string => typeof item === "string");
+  } catch {
+    return undefined;
+  }
+}
+
+function firstPublicImageUrl(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const text = value.trim();
+    if (text && isSafePublicUrl(text)) return text;
+  }
+  return undefined;
+}
+
+function cleanMetadataText(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  return value.trim().replace(/\s+/g, " ") || undefined;
 }
 
 export async function fetchPublicResponse(

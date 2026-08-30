@@ -16,7 +16,6 @@
   .selected-reference { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr); gap: 18px; }
   .selected-image, .selected-placeholder { grid-row: 1 / span 6; max-height: 520px; }
   .inspector-heading, .reference-facts, .triage-actions, .inspector-fields, .inspector-actions { grid-column: 2; }
-  .setup-panel { grid-template-columns: 1fr; }
   .review-strip { display: grid; }
   .review-actions { justify-content: flex-start; }
 }
@@ -28,7 +27,6 @@
   .button { min-height: 36px; padding: 8px 11px; font-size: 0.78rem; }
   .capture-panel { grid-template-columns: 1fr; }
   .capture-heading { grid-column: auto; }
-  .endpoint-row { grid-template-columns: 1fr; }
   .vault-workspace { display: block; }
   .vault-sidebar, .inspector { position: static; max-height: none; }
   .vault-sidebar { margin-bottom: 12px; }

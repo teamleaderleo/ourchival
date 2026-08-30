@@ -72,7 +72,6 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const [activeView, setActiveView] = useState<VaultView>("inbox");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(false);
   const [undoMove, setUndoMove] = useState<UndoMove | null>(null);
   const requestSerial = useRef(0);
 
@@ -232,10 +231,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       setHasMore(Boolean(body.hasMore));
       setSelectedId(null);
       if (body.counts) setCounts(body.counts);
-      report(
-        `Loaded page ${history.length + 1} with ${incoming.length} ${incoming.length === 1 ? "reference" : "references"}${body.hasMore ? "; older pages available." : "."}`,
-        "success",
-      );
+      report("", "success");
     } catch (error) {
       if (serial === requestSerial.current) {
         report(
@@ -270,8 +266,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   async function saveManualReference(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!siteUrl) {
-      report("Add a Convex site URL in setup before saving.", "error");
-      setSetupOpen(true);
+      report("Ourchival is missing its archive connection.", "error");
       return;
     }
 
@@ -328,8 +323,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     patch: Partial<SavedReference>,
   ) {
     if (!siteUrl) {
-      report("Add a Convex site URL in setup before editing.", "error");
-      setSetupOpen(true);
+      report("Ourchival is missing its archive connection.", "error");
       return false;
     }
 
@@ -452,23 +446,6 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     await patchReference(reference._id, { lastOpenedAt: Date.now() });
   }
 
-  async function copyEndpoint() {
-    if (!siteUrl) {
-      report("Add a Convex site URL before copying the endpoint.", "error");
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(`${siteUrl}/capture`);
-      report("Clipper endpoint copied.", "success");
-    } catch {
-      report(
-        "Could not copy the endpoint. Select the text and copy it manually.",
-        "error",
-      );
-    }
-  }
-
   function selectRelative(offset: number) {
     if (!filteredReferences.length) return;
     const currentIndex = selectedReference
@@ -534,8 +511,6 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     setSelectedId,
     captureOpen,
     setCaptureOpen,
-    setupOpen,
-    setSetupOpen,
     undoMove,
     hasMore,
     canLoadNewer: cursorHistory.length > 0,
@@ -552,7 +527,6 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     moveReference,
     undoLastMove,
     markReferenceOpened,
-    copyEndpoint,
     changeView,
   };
 }

@@ -17,7 +17,7 @@
 .planned-nav-item span:last-child { border: 1px solid var(--line); border-radius: 999px; padding: 2px 6px; font-size: .58rem; font-weight: 760; letter-spacing: .06em; text-transform: uppercase; }
 .vault-main { min-width: 0; min-height: calc(100vh - 108px); border: 0; padding: 10px 0 24px; background: transparent; box-shadow: none; }
 .vault-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
-.vault-heading h1 { margin: 4px 0 0; font-size: clamp(1.75rem, 3.5vw, 2.55rem); line-height: 1; letter-spacing: -.055em; }
+.vault-heading h1 { margin: 0; font-size: clamp(1.85rem, 3.5vw, 2.65rem); font-weight: 560; line-height: 1; letter-spacing: -.06em; }
 .vault-count { display: flex; align-items: baseline; gap: 6px; color: var(--muted); font-size: .76rem; }
 .vault-count strong { color: var(--text); font-size: 1rem; font-variant-numeric: tabular-nums; }
 .vault-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; margin-top: 18px; }
@@ -137,7 +137,7 @@
 .result-summary span + span::before { content: "·"; margin-right: 16px; color: #4e5664; }
 .loading-card .empty-mark { animation: pagination-pulse 900ms ease-in-out infinite alternate; }
 .load-error-card .empty-mark { color: var(--danger); }
-.pagination-bar { display: flex; min-height: 56px; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+.pagination-bar { display: flex; min-height: 56px; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
 .pagination-bar p, .pagination-bar span { margin: 0; color: var(--muted); font-size: .72rem; }
 .pagination-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pagination-actions .button { min-width: 92px; }
