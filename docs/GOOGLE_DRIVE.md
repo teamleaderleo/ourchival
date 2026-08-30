@@ -40,21 +40,13 @@ The app uses the `https://www.googleapis.com/auth/drive.file` scope. That scope 
 
 ## 2. Generate a refresh token
 
-Run:
+For an existing configured project, use the non-printing Convex update mode:
 
 ```bash
-pnpm google:drive-auth
+OURCHIVAL_GOOGLE_AUTH_USE_CONVEX=1 pnpm google:drive-auth
 ```
 
-Paste the OAuth client ID and secret when prompted. The script opens a browser, asks Google for Drive permission, then prints commands like:
-
-```bash
-npx convex env set GOOGLE_CLIENT_ID '...'
-npx convex env set GOOGLE_CLIENT_SECRET '...'
-npx convex env set GOOGLE_REFRESH_TOKEN '...'
-```
-
-Run those commands. The backend `GOOGLE_CLIENT_ID` must match the public `NEXT_PUBLIC_GOOGLE_CLIENT_ID` configured for the web app.
+It reads the existing client credentials from the development deployment and writes the new refresh token directly to both development and production through stdin. It never prints the client secret or refresh token. The browser begins at a localhost redirect so the one-time OAuth state also stays out of terminal output. The backend `GOOGLE_CLIENT_ID` must match the public `NEXT_PUBLIC_GOOGLE_CLIENT_ID` configured for the web app.
 
 ## 3. Optional: choose a Drive folder
 

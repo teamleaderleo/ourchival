@@ -44,8 +44,8 @@ type SearchCaches = {
 const statsKey = "global";
 const linkKinds = new Set(["link", "article", "page"]);
 
-export async function listReferencePage(ctx: any, request: Request) {
-  const url = new URL(request.url);
+export async function listReferencePage(ctx: any, request: Request | string) {
+  const url = new URL(typeof request === "string" ? request : request.url);
   const options = parseReferenceListOptions(url);
   if (options.tagSlug) {
     const tag = await ctx.db
@@ -182,7 +182,7 @@ export async function applyReferenceStatsDelta(
 export async function getReferenceCounts(ctx: any): Promise<ReferenceCounts> {
   const stats = await getReferenceStatsDocument(ctx);
   if (stats) return countsFromStats(stats);
-  return await rebuildReferenceStats(ctx);
+  return await scanReferenceCounts(ctx);
 }
 
 export async function hydrateReference(
@@ -309,6 +309,16 @@ function getCachedDocument(
 }
 
 async function rebuildReferenceStats(ctx: any): Promise<ReferenceCounts> {
+  const counts = await scanReferenceCounts(ctx);
+  const existing = await getReferenceStatsDocument(ctx);
+  const payload = { ...sanitizeCounts(counts), updatedAt: Date.now() };
+  if (existing) await ctx.db.patch(existing._id, payload);
+  else await ctx.db.insert("referenceStats", { key: statsKey, ...payload });
+
+  return counts;
+}
+
+async function scanReferenceCounts(ctx: any): Promise<ReferenceCounts> {
   const counts = emptyCounts();
   let cursor: string | null = null;
   let isDone = false;
@@ -326,11 +336,6 @@ async function rebuildReferenceStats(ctx: any): Promise<ReferenceCounts> {
       for (const key of referenceFacetKeys(reference)) counts[key] += 1;
     }
   }
-
-  const existing = await getReferenceStatsDocument(ctx);
-  const payload = { ...sanitizeCounts(counts), updatedAt: Date.now() };
-  if (existing) await ctx.db.patch(existing._id, payload);
-  else await ctx.db.insert("referenceStats", { key: statsKey, ...payload });
 
   return counts;
 }

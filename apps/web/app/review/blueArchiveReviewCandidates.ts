@@ -42,14 +42,6 @@ export const blueArchiveReviewCandidates: BlueArchiveReviewCandidate[] = [
     sourceKind: "fan-index",
   },
   {
-    character: "Ensemble",
-    title: "Rooftop 4K group visual",
-    sourceUrl: "https://www.bizhi99.com/tuji-336407.html",
-    previewImageUrl: "https://pic.dmjnb.com/pic/d9b262abdb547e3cad40370df6eab916",
-    originalImageUrl: "https://pic.dmjnb.com/pic/d9b262abdb547e3cad40370df6eab916",
-    sourceKind: "official-mirror",
-  },
-  {
     character: "Problem Solver 68",
     title: "Opera event PC/tablet digital goods",
     sourceUrl: "https://forum.nexon.com/bluearchive/board_view?board=1044&thread=2628256",

@@ -14,6 +14,7 @@ import type * as crons from "../crons.js";
 import type * as enrichmentBatch from "../enrichmentBatch.js";
 import type * as enrichmentJobs from "../enrichmentJobs.js";
 import type * as http from "../http.js";
+import type * as httpDb from "../httpDb.js";
 import type * as lib_drive from "../lib/drive.js";
 import type * as lib_enrichmentJobState from "../lib/enrichmentJobState.js";
 import type * as lib_imageAnalysis from "../lib/imageAnalysis.js";
@@ -53,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   enrichmentBatch: typeof enrichmentBatch;
   enrichmentJobs: typeof enrichmentJobs;
   http: typeof http;
+  httpDb: typeof httpDb;
   "lib/drive": typeof lib_drive;
   "lib/enrichmentJobState": typeof lib_enrichmentJobState;
   "lib/imageAnalysis": typeof lib_imageAnalysis;

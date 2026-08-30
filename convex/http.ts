@@ -6,11 +6,6 @@ import {
   fetchLinkMetadata,
   type LinkMetadata,
 } from "./lib/linkMetadata";
-import {
-  applyReferenceStatsDelta,
-  listReferencePage,
-  sourceSnapshotPayload,
-} from "./lib/referenceCatalog";
 import { detectPlatform } from "./lib/platform";
 import {
   AccessError,
@@ -128,7 +123,7 @@ http.route({
 
     const code = createPairingCode();
     const now = Date.now();
-    await ctx.db.insert("clipperPairingGrants", {
+    await ctx.runMutation(internal.httpDb.createPairingGrant, {
       codeHash: await hashSecret(code),
       createdAt: now,
       expiresAt: now + pairingLifetimeMs,
@@ -152,19 +147,20 @@ http.route({
       return jsonResponse(request, { ok: false, error: "Enter a valid pairing code." }, 400);
     }
 
-    const grant = await ctx.db
-      .query("clipperPairingGrants")
-      .withIndex("by_code_hash", (q: any) => q.eq("codeHash", awaitableHashPlaceholder(code)))
-      .first();
     const codeHash = await hashSecret(code);
-    const matchedGrant = grant?.codeHash === codeHash
-      ? grant
-      : await ctx.db
-          .query("clipperPairingGrants")
-          .withIndex("by_code_hash", (q: any) => q.eq("codeHash", codeHash))
-          .first();
-
-    if (!matchedGrant || matchedGrant.usedAt || matchedGrant.expiresAt <= Date.now()) {
+    const token = createDeviceToken();
+    const now = Date.now();
+    const deviceName = cleanDeviceName(body.deviceName);
+    const result = await ctx.runMutation(internal.httpDb.exchangePairingGrant, {
+      codeHash,
+      tokenHash: await hashSecret(token),
+      name: deviceName,
+      now,
+      ...(cleanString(body.extensionVersion)
+        ? { extensionVersion: cleanString(body.extensionVersion) }
+        : {}),
+    });
+    if (!result.ok) {
       return jsonResponse(
         request,
         { ok: false, error: "That pairing code expired or was already used." },
@@ -172,24 +168,11 @@ http.route({
       );
     }
 
-    const token = createDeviceToken();
-    const now = Date.now();
-    const deviceId = await ctx.db.insert("clipperDevices", {
-      name: cleanDeviceName(body.deviceName),
-      tokenHash: await hashSecret(token),
-      createdAt: now,
-      lastUsedAt: now,
-      ...(cleanString(body.extensionVersion)
-        ? { extensionVersion: cleanString(body.extensionVersion) }
-        : {}),
-    });
-    await ctx.db.patch(matchedGrant._id, { usedAt: now });
-
     return jsonResponse(request, {
       ok: true,
       token,
-      deviceId,
-      deviceName: cleanDeviceName(body.deviceName),
+      deviceId: result.deviceId,
+      deviceName,
     }, 201);
   }),
 });
@@ -200,15 +183,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const denied = await ownerDenied(request);
     if (denied) return denied;
-    const devices = await ctx.db
-      .query("clipperDevices")
-      .withIndex("by_created_at")
-      .order("desc")
-      .collect();
-    return jsonResponse(request, {
-      ok: true,
-      devices: devices.map(({ tokenHash: _tokenHash, ...device }: any) => device),
-    });
+    const devices = await ctx.runQuery(internal.httpDb.listClipperDevices, {});
+    return jsonResponse(request, { ok: true, devices });
   }),
 });
 
@@ -220,9 +196,11 @@ http.route({
     if (denied) return denied;
     const deviceId = new URL(request.url).searchParams.get("id");
     if (!deviceId) return jsonResponse(request, { ok: false, error: "id is required" }, 400);
-    const device = await ctx.db.get(deviceId as any);
-    if (!device) return jsonResponse(request, { ok: false, error: "Device not found" }, 404);
-    await ctx.db.patch(deviceId as any, { revokedAt: Date.now() });
+    const revoked = await ctx.runMutation(internal.httpDb.revokeClipperDevice, {
+      deviceId,
+      revokedAt: Date.now(),
+    });
+    if (!revoked) return jsonResponse(request, { ok: false, error: "Device not found" }, 404);
     return jsonResponse(request, { ok: true });
   }),
 });
@@ -264,7 +242,9 @@ http.route({
     const denied = await ownerDenied(request);
     if (denied) return denied;
     try {
-      const page = await listReferencePage(ctx, request);
+      const page = await ctx.runQuery(internal.httpDb.listReferences, {
+        url: request.url,
+      });
       return jsonResponse(request, { ok: true, ...page });
     } catch (error) {
       return jsonResponse(
@@ -323,45 +303,20 @@ http.route({
     const referenceId = new URL(request.url).searchParams.get("id");
     if (!referenceId) return jsonResponse(request, { ok: false, error: "id is required" }, 400);
 
-    const reference = await ctx.db.get(referenceId as any);
+    const reference = await ctx.runQuery(internal.httpDb.getReferenceSource, {
+      referenceId,
+    });
     if (!reference) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
 
     const metadata = await fetchLinkMetadata(reference.sourceUrl);
-    const snapshotId = await insertSourceSnapshot(ctx, {
-      referenceId: reference._id,
-      metadata,
-      jsonMetadata: { refresh: true, error: metadata.error },
+    const result = await ctx.runMutation(internal.httpDb.applyReferenceMetadata, {
+      referenceId,
+      metadata: serializableValue(metadata),
     });
-    const snapshot = await ctx.db.get(snapshotId);
-    const patch: Record<string, unknown> = {};
-
-    if (!reference.title && metadata.title) patch.title = metadata.title;
-    if (!reference.authorName && metadata.author) patch.authorName = metadata.author;
-    const refreshedCanonical = cleanUrl(metadata.canonicalUrl);
-    if (refreshedCanonical) {
-      const normalizedCanonical = normalizeSourceUrl(refreshedCanonical);
-      if (normalizedCanonical !== reference.canonicalUrl) {
-        const matches = await ctx.db
-          .query("references")
-          .withIndex("by_canonical_url", (q: any) =>
-            q.eq("canonicalUrl", normalizedCanonical),
-          )
-          .collect();
-        if (!matches.some((item: any) => item._id !== reference._id && !item.deleted)) {
-          patch.canonicalUrl = normalizedCanonical;
-        }
-      }
-    }
-
-    if (Object.keys(patch).length > 0) await ctx.db.patch(reference._id, patch);
-    await ctx.runMutation(internal.preferenceExport.syncReferencePreference, {
-      referenceId: reference._id,
-    });
+    if (!result) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
     return jsonResponse(request, {
       ok: true,
-      reference: patch,
-      sourceSnapshot: snapshot ? sourceSnapshotPayload(snapshot) : undefined,
-      status: metadata.metadataStatus,
+      ...result,
     });
   }),
 });
@@ -377,9 +332,6 @@ http.route({
 
     const body = (await readJson(request)) as UpdateReferenceBody | undefined;
     if (!body) return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
-    const before = await ctx.db.get(referenceId as any);
-    if (!before) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
-
     const patch = {
       ...(typeof body.title === "string" ? { title: body.title.trim() } : {}),
       ...(typeof body.notes === "string" ? { notes: body.notes.trim() } : {}),
@@ -393,13 +345,12 @@ http.route({
       ...(typeof body.deleted === "boolean" ? { deleted: body.deleted } : {}),
     };
 
-    await ctx.db.patch(referenceId as any, patch);
-    await applyReferenceStatsDelta(ctx, before, { ...before, ...patch });
-    if (shouldSyncPreference(body)) {
-      await ctx.runMutation(internal.preferenceExport.syncReferencePreference, {
-        referenceId: before._id,
-      });
-    }
+    const updated = await ctx.runMutation(internal.httpDb.updateReference, {
+      referenceId,
+      patch,
+      syncPreference: shouldSyncPreference(body),
+    });
+    if (!updated) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
     return jsonResponse(request, { ok: true });
   }),
 });
@@ -413,14 +364,11 @@ http.route({
     const referenceId = new URL(request.url).searchParams.get("id");
     if (!referenceId) return jsonResponse(request, { ok: false, error: "id is required" }, 400);
 
-    const before = await ctx.db.get(referenceId as any);
-    if (!before) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
-    const patch = { deleted: true, archived: true, reviewedAt: Date.now() };
-    await ctx.db.patch(referenceId as any, patch);
-    await applyReferenceStatsDelta(ctx, before, { ...before, ...patch });
-    await ctx.runMutation(internal.preferenceExport.syncReferencePreference, {
-      referenceId: before._id,
+    const deleted = await ctx.runMutation(internal.httpDb.deleteReference, {
+      referenceId,
+      deletedAt: Date.now(),
     });
+    if (!deleted) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
     return jsonResponse(request, { ok: true });
   }),
 });
@@ -461,10 +409,14 @@ http.route({
     const kind = body.kind ?? (assetUrl ? "image" : "link");
     const clientMetadata = linkMetadataFromBody(body);
     let canonicalUrl = normalizeSourceUrl(cleanUrl(clientMetadata.canonicalUrl) ?? sourceUrl);
-    let duplicate = await findDuplicateCapture(ctx, { sourceUrl, canonicalUrl, assetUrl });
+    let duplicate = await ctx.runQuery(internal.httpDb.findDuplicateCapture, {
+      sourceUrl,
+      canonicalUrl,
+      ...(assetUrl ? { assetUrl } : {}),
+    });
 
     if (duplicate) {
-      await enrichDuplicateReference(ctx, duplicate, {
+      duplicate = await persistDuplicateCapture(ctx, duplicate, {
         body,
         canonicalUrl,
         pageTitle,
@@ -480,6 +432,9 @@ http.route({
         captureSessionId,
         metadata: hasClientLinkMetadata(clientMetadata) ? clientMetadata : undefined,
       });
+      if (!duplicate) {
+        return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
+      }
       return duplicateResponse(request, duplicate);
     }
 
@@ -488,9 +443,13 @@ http.route({
       linkMetadata = mergeLinkMetadata(await fetchLinkMetadata(sourceUrl), clientMetadata);
       const enrichedCanonical = cleanUrl(linkMetadata.canonicalUrl);
       if (enrichedCanonical) canonicalUrl = normalizeSourceUrl(enrichedCanonical);
-      duplicate = await findDuplicateCapture(ctx, { sourceUrl, canonicalUrl, assetUrl });
+      duplicate = await ctx.runQuery(internal.httpDb.findDuplicateCapture, {
+        sourceUrl,
+        canonicalUrl,
+        ...(assetUrl ? { assetUrl } : {}),
+      });
       if (duplicate) {
-        await enrichDuplicateReference(ctx, duplicate, {
+        duplicate = await persistDuplicateCapture(ctx, duplicate, {
           body,
           canonicalUrl,
           pageTitle,
@@ -506,6 +465,9 @@ http.route({
           captureSessionId,
           metadata: linkMetadata,
         });
+        if (!duplicate) {
+          return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
+        }
         return duplicateResponse(request, duplicate);
       }
     } else if (hasClientLinkMetadata(clientMetadata)) {
@@ -522,7 +484,7 @@ http.route({
     const platform = detectPlatform(sourceUrl);
     const title = pageTitle ?? linkMetadata?.title;
     const authorName = explicitAuthorName ?? linkMetadata?.author;
-    const referenceId = await ctx.db.insert("references", {
+    const referenceDocument = {
       kind,
       ...(title ? { title } : {}),
       sourceUrl,
@@ -541,63 +503,51 @@ http.route({
       favorite: false,
       archived: false,
       deleted: false,
-    });
+    };
 
-    const insertedReference = await ctx.db.get(referenceId);
-    await applyReferenceStatsDelta(ctx, null, insertedReference);
-
-    let assetId = null;
     let storageStatus = linkMetadata
       ? metadataStorageStatus(linkMetadata)
       : assetUrl
         ? "asset pending"
         : "link only";
 
+    let storedAsset: StoredRemoteAsset | undefined;
     if (assetUrl) {
-      const storedAsset = await fetchAndStoreRemoteAsset(ctx, { assetUrl, sourceUrl, title });
+      storedAsset = await fetchAndStoreRemoteAsset(ctx, { assetUrl, sourceUrl, title });
       storageStatus = storedAsset.status;
-      assetId = await ctx.db.insert("assets", {
-        referenceId,
-        storageProvider: storedAsset.storageProvider,
-        originalUrl: assetUrl,
-        ...(storedAsset.storageId ? { originalStorageId: storedAsset.storageId } : {}),
-        ...(storedAsset.mimeType ? { mimeType: storedAsset.mimeType } : {}),
-        ...(storedAsset.fileSize ? { fileSize: storedAsset.fileSize } : {}),
-        ...(storedAsset.driveFileId ? { driveFileId: storedAsset.driveFileId } : {}),
-        ...(storedAsset.driveFolderId ? { driveFolderId: storedAsset.driveFolderId } : {}),
-        ...(storedAsset.driveWebViewLink ? { driveWebViewLink: storedAsset.driveWebViewLink } : {}),
-        ...(storedAsset.driveWebContentLink
-          ? { driveWebContentLink: storedAsset.driveWebContentLink }
-          : {}),
-        ...(storedAsset.driveThumbnailLink
-          ? { driveThumbnailLink: storedAsset.driveThumbnailLink }
-          : {}),
-        ...(storedAsset.driveMimeType ? { driveMimeType: storedAsset.driveMimeType } : {}),
-        dominantColors: [],
-      });
     }
 
-    await insertSourceSnapshot(ctx, {
-      referenceId,
-      pageTitle: title,
-      postText,
-      altText,
-      selectedText,
-      metadata: linkMetadata,
-      jsonMetadata: {
-        ...body,
-        ...(rawMetadata ? { rawMetadata: safeJsonValue(rawMetadata) } : {}),
-        canonicalUrl,
-        storageStatus,
-        capturePrincipal: principal.kind,
-        ...(principal.kind === "clipper" ? { captureDeviceId: principal.deviceId } : {}),
-        metadataError: linkMetadata?.error,
-      },
+    const created = await ctx.runMutation(internal.httpDb.createCapture, {
+      reference: referenceDocument,
+      ...(assetUrl ? { assetUrl } : {}),
+      ...(storedAsset ? { storedAsset: serializableValue(storedAsset) } : {}),
+      snapshot: serializableValue({
+        ...(title ? { pageTitle: title } : {}),
+        ...(postText ? { postText } : {}),
+        ...(altText ? { altText } : {}),
+        ...(selectedText ? { selectedText } : {}),
+        ...(linkMetadata ? { metadata: linkMetadata } : {}),
+        jsonMetadata: {
+          ...body,
+          ...(rawMetadata ? { rawMetadata: safeJsonValue(rawMetadata) } : {}),
+          canonicalUrl,
+          storageStatus,
+          capturePrincipal: principal.kind,
+          ...(principal.kind === "clipper" ? { captureDeviceId: principal.deviceId } : {}),
+          metadataError: linkMetadata?.error,
+        },
+      }),
     });
 
     return jsonResponse(
       request,
-      { ok: true, alreadySaved: false, referenceId, assetId, storageStatus },
+      {
+        ok: true,
+        alreadySaved: false,
+        referenceId: created.referenceId,
+        assetId: created.assetId,
+        storageStatus,
+      },
       201,
     );
   }),
@@ -623,14 +573,17 @@ async function authenticateCapture(ctx: any, request: Request): Promise<AccessPr
   }
 
   const tokenHash = await hashSecret(token);
-  const device = await ctx.db
-    .query("clipperDevices")
-    .withIndex("by_token_hash", (q: any) => q.eq("tokenHash", tokenHash))
-    .first();
-  if (!device) throw new AccessError("This Clipper credential is invalid.", 401, "invalid_device");
-  if (device.revokedAt) throw new AccessError("This Clipper was revoked.", 403, "revoked_device");
-  await ctx.db.patch(device._id, { lastUsedAt: Date.now() });
-  return { kind: "clipper", deviceId: String(device._id), deviceName: device.name };
+  const result = await ctx.runMutation(internal.httpDb.authenticateClipper, {
+    tokenHash,
+    usedAt: Date.now(),
+  });
+  if (!result.ok && result.reason === "invalid") {
+    throw new AccessError("This Clipper credential is invalid.", 401, "invalid_device");
+  }
+  if (!result.ok) {
+    throw new AccessError("This Clipper was revoked.", 403, "revoked_device");
+  }
+  return { kind: "clipper", deviceId: result.deviceId, deviceName: result.deviceName };
 }
 
 function accessErrorResponse(request: Request, error: unknown) {
@@ -640,7 +593,7 @@ function accessErrorResponse(request: Request, error: unknown) {
   return jsonResponse(request, { ok: false, error: "Access check failed." }, 500);
 }
 
-async function enrichDuplicateReference(
+async function persistDuplicateCapture(
   ctx: any,
   duplicate: DuplicateCapture,
   args: {
@@ -659,122 +612,41 @@ async function enrichDuplicateReference(
     captureSessionId?: string;
     metadata?: LinkMetadata;
   },
-) {
-  const authorName = args.explicitAuthorName ?? args.metadata?.author;
-  const patch: Record<string, unknown> = {
-    ...(!duplicate.reference.canonicalUrl ? { canonicalUrl: args.canonicalUrl } : {}),
-    ...(!duplicate.reference.title && (args.pageTitle ?? args.metadata?.title)
-      ? { title: args.pageTitle ?? args.metadata?.title }
-      : {}),
-    ...(!duplicate.reference.authorName && authorName ? { authorName } : {}),
-    ...(!duplicate.reference.authorHandle && args.authorHandle
-      ? { authorHandle: args.authorHandle }
-      : {}),
-    ...(!duplicate.reference.authorUrl && args.authorUrl ? { authorUrl: args.authorUrl } : {}),
-    ...(!duplicate.reference.postId && args.postId ? { postId: args.postId } : {}),
-    ...(!duplicate.reference.publishedAt && args.publishedAt
-      ? { publishedAt: args.publishedAt }
-      : {}),
-    ...(!duplicate.reference.captureSessionId && args.captureSessionId
-      ? { captureSessionId: args.captureSessionId }
-      : {}),
-  };
-
+) : Promise<DuplicateCapture | null> {
   const assetUrl = cleanString(args.body.assetUrl);
+  let storedAsset: StoredRemoteAsset | undefined;
   if (assetUrl && !duplicate.assetId) {
-    const storedAsset = await fetchAndStoreRemoteAsset(ctx, {
+    storedAsset = await fetchAndStoreRemoteAsset(ctx, {
       assetUrl,
       sourceUrl: duplicate.reference.sourceUrl,
       title: args.pageTitle ?? duplicate.reference.title,
     });
-    duplicate.assetId = await ctx.db.insert("assets", {
-      referenceId: duplicate.reference._id,
-      storageProvider: storedAsset.storageProvider,
-      originalUrl: assetUrl,
-      ...(storedAsset.storageId ? { originalStorageId: storedAsset.storageId } : {}),
-      ...(storedAsset.mimeType ? { mimeType: storedAsset.mimeType } : {}),
-      ...(storedAsset.fileSize ? { fileSize: storedAsset.fileSize } : {}),
-      ...(storedAsset.driveFileId ? { driveFileId: storedAsset.driveFileId } : {}),
-      ...(storedAsset.driveFolderId ? { driveFolderId: storedAsset.driveFolderId } : {}),
-      ...(storedAsset.driveWebViewLink ? { driveWebViewLink: storedAsset.driveWebViewLink } : {}),
-      ...(storedAsset.driveWebContentLink
-        ? { driveWebContentLink: storedAsset.driveWebContentLink }
-        : {}),
-      ...(storedAsset.driveThumbnailLink
-        ? { driveThumbnailLink: storedAsset.driveThumbnailLink }
-        : {}),
-      ...(storedAsset.driveMimeType ? { driveMimeType: storedAsset.driveMimeType } : {}),
-      dominantColors: [],
-    });
-    if (args.body.kind === "image" && isLinkKind(duplicate.reference.kind)) {
-      patch.kind = "image";
-    }
   }
-
-  if (Object.keys(patch).length > 0) {
-    await ctx.db.patch(duplicate.reference._id, patch);
-    if (patch.kind) {
-      await applyReferenceStatsDelta(ctx, duplicate.reference, {
-        ...duplicate.reference,
-        ...patch,
-      });
-    }
-  }
-
-  if (args.postText || args.altText || args.selectedText || args.rawMetadata || args.metadata) {
-    await insertSourceSnapshot(ctx, {
-      referenceId: duplicate.reference._id,
-      pageTitle: args.pageTitle ?? args.metadata?.title,
+  const saved = await ctx.runMutation(internal.httpDb.saveDuplicateCapture, {
+    referenceId: String(duplicate.reference._id),
+    reason: duplicate.reason,
+    ...(assetUrl ? { assetUrl } : {}),
+    ...(storedAsset ? { storedAsset: serializableValue(storedAsset) } : {}),
+    body: serializableValue(args.body),
+    details: serializableValue({
+      canonicalUrl: args.canonicalUrl,
+      pageTitle: args.pageTitle,
       postText: args.postText,
       altText: args.altText,
       selectedText: args.selectedText,
-      metadata: args.metadata,
-      jsonMetadata: {
-        ...args.body,
-        canonicalUrl: args.canonicalUrl,
-        duplicateReason: duplicate.reason,
-        ...(args.rawMetadata ? { rawMetadata: safeJsonValue(args.rawMetadata) } : {}),
-        metadataError: args.metadata?.error,
-      },
-    });
-  }
-}
-
-async function insertSourceSnapshot(
-  ctx: any,
-  args: {
-    referenceId: any;
-    pageTitle?: string;
-    postText?: string;
-    altText?: string;
-    selectedText?: string;
-    metadata?: LinkMetadata;
-    jsonMetadata?: unknown;
-  },
-) {
-  return await ctx.db.insert("sourceSnapshots", {
-    referenceId: args.referenceId,
-    ...(args.pageTitle ? { pageTitle: args.pageTitle } : {}),
-    ...(args.postText ? { postText: args.postText } : {}),
-    ...(args.altText ? { altText: args.altText } : {}),
-    ...(args.selectedText ? { selectedText: args.selectedText } : {}),
-    ...(args.metadata?.description ? { description: args.metadata.description } : {}),
-    ...(args.metadata?.siteName ? { siteName: args.metadata.siteName } : {}),
-    ...(args.metadata?.faviconUrl ? { faviconUrl: args.metadata.faviconUrl } : {}),
-    ...(args.metadata?.previewImageUrl ? { previewImageUrl: args.metadata.previewImageUrl } : {}),
-    ...(args.metadata?.author ? { pageAuthor: args.metadata.author } : {}),
-    ...(args.metadata?.canonicalUrl ? { canonicalUrl: args.metadata.canonicalUrl } : {}),
-    ...(args.metadata?.contentType ? { contentType: args.metadata.contentType } : {}),
-    ...(args.metadata?.metadataStatus ? { metadataStatus: args.metadata.metadataStatus } : {}),
-    ...(typeof args.metadata?.httpStatus === "number" ? { httpStatus: args.metadata.httpStatus } : {}),
-    ...(typeof args.metadata?.metadataFetchedAt === "number"
-      ? { metadataFetchedAt: args.metadata.metadataFetchedAt }
-      : {}),
-    ...(args.jsonMetadata !== undefined
-      ? { jsonMetadata: JSON.stringify(args.jsonMetadata) }
-      : {}),
-    createdAt: Date.now(),
+      rawMetadata: args.rawMetadata,
+      explicitAuthorName: args.explicitAuthorName,
+      authorHandle: args.authorHandle,
+      authorUrl: args.authorUrl,
+      postId: args.postId,
+      publishedAt: args.publishedAt,
+      captureSessionId: args.captureSessionId,
+    }),
+    ...(args.metadata ? { metadata: serializableValue(args.metadata) } : {}),
   });
+  return saved
+    ? { reference: saved.reference, assetId: saved.assetId, reason: duplicate.reason }
+    : null;
 }
 
 function duplicateResponse(request: Request, duplicate: DuplicateCapture) {
@@ -879,42 +751,6 @@ function shouldSyncPreference(body: UpdateReferenceBody) {
     typeof body.archived === "boolean" ||
     typeof body.deleted === "boolean"
   );
-}
-
-async function findDuplicateCapture(
-  ctx: { db: any },
-  args: { sourceUrl: string; canonicalUrl: string; assetUrl?: string },
-): Promise<DuplicateCapture | undefined> {
-  if (args.assetUrl) {
-    const matchingAssets = await ctx.db
-      .query("assets")
-      .withIndex("by_original_url", (q: any) => q.eq("originalUrl", args.assetUrl))
-      .collect();
-    for (const asset of matchingAssets) {
-      const reference = await ctx.db.get(asset.referenceId);
-      if (reference && !reference.deleted) {
-        return { reference, assetId: asset._id, reason: "asset_url" };
-      }
-    }
-  }
-
-  const canonicalMatches = await ctx.db
-    .query("references")
-    .withIndex("by_canonical_url", (q: any) => q.eq("canonicalUrl", args.canonicalUrl))
-    .collect();
-  const canonicalReference = canonicalMatches.find((reference: any) => !reference.deleted);
-  if (canonicalReference) {
-    return { reference: canonicalReference, assetId: null, reason: "canonical_url" };
-  }
-
-  const sourceMatches = await ctx.db
-    .query("references")
-    .withIndex("by_source_url", (q: any) => q.eq("sourceUrl", args.sourceUrl))
-    .collect();
-  const sourceReference = sourceMatches.find((reference: any) => !reference.deleted);
-  return sourceReference
-    ? { reference: sourceReference, assetId: null, reason: "source_url" }
-    : undefined;
 }
 
 async function fetchAndStoreRemoteAsset(
@@ -1038,8 +874,8 @@ function safeJsonValue(value: string) {
   }
 }
 
-function awaitableHashPlaceholder(_code: string) {
-  return "__pairing_hash_pending__";
+function serializableValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 export default http;
