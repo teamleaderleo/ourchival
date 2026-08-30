@@ -40,6 +40,7 @@ export function GoogleOwnerSignIn({
 
   useEffect(() => {
     if (!clientId || disabled) return;
+    const configuredClientId = clientId;
     let cancelled = false;
 
     async function setup() {
@@ -51,7 +52,7 @@ export function GoogleOwnerSignIn({
 
         mountRef.current.replaceChildren();
         google.accounts.id.initialize({
-          client_id: clientId,
+          client_id: configuredClientId,
           auto_select: false,
           cancel_on_tap_outside: true,
           callback: (response) => {
@@ -105,6 +106,10 @@ function loadGoogleIdentityScript() {
   const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
   if (existing) {
     return new Promise<void>((resolve, reject) => {
+      if (getGoogleIdentity()) {
+        resolve();
+        return;
+      }
       existing.addEventListener("load", () => resolve(), { once: true });
       existing.addEventListener("error", () => reject(new Error("Could not load Google sign-in.")), {
         once: true,
