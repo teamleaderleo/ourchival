@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchLinkMetadata,
   fetchPublicResponse,
   isSafePublicUrl,
   parseLinkMetadataHtml,
+  parseHoyolabPostMetadata,
 } from "./linkMetadata";
 
 afterEach(() => {
@@ -61,6 +63,80 @@ describe("parseLinkMetadataHtml", () => {
       canonicalUrl: "https://example.com/plain",
       metadataStatus: "missing",
     });
+  });
+});
+
+describe("parseHoyolabPostMetadata", () => {
+  it("uses the actual HoYoLAB post image instead of the generic app shell", () => {
+    expect(
+      parseHoyolabPostMetadata(
+        {
+          retcode: 0,
+          data: {
+            post: {
+              post: {
+                subject: "Velina Airgid graphic",
+                desc: "graphic by me",
+              },
+              user: { nickname: "_caiserr" },
+              image_list: [
+                {
+                  url: "https://upload-os-bbs.hoyolab.com/upload/velina.png",
+                },
+              ],
+            },
+          },
+        },
+        "https://www.hoyolab.com/article/45947723",
+        123,
+      ),
+    ).toEqual({
+      canonicalUrl: "https://www.hoyolab.com/article/45947723",
+      title: "Velina Airgid graphic",
+      description: "graphic by me",
+      siteName: "HoYoLAB",
+      faviconUrl: "https://www.hoyolab.com/favicon.ico",
+      previewImageUrl:
+        "https://upload-os-bbs.hoyolab.com/upload/velina.png",
+      author: "_caiserr",
+      contentType: "text/html",
+      httpStatus: 200,
+      metadataStatus: "ready",
+      metadataFetchedAt: 123,
+    });
+  });
+
+  it("routes HoYoLAB article URLs through the first-party post API", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      Response.json({
+        retcode: 0,
+        data: {
+          post: {
+            post: { subject: "Character study" },
+            user: { nickname: "Artist" },
+            image_list: [
+              { url: "https://upload-os-bbs.hoyolab.com/upload/study.png" },
+            ],
+          },
+        },
+      }),
+    );
+
+    const metadata = await fetchLinkMetadata(
+      "https://www.hoyolab.com/article/45947723",
+    );
+
+    expect(metadata).toMatchObject({
+      title: "Character study",
+      author: "Artist",
+      previewImageUrl:
+        "https://upload-os-bbs.hoyolab.com/upload/study.png",
+      metadataStatus: "ready",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://bbs-api-os.hoyolab.com/community/post/wapi/getPostFull?post_id=45947723",
+    );
   });
 });
 

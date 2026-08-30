@@ -102,13 +102,15 @@ export function ReferenceVault() {
           </div>
         </div>
         <div className="header-actions">
-          <div
-            className={`sync-status status-${vault.statusTone}`}
-            title={vault.status}
-          >
-            <span aria-hidden="true" />
-            <span>{vault.status}</span>
-          </div>
+          {vault.status ? (
+            <div
+              className={`sync-status status-${vault.statusTone}`}
+              role={vault.statusTone === "error" ? "alert" : "status"}
+            >
+              <span aria-hidden="true" />
+              <span>{vault.status}</span>
+            </div>
+          ) : null}
           {vault.undoMove ? (
             <button
               type="button"
@@ -121,47 +123,12 @@ export function ReferenceVault() {
           <button
             type="button"
             className="button ghost"
-            onClick={() => vault.setSetupOpen((open) => !open)}
-          >
-            Setup
-          </button>
-          <button
-            type="button"
-            className="button primary"
             onClick={() => vault.setCaptureOpen((open) => !open)}
           >
-            {vault.captureOpen ? "Close" : "+ Add reference"}
+            {vault.captureOpen ? "Close" : "Save a link"}
           </button>
         </div>
       </header>
-
-      {vault.setupOpen ? (
-        <section
-          className="utility-panel setup-panel"
-          aria-label="Clipper setup"
-        >
-          <div>
-            <p className="eyebrow">Clipper setup</p>
-            <h2>Connect the browser extension</h2>
-            <p>Use this capture endpoint in the Ourchival Clipper popup.</p>
-          </div>
-          <div className="endpoint-row">
-            <code>
-              {vault.siteUrl
-                ? `${vault.siteUrl}/capture`
-                : "Missing Convex site URL"}
-            </code>
-            <button
-              type="button"
-              className="button secondary"
-              onClick={vault.copyEndpoint}
-              disabled={!vault.siteUrl}
-            >
-              Copy
-            </button>
-          </div>
-        </section>
-      ) : null}
 
       {vault.captureOpen ? (
         <form
@@ -233,10 +200,7 @@ export function ReferenceVault() {
         />
         <main className="vault-main">
           <div className="vault-heading">
-            <div>
-              <p className="eyebrow">{currentViewLabel}</p>
-              <h1>{currentViewLabel}</h1>
-            </div>
+            <h1>{currentViewLabel}</h1>
             <p className="vault-count">
               <strong>{displayedCount}</strong>
               <span>{vault.query ? "matches on page" : "references"}</span>
@@ -367,12 +331,16 @@ export function ReferenceVault() {
             </div>
           ) : null}
 
-          <div className="result-summary">
-            <span>{vault.filteredReferences.length} on this page</span>
-            <span>{vault.activeCount} total</span>
-            {vault.pageNumber > 1 ? <span>Page {vault.pageNumber}</span> : null}
-            {vault.query ? <span>Filtered by “{vault.query}”</span> : null}
-          </div>
+          {vault.query || vault.pageNumber > 1 ? (
+            <div className="result-summary">
+              <span>
+                {vault.filteredReferences.length}
+                {vault.hasMore ? "+" : ""} matches
+              </span>
+              {vault.pageNumber > 1 ? <span>Page {vault.pageNumber}</span> : null}
+              {vault.query ? <span>“{vault.query}”</span> : null}
+            </div>
+          ) : null}
           <section
             className={`reference-grid ${vault.activeView === "links" ? "link-grid" : ""} ${vault.filteredReferences.length === 0 ? "empty-grid" : ""}`}
           >
@@ -438,13 +406,6 @@ export function ReferenceVault() {
 
           {!vault.isLoading ? (
             <div className="pagination-bar" aria-live="polite">
-              <p>
-                Page {vault.pageNumber} · {vault.filteredReferences.length}{" "}
-                mounted
-                {vault.query
-                  ? " for this search"
-                  : ` · ${vault.activeCount} total`}
-              </p>
               <div className="pagination-actions">
                 <button
                   type="button"

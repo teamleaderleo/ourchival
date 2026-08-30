@@ -124,7 +124,7 @@
 }
 .pairing-code strong {
   color: var(--accent-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
   font-size: 1.15rem;
   letter-spacing: 0.08em;
 }

@@ -44,7 +44,8 @@ function snapshotPage(): PageSnapshot {
     metaContent('meta[property="og:image:secure_url"]') ??
       metaContent('meta[property="og:image"]') ??
       metaContent('meta[name="twitter:image"]') ??
-      metaContent('meta[name="twitter:image:src"]'),
+      metaContent('meta[name="twitter:image:src"]') ??
+      domainContentImageUrl(images),
   );
 
   return {
@@ -95,6 +96,36 @@ function snapshotPage(): PageSnapshot {
     selectedText: window.getSelection()?.toString() || undefined,
     images,
   };
+}
+
+function domainContentImageUrl(
+  images: Array<{ src: string; width?: number; height?: number }>,
+) {
+  const hostname = location.hostname.toLowerCase();
+  const allowedImageHost = hostname.endsWith("reddit.com")
+    ? /^(?:i|preview|external-preview)\.redd\.it$/i
+    : hostname.endsWith("hoyolab.com")
+      ? /^upload-os-bbs\.hoyolab\.com$/i
+      : null;
+  if (!allowedImageHost) return undefined;
+
+  let best: (typeof images)[number] | undefined;
+  let bestPixels = -1;
+  for (const image of images) {
+    try {
+      if (!allowedImageHost.test(new URL(image.src, location.href).hostname)) {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+    const pixels = (image.width ?? 0) * (image.height ?? 0);
+    if (pixels > bestPixels) {
+      best = image;
+      bestPixels = pixels;
+    }
+  }
+  return best?.src;
 }
 
 document.addEventListener(
