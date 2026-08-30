@@ -77,38 +77,24 @@ export async function listReferencePage(ctx: any, request: Request | string) {
     snapshot: any | null | undefined;
     searchMatches: SearchMatch[];
   }> = [];
-  let cursor = options.cursor;
-  let isDone = false;
-  let scanned = 0;
-  const scanBatchSize = Math.max(options.pageSize, 48);
-  const maxScanned = Math.max(options.pageSize * 8, 384);
+  const page = await ctx.db
+    .query("references")
+    .withIndex("by_captured_at")
+    .order("desc")
+    .paginate({ numItems: options.pageSize, cursor: options.cursor });
+  const candidates = page.page.filter((reference: any) =>
+    matchesReferenceFilters(reference, options),
+  );
 
-  while (!isDone && references.length < options.pageSize && scanned < maxScanned) {
-    const page = await ctx.db
-      .query("references")
-      .withIndex("by_captured_at")
-      .order("desc")
-      .paginate({ numItems: scanBatchSize, cursor });
-
-    cursor = page.continueCursor;
-    isDone = page.isDone;
-    scanned += page.page.length;
-
-    const candidates = page.page.filter((reference: any) =>
-      matchesReferenceFilters(reference, options),
+  if (!options.query) {
+    references.push(
+      ...candidates.map((reference: any) => ({
+        reference,
+        snapshot: undefined,
+        searchMatches: [],
+      })),
     );
-
-    if (!options.query) {
-      references.push(
-        ...candidates.map((reference: any) => ({
-          reference,
-          snapshot: undefined,
-          searchMatches: [],
-        })),
-      );
-      continue;
-    }
-
+  } else {
     const searchable = await Promise.all(
       candidates.map(async (reference: any) => {
         const [snapshot, context] = await Promise.all([
@@ -142,9 +128,9 @@ export async function listReferencePage(ctx: any, request: Request | string) {
 
   return {
     references: hydrated,
-    continueCursor: isDone ? null : cursor,
-    hasMore: !isDone,
-    scanned,
+    continueCursor: page.isDone ? null : page.continueCursor,
+    hasMore: !page.isDone,
+    scanned: page.page.length,
     counts: {
       inbox: counts.inbox,
       all: counts.library,

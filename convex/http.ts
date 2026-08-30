@@ -244,10 +244,43 @@ http.route({
     try {
       await ctx.runMutation(internal.httpDb.initializeReferenceStats, {});
       await ctx.runMutation(internal.preferenceExport.ensureExportRequested, {});
-      const page = await ctx.runQuery(internal.httpDb.listReferences, {
-        url: request.url,
+      const requestUrl = new URL(request.url);
+      const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? 48);
+      const pageSize = Number.isFinite(requestedLimit)
+        ? Math.min(96, Math.max(12, Math.floor(requestedLimit)))
+        : 48;
+      const maxScanned = Math.max(pageSize * 8, 384);
+      const references: Array<Record<string, unknown>> = [];
+      let cursor = requestUrl.searchParams.get("cursor") || null;
+      let hasMore = true;
+      let scanned = 0;
+      let counts;
+
+      while (hasMore && references.length < pageSize && scanned < maxScanned) {
+        const batchUrl = new URL(requestUrl);
+        batchUrl.searchParams.set("limit", String(pageSize - references.length));
+        if (cursor) batchUrl.searchParams.set("cursor", cursor);
+        else batchUrl.searchParams.delete("cursor");
+
+        const batch = await ctx.runQuery(internal.httpDb.listReferences, {
+          url: batchUrl.toString(),
+        });
+        references.push(...batch.references);
+        cursor = batch.continueCursor;
+        hasMore = batch.hasMore;
+        scanned += batch.scanned;
+        counts = batch.counts;
+        if (batch.scanned === 0) break;
+      }
+
+      return jsonResponse(request, {
+        ok: true,
+        references,
+        continueCursor: hasMore ? cursor : null,
+        hasMore,
+        scanned,
+        counts,
       });
-      return jsonResponse(request, { ok: true, ...page });
     } catch (error) {
       return jsonResponse(
         request,
