@@ -17,8 +17,11 @@ export type LinkMetadata = {
 
 const maxHtmlBytes = 2 * 1024 * 1024;
 const fetchTimeoutMs = 8_000;
+const maxRedirects = 5;
 
-export async function fetchLinkMetadata(sourceUrl: string): Promise<LinkMetadata> {
+export async function fetchLinkMetadata(
+  sourceUrl: string,
+): Promise<LinkMetadata> {
   const metadataFetchedAt = Date.now();
 
   if (!isSafePublicUrl(sourceUrl)) {
@@ -33,27 +36,18 @@ export async function fetchLinkMetadata(sourceUrl: string): Promise<LinkMetadata
   const timer = setTimeout(() => controller.abort(), fetchTimeoutMs);
 
   try {
-    const response = await fetch(sourceUrl, {
-      redirect: "follow",
+    const { response, finalUrl } = await fetchPublicResponse(sourceUrl, {
       signal: controller.signal,
       headers: {
         Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.4",
         "User-Agent": "Ourchival-Link-Metadata/1.0",
       },
     });
-    const finalUrl = response.url || sourceUrl;
-    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim();
+    const contentType = response.headers
+      .get("content-type")
+      ?.split(";")[0]
+      ?.trim();
     const httpStatus = response.status;
-
-    if (!isSafePublicUrl(finalUrl)) {
-      return {
-        contentType,
-        httpStatus,
-        metadataStatus: "failed",
-        metadataFetchedAt,
-        error: "Metadata redirect resolved to a local or private URL.",
-      };
-    }
 
     if (!response.ok) {
       return {
@@ -123,7 +117,40 @@ export async function fetchLinkMetadata(sourceUrl: string): Promise<LinkMetadata
   }
 }
 
-export function parseLinkMetadataHtml(html: string, pageUrl: string): LinkMetadata {
+export async function fetchPublicResponse(
+  sourceUrl: string,
+  init: Omit<RequestInit, "redirect"> = {},
+) {
+  let currentUrl = sourceUrl;
+
+  for (
+    let redirectCount = 0;
+    redirectCount <= maxRedirects;
+    redirectCount += 1
+  ) {
+    if (!isSafePublicUrl(currentUrl)) {
+      throw new Error("Remote fetch blocked for a local or private URL.");
+    }
+
+    const response = await fetch(currentUrl, { ...init, redirect: "manual" });
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      return { response, finalUrl: response.url || currentUrl };
+    }
+
+    const location = response.headers.get("location");
+    if (!location) return { response, finalUrl: response.url || currentUrl };
+    if (redirectCount === maxRedirects)
+      throw new Error("Remote fetch redirected too many times.");
+    currentUrl = new URL(location, currentUrl).toString();
+  }
+
+  throw new Error("Remote fetch redirected too many times.");
+}
+
+export function parseLinkMetadataHtml(
+  html: string,
+  pageUrl: string,
+): LinkMetadata {
   const meta = collectMetaTags(html);
   const links = collectLinkTags(html);
   const title = firstText(
@@ -136,14 +163,18 @@ export function parseLinkMetadataHtml(html: string, pageUrl: string): LinkMetada
     meta.get("twitter:description"),
     meta.get("description"),
   );
-  const siteName = firstText(meta.get("og:site_name"), meta.get("application-name"));
+  const siteName = firstText(
+    meta.get("og:site_name"),
+    meta.get("application-name"),
+  );
   const author = firstText(
     meta.get("author"),
     meta.get("article:author"),
     meta.get("byl"),
   );
   const canonicalUrl = resolveHttpUrl(
-    links.find((link) => link.rel.includes("canonical"))?.href ?? meta.get("og:url"),
+    links.find((link) => link.rel.includes("canonical"))?.href ??
+      meta.get("og:url"),
     pageUrl,
   );
   const faviconUrl = resolveHttpUrl(
@@ -218,7 +249,8 @@ function collectMetaTags(html: string) {
       .trim()
       .toLowerCase();
     const content = attributes.content?.trim();
-    if (key && content && !values.has(key)) values.set(key, decodeHtml(content));
+    if (key && content && !values.has(key))
+      values.set(key, decodeHtml(content));
   }
   return values;
 }
@@ -231,10 +263,7 @@ function collectLinkTags(html: string) {
     if (!href) continue;
     links.push({
       href: decodeHtml(href),
-      rel: (attributes.rel ?? "")
-        .toLowerCase()
-        .split(/\s+/)
-        .filter(Boolean),
+      rel: (attributes.rel ?? "").toLowerCase().split(/\s+/).filter(Boolean),
     });
   }
   return links;
@@ -244,14 +273,17 @@ function parseAttributes(tag: string) {
   const attributes: Record<string, string> = {};
   const expression = /([:\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
   for (const match of tag.matchAll(expression)) {
-    attributes[match[1]!.toLowerCase()] = match[2] ?? match[3] ?? match[4] ?? "";
+    attributes[match[1]!.toLowerCase()] =
+      match[2] ?? match[3] ?? match[4] ?? "";
   }
   return attributes;
 }
 
 function extractTitle(html: string) {
   const match = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
-  return match ? decodeHtml(stripTags(match[1]).replace(/\s+/g, " ").trim()) : undefined;
+  return match
+    ? decodeHtml(stripTags(match[1]).replace(/\s+/g, " ").trim())
+    : undefined;
 }
 
 function firstText(...values: Array<string | undefined>) {
@@ -279,7 +311,9 @@ function titleFromUrl(value: string) {
   try {
     const url = new URL(value);
     const segment = url.pathname.split("/").filter(Boolean).at(-1);
-    return segment ? decodeURIComponent(segment).replace(/[-_]+/g, " ") : url.hostname;
+    return segment
+      ? decodeURIComponent(segment).replace(/[-_]+/g, " ")
+      : url.hostname;
   } catch {
     return undefined;
   }
@@ -287,7 +321,8 @@ function titleFromUrl(value: string) {
 
 function isPrivateIpv4(hostname: string) {
   const parts = hostname.split(".");
-  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part))) return false;
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part)))
+    return false;
   const octets = parts.map(Number);
   if (octets.some((octet) => octet > 255)) return true;
   const [first, second] = octets;

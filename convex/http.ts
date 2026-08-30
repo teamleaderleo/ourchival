@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
 import {
+  fetchPublicResponse,
   fetchLinkMetadata,
   type LinkMetadata,
 } from "./lib/linkMetadata";
@@ -24,10 +25,12 @@ import { normalizeSourceUrl } from "./lib/urls";
 
 const http = httpRouter();
 const maxRemoteAssetBytes = 25 * 1024 * 1024;
+const remoteAssetTimeoutMs = 15_000;
 const pairingLifetimeMs = 10 * 60 * 1000;
 
 type CaptureBody = {
-  kind?: "image" | "post" | "page" | "link" | "article" | "video_frame" | "file";
+  kind?:
+    "image" | "post" | "page" | "link" | "article" | "video_frame" | "file";
   sourceUrl?: string;
   canonicalUrl?: string;
   assetUrl?: string;
@@ -98,8 +101,12 @@ for (const path of [
   http.route({
     path,
     method: "OPTIONS",
-    handler: httpAction(async (_ctx, request) =>
-      new Response(null, { status: 204, headers: requestCorsHeaders(request) }),
+    handler: httpAction(
+      async (_ctx, request) =>
+        new Response(null, {
+          status: 204,
+          headers: requestCorsHeaders(request),
+        }),
     ),
   });
 }
@@ -128,11 +135,15 @@ http.route({
       createdAt: now,
       expiresAt: now + pairingLifetimeMs,
     });
-    return jsonResponse(request, {
-      ok: true,
-      code,
-      expiresAt: now + pairingLifetimeMs,
-    }, 201);
+    return jsonResponse(
+      request,
+      {
+        ok: true,
+        code,
+        expiresAt: now + pairingLifetimeMs,
+      },
+      201,
+    );
   }),
 });
 
@@ -141,10 +152,15 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const body = await readJson(request);
-    if (!body) return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
+    if (!body)
+      return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
     const code = normalizePairingCode(body.code);
     if (!code) {
-      return jsonResponse(request, { ok: false, error: "Enter a valid pairing code." }, 400);
+      return jsonResponse(
+        request,
+        { ok: false, error: "Enter a valid pairing code." },
+        400,
+      );
     }
 
     const codeHash = await hashSecret(code);
@@ -168,12 +184,16 @@ http.route({
       );
     }
 
-    return jsonResponse(request, {
-      ok: true,
-      token,
-      deviceId: result.deviceId,
-      deviceName,
-    }, 201);
+    return jsonResponse(
+      request,
+      {
+        ok: true,
+        token,
+        deviceId: result.deviceId,
+        deviceName,
+      },
+      201,
+    );
   }),
 });
 
@@ -195,12 +215,18 @@ http.route({
     const denied = await ownerDenied(request);
     if (denied) return denied;
     const deviceId = new URL(request.url).searchParams.get("id");
-    if (!deviceId) return jsonResponse(request, { ok: false, error: "id is required" }, 400);
+    if (!deviceId)
+      return jsonResponse(request, { ok: false, error: "id is required" }, 400);
     const revoked = await ctx.runMutation(internal.httpDb.revokeClipperDevice, {
       deviceId,
       revokedAt: Date.now(),
     });
-    if (!revoked) return jsonResponse(request, { ok: false, error: "Device not found" }, 404);
+    if (!revoked)
+      return jsonResponse(
+        request,
+        { ok: false, error: "Device not found" },
+        404,
+      );
     return jsonResponse(request, { ok: true });
   }),
 });
@@ -212,13 +238,17 @@ http.route({
     const denied = await ownerDenied(request);
     if (denied) return denied;
     const fileId = new URL(request.url).searchParams.get("id");
-    if (!fileId) return jsonResponse(request, { ok: false, error: "id is required" }, 400);
+    if (!fileId)
+      return jsonResponse(request, { ok: false, error: "id is required" }, 400);
 
     const driveResponse = await fetchDriveFile(fileId);
     if (!driveResponse.ok || !driveResponse.body) {
       return jsonResponse(
         request,
-        { ok: false, error: `Drive file fetch failed: ${driveResponse.status}` },
+        {
+          ok: false,
+          error: `Drive file fetch failed: ${driveResponse.status}`,
+        },
         driveResponse.status,
       );
     }
@@ -228,7 +258,8 @@ http.route({
       headers: {
         ...requestCorsHeaders(request),
         "Content-Type":
-          driveResponse.headers.get("Content-Type") ?? "application/octet-stream",
+          driveResponse.headers.get("Content-Type") ??
+          "application/octet-stream",
         "Cache-Control": "private, max-age=3600",
       },
     });
@@ -243,7 +274,10 @@ http.route({
     if (denied) return denied;
     try {
       await ctx.runMutation(internal.httpDb.initializeReferenceStats, {});
-      await ctx.runMutation(internal.preferenceExport.ensureExportRequested, {});
+      await ctx.runMutation(
+        internal.preferenceExport.ensureExportRequested,
+        {},
+      );
       const requestUrl = new URL(request.url);
       const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? 48);
       const pageSize = Number.isFinite(requestedLimit)
@@ -258,7 +292,10 @@ http.route({
 
       while (hasMore && references.length < pageSize && scanned < maxScanned) {
         const batchUrl = new URL(requestUrl);
-        batchUrl.searchParams.set("limit", String(pageSize - references.length));
+        batchUrl.searchParams.set(
+          "limit",
+          String(pageSize - references.length),
+        );
         if (cursor) batchUrl.searchParams.set("cursor", cursor);
         else batchUrl.searchParams.delete("cursor");
 
@@ -287,7 +324,9 @@ http.route({
         {
           ok: false,
           error:
-            error instanceof Error ? error.message : "Could not load reference page.",
+            error instanceof Error
+              ? error.message
+              : "Could not load reference page.",
         },
         500,
       );
@@ -301,7 +340,10 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const denied = await ownerDenied(request);
     if (denied) return denied;
-    const state = await ctx.runQuery(internal.preferenceExport.getExportState, {});
+    const state = await ctx.runQuery(
+      internal.preferenceExport.getExportState,
+      {},
+    );
     return jsonResponse(request, {
       ok: true,
       export: state
@@ -336,19 +378,33 @@ http.route({
     const denied = await ownerDenied(request);
     if (denied) return denied;
     const referenceId = new URL(request.url).searchParams.get("id");
-    if (!referenceId) return jsonResponse(request, { ok: false, error: "id is required" }, 400);
+    if (!referenceId)
+      return jsonResponse(request, { ok: false, error: "id is required" }, 400);
 
     const reference = await ctx.runQuery(internal.httpDb.getReferenceSource, {
       referenceId,
     });
-    if (!reference) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
+    if (!reference)
+      return jsonResponse(
+        request,
+        { ok: false, error: "Reference not found" },
+        404,
+      );
 
     const metadata = await fetchLinkMetadata(reference.sourceUrl);
-    const result = await ctx.runMutation(internal.httpDb.applyReferenceMetadata, {
-      referenceId,
-      metadata: serializableValue(metadata),
-    });
-    if (!result) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
+    const result = await ctx.runMutation(
+      internal.httpDb.applyReferenceMetadata,
+      {
+        referenceId,
+        metadata: serializableValue(metadata),
+      },
+    );
+    if (!result)
+      return jsonResponse(
+        request,
+        { ok: false, error: "Reference not found" },
+        404,
+      );
     return jsonResponse(request, {
       ok: true,
       ...result,
@@ -363,20 +419,32 @@ http.route({
     const denied = await ownerDenied(request);
     if (denied) return denied;
     const referenceId = new URL(request.url).searchParams.get("id");
-    if (!referenceId) return jsonResponse(request, { ok: false, error: "id is required" }, 400);
+    if (!referenceId)
+      return jsonResponse(request, { ok: false, error: "id is required" }, 400);
 
     const body = (await readJson(request)) as UpdateReferenceBody | undefined;
-    if (!body) return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
+    if (!body)
+      return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
     const patch = {
       ...(typeof body.title === "string" ? { title: body.title.trim() } : {}),
       ...(typeof body.notes === "string" ? { notes: body.notes.trim() } : {}),
-      ...(typeof body.favorite === "boolean" ? { favorite: body.favorite } : {}),
-      ...(body.triageState === "inbox" || body.triageState === "kept" || body.triageState === "later"
+      ...(typeof body.favorite === "boolean"
+        ? { favorite: body.favorite }
+        : {}),
+      ...(body.triageState === "inbox" ||
+      body.triageState === "kept" ||
+      body.triageState === "later"
         ? { triageState: body.triageState }
         : {}),
-      ...(typeof body.reviewedAt === "number" ? { reviewedAt: body.reviewedAt } : {}),
-      ...(typeof body.lastOpenedAt === "number" ? { lastOpenedAt: body.lastOpenedAt } : {}),
-      ...(typeof body.archived === "boolean" ? { archived: body.archived } : {}),
+      ...(typeof body.reviewedAt === "number"
+        ? { reviewedAt: body.reviewedAt }
+        : {}),
+      ...(typeof body.lastOpenedAt === "number"
+        ? { lastOpenedAt: body.lastOpenedAt }
+        : {}),
+      ...(typeof body.archived === "boolean"
+        ? { archived: body.archived }
+        : {}),
       ...(typeof body.deleted === "boolean" ? { deleted: body.deleted } : {}),
     };
 
@@ -385,7 +453,12 @@ http.route({
       patch,
       syncPreference: shouldSyncPreference(body),
     });
-    if (!updated) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
+    if (!updated)
+      return jsonResponse(
+        request,
+        { ok: false, error: "Reference not found" },
+        404,
+      );
     return jsonResponse(request, { ok: true });
   }),
 });
@@ -397,13 +470,19 @@ http.route({
     const denied = await ownerDenied(request);
     if (denied) return denied;
     const referenceId = new URL(request.url).searchParams.get("id");
-    if (!referenceId) return jsonResponse(request, { ok: false, error: "id is required" }, 400);
+    if (!referenceId)
+      return jsonResponse(request, { ok: false, error: "id is required" }, 400);
 
     const deleted = await ctx.runMutation(internal.httpDb.deleteReference, {
       referenceId,
       deletedAt: Date.now(),
     });
-    if (!deleted) return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
+    if (!deleted)
+      return jsonResponse(
+        request,
+        { ok: false, error: "Reference not found" },
+        404,
+      );
     return jsonResponse(request, { ok: true });
   }),
 });
@@ -420,7 +499,8 @@ http.route({
     }
 
     const body = (await readJson(request)) as CaptureBody | undefined;
-    if (!body) return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
+    if (!body)
+      return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
 
     const sourceUrl = cleanString(body.sourceUrl);
     const assetUrl = cleanString(body.assetUrl);
@@ -434,16 +514,23 @@ http.route({
     const altText = cleanString(body.altText);
     const rawMetadata = cleanString(body.rawMetadata);
     const captureSessionId = cleanString(body.captureSessionId);
-    const deferMetadata = body.deferMetadata === true || Boolean(captureSessionId);
+    const deferMetadata =
+      body.deferMetadata === true || Boolean(captureSessionId);
     const publishedAt = parseOptionalDate(body.publishedAt);
 
     if (!sourceUrl) {
-      return jsonResponse(request, { ok: false, error: "sourceUrl is required" }, 400);
+      return jsonResponse(
+        request,
+        { ok: false, error: "sourceUrl is required" },
+        400,
+      );
     }
 
     const kind = body.kind ?? (assetUrl ? "image" : "link");
     const clientMetadata = linkMetadataFromBody(body);
-    let canonicalUrl = normalizeSourceUrl(cleanUrl(clientMetadata.canonicalUrl) ?? sourceUrl);
+    let canonicalUrl = normalizeSourceUrl(
+      cleanUrl(clientMetadata.canonicalUrl) ?? sourceUrl,
+    );
     let duplicate = await ctx.runQuery(internal.httpDb.findDuplicateCapture, {
       sourceUrl,
       canonicalUrl,
@@ -465,19 +552,29 @@ http.route({
         postId,
         publishedAt,
         captureSessionId,
-        metadata: hasClientLinkMetadata(clientMetadata) ? clientMetadata : undefined,
+        metadata: hasClientLinkMetadata(clientMetadata)
+          ? clientMetadata
+          : undefined,
       });
       if (!duplicate) {
-        return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
+        return jsonResponse(
+          request,
+          { ok: false, error: "Reference not found" },
+          404,
+        );
       }
       return duplicateResponse(request, duplicate);
     }
 
     let linkMetadata: LinkMetadata | undefined;
     if (isLinkKind(kind) && !assetUrl && !deferMetadata) {
-      linkMetadata = mergeLinkMetadata(await fetchLinkMetadata(sourceUrl), clientMetadata);
+      linkMetadata = mergeLinkMetadata(
+        await fetchLinkMetadata(sourceUrl),
+        clientMetadata,
+      );
       const enrichedCanonical = cleanUrl(linkMetadata.canonicalUrl);
-      if (enrichedCanonical) canonicalUrl = normalizeSourceUrl(enrichedCanonical);
+      if (enrichedCanonical)
+        canonicalUrl = normalizeSourceUrl(enrichedCanonical);
       duplicate = await ctx.runQuery(internal.httpDb.findDuplicateCapture, {
         sourceUrl,
         canonicalUrl,
@@ -501,7 +598,11 @@ http.route({
           metadata: linkMetadata,
         });
         if (!duplicate) {
-          return jsonResponse(request, { ok: false, error: "Reference not found" }, 404);
+          return jsonResponse(
+            request,
+            { ok: false, error: "Reference not found" },
+            404,
+          );
         }
         return duplicateResponse(request, duplicate);
       }
@@ -548,7 +649,11 @@ http.route({
 
     let storedAsset: StoredRemoteAsset | undefined;
     if (assetUrl) {
-      storedAsset = await fetchAndStoreRemoteAsset(ctx, { assetUrl, sourceUrl, title });
+      storedAsset = await fetchAndStoreRemoteAsset(ctx, {
+        assetUrl,
+        sourceUrl,
+        title,
+      });
       storageStatus = storedAsset.status;
     }
 
@@ -568,7 +673,9 @@ http.route({
           canonicalUrl,
           storageStatus,
           capturePrincipal: principal.kind,
-          ...(principal.kind === "clipper" ? { captureDeviceId: principal.deviceId } : {}),
+          ...(principal.kind === "clipper"
+            ? { captureDeviceId: principal.deviceId }
+            : {}),
           metadataError: linkMetadata?.error,
         },
       }),
@@ -597,14 +704,22 @@ async function ownerDenied(request: Request) {
   }
 }
 
-async function authenticateCapture(ctx: any, request: Request): Promise<AccessPrincipal> {
+async function authenticateCapture(
+  ctx: any,
+  request: Request,
+): Promise<AccessPrincipal> {
   const token = bearerToken(request);
-  if (!token) throw new AccessError("Pair or unlock Ourchival before capturing.");
+  if (!token)
+    throw new AccessError("Pair or unlock Ourchival before capturing.");
 
   try {
     if (await isOwnerAccessKey(token)) return { kind: "owner" };
   } catch (error) {
-    if (!(error instanceof AccessError) || error.code !== "owner_access_unconfigured") throw error;
+    if (
+      !(error instanceof AccessError) ||
+      error.code !== "owner_access_unconfigured"
+    )
+      throw error;
   }
 
   const tokenHash = await hashSecret(token);
@@ -613,19 +728,35 @@ async function authenticateCapture(ctx: any, request: Request): Promise<AccessPr
     usedAt: Date.now(),
   });
   if (!result.ok && result.reason === "invalid") {
-    throw new AccessError("This Clipper credential is invalid.", 401, "invalid_device");
+    throw new AccessError(
+      "This Clipper credential is invalid.",
+      401,
+      "invalid_device",
+    );
   }
   if (!result.ok) {
     throw new AccessError("This Clipper was revoked.", 403, "revoked_device");
   }
-  return { kind: "clipper", deviceId: result.deviceId, deviceName: result.deviceName };
+  return {
+    kind: "clipper",
+    deviceId: result.deviceId,
+    deviceName: result.deviceName,
+  };
 }
 
 function accessErrorResponse(request: Request, error: unknown) {
   if (error instanceof AccessError) {
-    return jsonResponse(request, { ok: false, error: error.message, code: error.code }, error.status);
+    return jsonResponse(
+      request,
+      { ok: false, error: error.message, code: error.code },
+      error.status,
+    );
   }
-  return jsonResponse(request, { ok: false, error: "Access check failed." }, 500);
+  return jsonResponse(
+    request,
+    { ok: false, error: "Access check failed." },
+    500,
+  );
 }
 
 async function persistDuplicateCapture(
@@ -647,7 +778,7 @@ async function persistDuplicateCapture(
     captureSessionId?: string;
     metadata?: LinkMetadata;
   },
-) : Promise<DuplicateCapture | null> {
+): Promise<DuplicateCapture | null> {
   const assetUrl = cleanString(args.body.assetUrl);
   let storedAsset: StoredRemoteAsset | undefined;
   if (assetUrl && !duplicate.assetId) {
@@ -680,7 +811,11 @@ async function persistDuplicateCapture(
     ...(args.metadata ? { metadata: serializableValue(args.metadata) } : {}),
   });
   return saved
-    ? { reference: saved.reference, assetId: saved.assetId, reason: duplicate.reason }
+    ? {
+        reference: saved.reference,
+        assetId: saved.assetId,
+        reason: duplicate.reason,
+      }
     : null;
 }
 
@@ -728,7 +863,10 @@ function linkMetadataFromBody(body: CaptureBody): LinkMetadata {
   };
 }
 
-function mergeLinkMetadata(remote: LinkMetadata, client: LinkMetadata): LinkMetadata {
+function mergeLinkMetadata(
+  remote: LinkMetadata,
+  client: LinkMetadata,
+): LinkMetadata {
   const merged = {
     ...remote,
     ...(client.canonicalUrl ? { canonicalUrl: client.canonicalUrl } : {}),
@@ -736,17 +874,19 @@ function mergeLinkMetadata(remote: LinkMetadata, client: LinkMetadata): LinkMeta
     ...(client.description ? { description: client.description } : {}),
     ...(client.siteName ? { siteName: client.siteName } : {}),
     ...(client.faviconUrl ? { faviconUrl: client.faviconUrl } : {}),
-    ...(client.previewImageUrl ? { previewImageUrl: client.previewImageUrl } : {}),
+    ...(client.previewImageUrl
+      ? { previewImageUrl: client.previewImageUrl }
+      : {}),
     ...(client.author ? { author: client.author } : {}),
     ...(client.contentType ? { contentType: client.contentType } : {}),
   };
   const hasUsefulMetadata = Boolean(
     merged.title ||
-      merged.description ||
-      merged.siteName ||
-      merged.faviconUrl ||
-      merged.previewImageUrl ||
-      merged.author,
+    merged.description ||
+    merged.siteName ||
+    merged.faviconUrl ||
+    merged.previewImageUrl ||
+    merged.author,
   );
   return {
     ...merged,
@@ -758,19 +898,20 @@ function mergeLinkMetadata(remote: LinkMetadata, client: LinkMetadata): LinkMeta
 function hasClientLinkMetadata(metadata: LinkMetadata) {
   return Boolean(
     metadata.canonicalUrl ||
-      metadata.title ||
-      metadata.description ||
-      metadata.siteName ||
-      metadata.faviconUrl ||
-      metadata.previewImageUrl ||
-      metadata.author ||
-      metadata.contentType,
+    metadata.title ||
+    metadata.description ||
+    metadata.siteName ||
+    metadata.faviconUrl ||
+    metadata.previewImageUrl ||
+    metadata.author ||
+    metadata.contentType,
   );
 }
 
 function metadataStorageStatus(metadata: LinkMetadata) {
   if (metadata.metadataStatus === "ready") return "link metadata ready";
-  if (metadata.metadataStatus === "missing") return "link saved; metadata sparse";
+  if (metadata.metadataStatus === "missing")
+    return "link saved; metadata sparse";
   return `link saved; ${metadata.error ?? "metadata fetch failed"}`;
 }
 
@@ -792,14 +933,21 @@ async function fetchAndStoreRemoteAsset(
   ctx: { storage: { store: (blob: Blob) => Promise<any> } },
   args: { assetUrl: string; sourceUrl: string; title?: string },
 ): Promise<StoredRemoteAsset> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), remoteAssetTimeoutMs);
   try {
-    const response = await fetch(args.assetUrl, {
+    const { response } = await fetchPublicResponse(args.assetUrl, {
+      signal: controller.signal,
       headers: {
-        Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        Accept:
+          "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
       },
     });
     if (!response.ok) {
-      return { status: `fetch failed: ${response.status}`, storageProvider: "linked" };
+      return {
+        status: `fetch failed: ${response.status}`,
+        storageProvider: "linked",
+      };
     }
 
     const mimeType = response.headers.get("Content-Type") ?? undefined;
@@ -807,12 +955,15 @@ async function fetchAndStoreRemoteAsset(
     if (contentLength > maxRemoteAssetBytes) {
       return { status: "remote asset too large", storageProvider: "linked" };
     }
-    if (mimeType && !mimeType.toLowerCase().startsWith("image/")) {
-      return { status: `remote asset is ${mimeType}`, storageProvider: "linked" };
+    if (!mimeType?.toLowerCase().startsWith("image/")) {
+      return {
+        status: `remote asset is ${mimeType ?? "an unknown type"}`,
+        storageProvider: "linked",
+      };
     }
 
-    const blob = await response.blob();
-    if (blob.size > maxRemoteAssetBytes) {
+    const blob = await readBoundedBlob(response, mimeType, maxRemoteAssetBytes);
+    if (!blob) {
       return { status: "remote asset too large", storageProvider: "linked" };
     }
 
@@ -847,9 +998,39 @@ async function fetchAndStoreRemoteAsset(
     };
   } catch (error) {
     return {
-      status: error instanceof Error ? error.message : "remote asset fetch failed",
+      status:
+        error instanceof Error ? error.message : "remote asset fetch failed",
       storageProvider: "linked",
     };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readBoundedBlob(
+  response: Response,
+  mimeType: string,
+  maxBytes: number,
+) {
+  if (!response.body) return new Blob([], { type: mimeType });
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return undefined;
+      }
+      chunks.push(value);
+    }
+    return new Blob(chunks, { type: mimeType });
+  } finally {
+    reader.releaseLock();
   }
 }
 
@@ -883,7 +1064,9 @@ function cleanUrl(value: unknown) {
   if (!text) return undefined;
   try {
     const url = new URL(text);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : undefined;
   } catch {
     return undefined;
   }

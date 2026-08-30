@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { resolveConvexSiteUrl } from "./privateAccess";
 
 export function usePrivateImageUrl(sourceUrl?: string | null) {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(
     sourceUrl && !isProtectedDriveUrl(sourceUrl) ? sourceUrl : null,
   );
-  const [loading, setLoading] = useState(Boolean(sourceUrl && isProtectedDriveUrl(sourceUrl)));
+  const [loading, setLoading] = useState(
+    Boolean(sourceUrl && isProtectedDriveUrl(sourceUrl)),
+  );
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -34,8 +37,12 @@ export function usePrivateImageUrl(sourceUrl?: string | null) {
     void fetch(sourceUrl)
       .then(async (response) => {
         if (!response.ok) {
-          const body = (await response.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error || `Private image request failed: ${response.status}`);
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(
+            body.error || `Private image request failed: ${response.status}`,
+          );
         }
         return await response.blob();
       })
@@ -46,7 +53,11 @@ export function usePrivateImageUrl(sourceUrl?: string | null) {
       })
       .catch((caught) => {
         if (cancelled) return;
-        setError(caught instanceof Error ? caught.message : "Could not load private image.");
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not load private image.",
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -63,8 +74,14 @@ export function usePrivateImageUrl(sourceUrl?: string | null) {
 
 export function isProtectedDriveUrl(value: string) {
   try {
-    const base = typeof window === "undefined" ? "https://ourchival.invalid" : window.location.href;
-    return new URL(value, base).pathname.endsWith("/drive-file");
+    const siteUrl = resolveConvexSiteUrl();
+    if (!siteUrl) return false;
+    const base = typeof window === "undefined" ? siteUrl : window.location.href;
+    const candidate = new URL(value, base);
+    const site = new URL(siteUrl);
+    return (
+      candidate.origin === site.origin && candidate.pathname === "/drive-file"
+    );
   } catch {
     return false;
   }

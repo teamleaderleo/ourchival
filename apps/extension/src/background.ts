@@ -40,7 +40,11 @@ type CaptureResponse = {
 
 type ExtensionMessage =
   | { type: "OURCHIVAL_CAPTURE_TABS"; mode: TabCaptureMode }
-  | { type: "OURCHIVAL_CAPTURE_URLS"; entries: ImportedUrl[]; source?: ImportSource }
+  | {
+      type: "OURCHIVAL_CAPTURE_URLS";
+      entries: ImportedUrl[];
+      source?: ImportSource;
+    }
   | {
       type: "OURCHIVAL_CAPTURE_PAYLOADS";
       payloads: CapturePayload[];
@@ -54,6 +58,8 @@ type CaptureConnection = {
 };
 
 let activeJobId: string | undefined;
+
+void chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -129,7 +135,10 @@ chrome.runtime.onMessage.addListener(
       void captureTabs(message.mode)
         .then((state) => sendResponse({ ok: true, state }))
         .catch((error) =>
-          sendResponse({ ok: false, error: errorMessage(error, "Tab capture failed.") }),
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Tab capture failed."),
+          }),
         );
       return true;
     }
@@ -137,11 +146,17 @@ chrome.runtime.onMessage.addListener(
     if (message?.type === "OURCHIVAL_CAPTURE_URLS") {
       void runBatch(
         message.source ?? "url_list",
-        message.entries.map((entry) => ({ url: entry.url, title: entry.title })),
+        message.entries.map((entry) => ({
+          url: entry.url,
+          title: entry.title,
+        })),
       )
         .then((state) => sendResponse({ ok: true, state }))
         .catch((error) =>
-          sendResponse({ ok: false, error: errorMessage(error, "URL import failed.") }),
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "URL import failed."),
+          }),
         );
       return true;
     }
@@ -150,7 +165,10 @@ chrome.runtime.onMessage.addListener(
       void runPayloadBatch(message.payloads, message.source ?? "retry")
         .then((state) => sendResponse({ ok: true, state }))
         .catch((error) =>
-          sendResponse({ ok: false, error: errorMessage(error, "Capture retry failed.") }),
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Capture retry failed."),
+          }),
         );
       return true;
     }
@@ -159,7 +177,10 @@ chrome.runtime.onMessage.addListener(
       void closeSavedTabs(message.tabIds)
         .then((closed) => sendResponse({ ok: true, closed }))
         .catch((error) =>
-          sendResponse({ ok: false, error: errorMessage(error, "Could not close saved tabs.") }),
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Could not close saved tabs."),
+          }),
         );
       return true;
     }
@@ -198,13 +219,19 @@ async function queryTabs(mode: TabCaptureMode) {
     return await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   }
   if (mode === "selected") {
-    return await chrome.tabs.query({ highlighted: true, lastFocusedWindow: true });
+    return await chrome.tabs.query({
+      highlighted: true,
+      lastFocusedWindow: true,
+    });
   }
   const tabs = await chrome.tabs.query({ lastFocusedWindow: true });
   return tabs.sort((left, right) => left.index - right.index);
 }
 
-async function runPayloadBatch(payloads: CapturePayload[], source: BatchCaptureSource) {
+async function runPayloadBatch(
+  payloads: CapturePayload[],
+  source: BatchCaptureSource,
+) {
   return await runBatch(
     source,
     payloads.map((payload) => ({
@@ -253,7 +280,8 @@ async function continueBatch(
     connection = providedConnection ?? (await getCaptureConnection());
   } catch (error) {
     state.running = false;
-    state.currentLabel = "Pair the Clipper again, then retry the remaining captures.";
+    state.currentLabel =
+      "Pair the Clipper again, then retry the remaining captures.";
     await saveBatchState(state);
     throw error;
   }
@@ -289,11 +317,14 @@ async function continueBatch(
       try {
         const result = await capturePayload(connection, payload);
         if (!result.ok) {
-          throw new Error(result.error || `Capture failed with status ${result.status}`);
+          throw new Error(
+            result.error || `Capture failed with status ${result.status}`,
+          );
         }
         if (result.body.alreadySaved) state.duplicates += 1;
         else state.saved += 1;
-        if (typeof item.tabId === "number") state.successfulTabIds.push(item.tabId);
+        if (typeof item.tabId === "number")
+          state.successfulTabIds.push(item.tabId);
         await saveLastCapture(payload);
         await saveLastResult(toCaptureResult(result));
       } catch (error) {
@@ -391,7 +422,9 @@ async function getCaptureConnection(): Promise<CaptureConnection> {
   const endpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
   const deviceToken = settings.deviceToken?.trim();
   if (!endpoint || !deviceToken) {
-    throw new Error("Pair this browser from the Ourchival Clipper popup first.");
+    throw new Error(
+      "Pair this browser from the Ourchival Clipper popup first.",
+    );
   }
   return { endpoint, deviceToken };
 }
@@ -450,9 +483,7 @@ function buildCapturePayload(
     return buildXPayload(context, {
       kind: assetUrl ? "image" : "post",
       ...(assetUrl ? { assetUrl } : {}),
-      altText: assetUrl
-        ? context.parsedSource.altTexts?.[assetUrl]
-        : undefined,
+      altText: assetUrl ? context.parsedSource.altTexts?.[assetUrl] : undefined,
     });
   }
 
@@ -499,9 +530,7 @@ function pageSnapshotFields(
   return {
     ...(snapshot.canonicalUrl ? { canonicalUrl: snapshot.canonicalUrl } : {}),
     ...(snapshot.title ? { pageTitle: snapshot.title } : {}),
-    ...(snapshot.description
-      ? { pageDescription: snapshot.description }
-      : {}),
+    ...(snapshot.description ? { pageDescription: snapshot.description } : {}),
     ...(snapshot.siteName ? { siteName: snapshot.siteName } : {}),
     ...(snapshot.faviconUrl ? { faviconUrl: snapshot.faviconUrl } : {}),
     ...(snapshot.previewImageUrl
@@ -568,11 +597,7 @@ async function markResult(result: CaptureResult) {
     text: result.alreadySaved ? "↺" : result.ok ? "✓" : "!",
   });
   await chrome.action.setBadgeBackgroundColor({
-    color: result.alreadySaved
-      ? "#6f5bb7"
-      : result.ok
-        ? "#3d6b3d"
-        : "#8a3d3d",
+    color: result.alreadySaved ? "#6f5bb7" : result.ok ? "#3d6b3d" : "#8a3d3d",
   });
 }
 

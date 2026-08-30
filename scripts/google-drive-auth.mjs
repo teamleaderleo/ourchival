@@ -11,7 +11,8 @@ const port = Number(process.env.OURCHIVAL_GOOGLE_AUTH_PORT ?? 53682);
 const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
 const startUri = `http://127.0.0.1:${port}/start`;
 const scope = "https://www.googleapis.com/auth/drive.file";
-const useConvexCredentials = process.env.OURCHIVAL_GOOGLE_AUTH_USE_CONVEX === "1";
+const useConvexCredentials =
+  process.env.OURCHIVAL_GOOGLE_AUTH_USE_CONVEX === "1";
 const execFileAsync = promisify(execFile);
 
 const rl = readline.createInterface({
@@ -31,13 +32,25 @@ async function main() {
   const tokenResponse = await exchangeCode({ clientId, clientSecret, code });
 
   if (useConvexCredentials) {
-    await setConvexEnv("GOOGLE_REFRESH_TOKEN", tokenResponse.refresh_token, false);
-    await setConvexEnv("GOOGLE_REFRESH_TOKEN", tokenResponse.refresh_token, true);
-    console.log("\nSuccess. Updated the Google Drive credential in Convex development and production.\n");
+    await setConvexEnv(
+      "GOOGLE_REFRESH_TOKEN",
+      tokenResponse.refresh_token,
+      false,
+    );
+    await setConvexEnv(
+      "GOOGLE_REFRESH_TOKEN",
+      tokenResponse.refresh_token,
+      true,
+    );
+    console.log(
+      "\nSuccess. Updated the Google Drive credential in Convex development and production.\n",
+    );
     return;
   }
 
-  console.log("\nSuccess. The refresh token was generated but was not printed.");
+  console.log(
+    "\nSuccess. The refresh token was generated but was not printed.",
+  );
   console.log(
     "To update Convex without exposing credentials, rerun with OURCHIVAL_GOOGLE_AUTH_USE_CONVEX=1.\n",
   );
@@ -100,7 +113,9 @@ function listenForCode(clientId) {
         }
 
         response.writeHead(200, { "Content-Type": "text/html" });
-        response.end("<h1>Ourchival Google Drive connected.</h1><p>You can close this tab.</p>");
+        response.end(
+          "<h1>Ourchival Google Drive connected.</h1><p>You can close this tab.</p>",
+        );
         resolve(code);
         server.close();
       } catch (error) {
@@ -169,20 +184,39 @@ async function exchangeCode({ clientId, clientSecret, code }) {
   const body = await response.json();
 
   if (!response.ok || !body.refresh_token) {
-    console.error(body);
-    throw new Error("Google token exchange failed or did not return a refresh token.");
+    const errorCode =
+      typeof body.error === "string" ? body.error : "missing_refresh_token";
+    const errorDescription =
+      typeof body.error_description === "string"
+        ? body.error_description
+        : undefined;
+    console.error(
+      `Google token exchange failed (${response.status}, ${errorCode})${
+        errorDescription ? `: ${errorDescription}` : "."
+      }`,
+    );
+    throw new Error(
+      "Google token exchange failed or did not return a refresh token.",
+    );
   }
 
   return body;
 }
 
 function openBrowser(url) {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const command =
+    process.platform === "darwin"
+      ? "open"
+      : process.platform === "win32"
+        ? "cmd"
+        : "xdg-open";
   const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
 
   execFile(command, args, (error) => {
     if (error) {
-      console.log("Could not open your browser automatically. Paste the URL above into your browser.");
+      console.log(
+        "Could not open your browser automatically. Paste the URL above into your browser.",
+      );
     }
   });
 }

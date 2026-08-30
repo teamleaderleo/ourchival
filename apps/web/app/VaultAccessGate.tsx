@@ -24,7 +24,9 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   const [unlocked, setUnlocked] = useState(false);
   const [checking, setChecking] = useState(true);
   const [message, setMessage] = useState("");
-  const googleEnabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim());
+  const googleEnabled = Boolean(
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim(),
+  );
 
   useEffect(() => {
     const refresh = () => {
@@ -43,7 +45,9 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   async function verify(key: string, quiet = false) {
     const siteUrl = resolveConvexSiteUrl();
     if (!siteUrl) {
-      setMessage("Add NEXT_PUBLIC_CONVEX_URL or NEXT_PUBLIC_CONVEX_SITE_URL first.");
+      setMessage(
+        "Add NEXT_PUBLIC_CONVEX_URL or NEXT_PUBLIC_CONVEX_SITE_URL first.",
+      );
       setChecking(false);
       return false;
     }
@@ -72,7 +76,9 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     } catch (error) {
       setUnlocked(false);
       setMessage(
-        error instanceof Error ? error.message : "Ourchival could not be reached.",
+        error instanceof Error
+          ? error.message
+          : "Ourchival could not be reached.",
       );
       return false;
     } finally {
@@ -92,7 +98,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   }
 
   if (unlocked) {
-    return <UnlockedVault accessKey={accessKey}>{children}</UnlockedVault>;
+    return <UnlockedVault>{children}</UnlockedVault>;
   }
 
   return (
@@ -104,8 +110,8 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
         <p className="eyebrow">Private archive</p>
         <h1>Sign in to Ourchival</h1>
         <p>
-          Continue with the Google account connected to this vault. A recovery key stays
-          available as a fallback.
+          Continue with the Google account connected to this vault. A recovery
+          key stays available as a fallback.
         </p>
 
         <GoogleOwnerSignIn
@@ -126,7 +132,10 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
                 autoFocus={!googleEnabled}
               />
             </label>
-            <button className="button primary" disabled={checking || !accessKey.trim()}>
+            <button
+              className="button primary"
+              disabled={checking || !accessKey.trim()}
+            >
               {checking ? "Checking…" : "Unlock vault"}
             </button>
           </form>
@@ -141,41 +150,16 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   );
 }
 
-function UnlockedVault({
-  accessKey,
-  children,
-}: {
-  accessKey: string;
-  children: React.ReactNode;
-}) {
+function UnlockedVault({ children }: { children: React.ReactNode }) {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
   const [panelOpen, setPanelOpen] = useState(false);
   const [pairingCode, setPairingCode] = useState("");
-  const [pairingExpiresAt, setPairingExpiresAt] = useState<number | undefined>();
+  const [pairingExpiresAt, setPairingExpiresAt] = useState<
+    number | undefined
+  >();
   const [devices, setDevices] = useState<ClipperDevice[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    if (!siteUrl) return;
-    const originalFetch = window.fetch.bind(window);
-    const authorizedFetch: typeof window.fetch = async (input, init = {}) => {
-      const url = requestUrl(input);
-      if (!url.startsWith(siteUrl)) return await originalFetch(input, init);
-
-      const headers = new Headers(input instanceof Request ? input.headers : undefined);
-      new Headers(init.headers).forEach((value, key) => headers.set(key, value));
-      if (!headers.has("Authorization")) {
-        headers.set("Authorization", `Bearer ${accessKey}`);
-      }
-      return await originalFetch(input, { ...init, headers });
-    };
-
-    window.fetch = authorizedFetch;
-    return () => {
-      if (window.fetch === authorizedFetch) window.fetch = originalFetch;
-    };
-  }, [accessKey, siteUrl]);
 
   useEffect(() => {
     if (panelOpen) void loadDevices();
@@ -190,10 +174,15 @@ function UnlockedVault({
         error?: string;
         devices?: ClipperDevice[];
       };
-      if (!response.ok || body.ok === false) throw new Error(body.error || response.statusText);
+      if (!response.ok || body.ok === false)
+        throw new Error(body.error || response.statusText);
       setDevices(body.devices ?? []);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not load paired devices.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not load paired devices.",
+      );
     }
   }
 
@@ -202,7 +191,9 @@ function UnlockedVault({
     setBusy(true);
     setMessage("Creating a one-time code…");
     try {
-      const response = await fetch(`${siteUrl}/clipper-pairing`, { method: "POST" });
+      const response = await fetch(`${siteUrl}/clipper-pairing`, {
+        method: "POST",
+      });
       const body = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
@@ -216,7 +207,11 @@ function UnlockedVault({
       setPairingExpiresAt(body.expiresAt);
       setMessage("Enter this code in the Ourchival Clipper popup.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not create a pairing code.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not create a pairing code.",
+      );
     } finally {
       setBusy(false);
     }
@@ -235,11 +230,16 @@ function UnlockedVault({
         ok?: boolean;
         error?: string;
       };
-      if (!response.ok || body.ok === false) throw new Error(body.error || response.statusText);
+      if (!response.ok || body.ok === false)
+        throw new Error(body.error || response.statusText);
       setMessage("Clipper revoked.");
       await loadDevices();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not revoke that Clipper.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not revoke that Clipper.",
+      );
     } finally {
       setBusy(false);
     }
@@ -280,8 +280,8 @@ function UnlockedVault({
             </button>
           </div>
           <p>
-            Generate a short-lived code, then enter it in the browser extension. Each
-            browser receives its own revocable credential.
+            Generate a short-lived code, then enter it in the browser extension.
+            Each browser receives its own revocable credential.
           </p>
           <button
             type="button"
@@ -295,7 +295,10 @@ function UnlockedVault({
             <div className="pairing-code">
               <strong>{pairingCode}</strong>
               <span>
-                Expires {pairingExpiresAt ? formatRelativeExpiry(pairingExpiresAt) : "soon"}
+                Expires{" "}
+                {pairingExpiresAt
+                  ? formatRelativeExpiry(pairingExpiresAt)
+                  : "soon"}
               </span>
             </div>
           ) : null}
@@ -304,11 +307,16 @@ function UnlockedVault({
           <div className="paired-device-list">
             <div>
               <strong>Paired browsers</strong>
-              <span>{devices.filter((device) => !device.revokedAt).length} active</span>
+              <span>
+                {devices.filter((device) => !device.revokedAt).length} active
+              </span>
             </div>
             {devices.length > 0 ? (
               devices.map((device) => (
-                <article key={device._id} className={device.revokedAt ? "revoked" : ""}>
+                <article
+                  key={device._id}
+                  className={device.revokedAt ? "revoked" : ""}
+                >
                   <div>
                     <strong>{device.name}</strong>
                     <span>
@@ -341,12 +349,6 @@ function UnlockedVault({
       {children}
     </>
   );
-}
-
-function requestUrl(input: RequestInfo | URL) {
-  if (typeof input === "string") return input;
-  if (input instanceof URL) return input.toString();
-  return input.url;
 }
 
 function formatDate(value: number) {

@@ -5,8 +5,7 @@ const googleTokenInfoEndpoint = "https://oauth2.googleapis.com/tokeninfo";
 const googleCredentialCache = new Map<string, number>();
 
 export type AccessPrincipal =
-  | { kind: "owner" }
-  | { kind: "clipper"; deviceId: string; deviceName: string };
+  { kind: "owner" } | { kind: "clipper"; deviceId: string; deviceName: string };
 
 export class AccessError extends Error {
   readonly status: number;
@@ -47,14 +46,23 @@ export async function isOwnerAccessKey(candidate: string | undefined) {
 
 export async function requireOwnerAccess(candidate: string | undefined) {
   if (!(await isOwnerAccessKey(candidate))) {
-    throw new AccessError("The owner credential is invalid or expired.", 401, "invalid_owner_access");
+    throw new AccessError(
+      "The owner credential is invalid or expired.",
+      401,
+      "invalid_owner_access",
+    );
   }
   return { kind: "owner" } as const;
 }
 
 export async function hashSecret(value: string) {
-  const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    textEncoder.encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 export function createDeviceToken() {
@@ -72,8 +80,13 @@ export function createPairingCode() {
 
 export function normalizePairingCode(value: unknown) {
   if (typeof value !== "string") return undefined;
-  const cleaned = value.trim().toLocaleUpperCase().replace(/[^A-Z2-9]/g, "");
-  return cleaned.length === 10 ? `${cleaned.slice(0, 5)}-${cleaned.slice(5)}` : undefined;
+  const cleaned = value
+    .trim()
+    .toLocaleUpperCase()
+    .replace(/[^A-Z2-9]/g, "");
+  return cleaned.length === 10
+    ? `${cleaned.slice(0, 5)}-${cleaned.slice(5)}`
+    : undefined;
 }
 
 export function cleanDeviceName(value: unknown) {
@@ -102,7 +115,9 @@ async function isGoogleOwnerCredential(candidate: string) {
   const config = getDriveConfig();
   if (!config) return false;
 
-  const response = await fetch(`${googleTokenInfoEndpoint}?id_token=${encodeURIComponent(candidate)}`);
+  const response = await fetch(
+    `${googleTokenInfoEndpoint}?id_token=${encodeURIComponent(candidate)}`,
+  );
   const info = (await response.json().catch(() => undefined)) as
     | {
         aud?: string;
@@ -114,18 +129,39 @@ async function isGoogleOwnerCredential(candidate: string) {
     | undefined;
   if (!response.ok || !info) return false;
 
-  const issuerOk = info.iss === "accounts.google.com" || info.iss === "https://accounts.google.com";
-  const verified = info.email_verified === true || info.email_verified === "true";
+  const issuerOk =
+    info.iss === "accounts.google.com" ||
+    info.iss === "https://accounts.google.com";
+  const verified =
+    info.email_verified === true || info.email_verified === "true";
   const expiresAt = Number(info.exp ?? 0) * 1000;
-  if (!issuerOk || !verified || info.aud !== config.clientId || !info.email || expiresAt <= Date.now()) {
+  if (
+    !issuerOk ||
+    !verified ||
+    info.aud !== config.clientId ||
+    !info.email ||
+    expiresAt <= Date.now()
+  ) {
+    return false;
+  }
+
+  const configuredOwnerEmail = process.env.OURCHIVAL_OWNER_EMAIL?.trim();
+  if (
+    !configuredOwnerEmail ||
+    !googleOwnerEmailMatches(info.email, configuredOwnerEmail)
+  ) {
     return false;
   }
 
   const driveOwner = await getDriveOwnerIdentity();
   if (!driveOwner?.emailAddress) return false;
-  if (!googleOwnerEmailMatches(info.email, driveOwner.emailAddress)) return false;
+  if (!googleOwnerEmailMatches(info.email, driveOwner.emailAddress))
+    return false;
 
-  googleCredentialCache.set(candidate, Math.min(expiresAt, Date.now() + 5 * 60 * 1000));
+  googleCredentialCache.set(
+    candidate,
+    Math.min(expiresAt, Date.now() + 5 * 60 * 1000),
+  );
   if (googleCredentialCache.size > 32) {
     for (const [token, expiry] of googleCredentialCache) {
       if (expiry <= Date.now()) googleCredentialCache.delete(token);
@@ -134,8 +170,13 @@ async function isGoogleOwnerCredential(candidate: string) {
   return true;
 }
 
-export function googleOwnerEmailMatches(tokenEmail: string, driveOwnerEmail: string) {
-  return tokenEmail.trim().toLowerCase() === driveOwnerEmail.trim().toLowerCase();
+export function googleOwnerEmailMatches(
+  tokenEmail: string,
+  driveOwnerEmail: string,
+) {
+  return (
+    tokenEmail.trim().toLowerCase() === driveOwnerEmail.trim().toLowerCase()
+  );
 }
 
 function allowedCorsOrigin(origin: string | null) {
@@ -146,22 +187,29 @@ function allowedCorsOrigin(origin: string | null) {
     .filter(Boolean);
   if (configured.includes(origin)) return origin;
   if (/^chrome-extension:\/\/[a-p]{32}$/i.test(origin)) return origin;
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return origin;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin))
+    return origin;
   return undefined;
 }
 
 function randomToken(byteLength: number) {
   const bytes = new Uint8Array(byteLength);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 async function secretsEqual(left: string, right: string) {
-  const [leftHash, rightHash] = await Promise.all([hashSecret(left), hashSecret(right)]);
+  const [leftHash, rightHash] = await Promise.all([
+    hashSecret(left),
+    hashSecret(right),
+  ]);
   let difference = leftHash.length ^ rightHash.length;
   const length = Math.max(leftHash.length, rightHash.length);
   for (let index = 0; index < length; index += 1) {
-    difference |= (leftHash.charCodeAt(index) || 0) ^ (rightHash.charCodeAt(index) || 0);
+    difference |=
+      (leftHash.charCodeAt(index) || 0) ^ (rightHash.charCodeAt(index) || 0);
   }
   return difference === 0;
 }
