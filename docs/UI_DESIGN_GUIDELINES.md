@@ -72,6 +72,33 @@ split it into states or move it behind `details`.
   calm and sparse.
 - Empty states should teach one next action, not enumerate the whole product.
 
+## Protect the archive canvas
+
+The archive is an image-first light table, not an administration dashboard.
+
+- Give the saved work most of the first viewport.
+- Do not reserve permanent space for an empty inspector. Open details only when
+  a reference is selected.
+- Put tags, boards, projects, batch actions, enrichment, and saved-query
+  management in one clearly named secondary tools surface. A narrowly named
+  component must not quietly introduce unrelated management panels.
+- Do not show permanent creation forms for empty boards or projects.
+- Do not repeat the same primary action in the header, empty state, and utility
+  panels.
+- Treat signed out, checking a saved session, temporarily unreachable, loading,
+  empty, and populated as distinct states. Network trouble must not masquerade
+  as sign-out or an empty archive.
+
+## Typography and chrome
+
+- Functional text is normally at least 12px; body copy and buttons are normally
+  at least 13px.
+- Do not put a border, filled background, and shadow around every region.
+- Artwork gets the strongest visual contrast. Navigation and utilities recede.
+- Do not use browser-native prompts or confirms for routine editing.
+- Review at 1280 × 720 and 1440 × 900. Reject a layout when controls consume
+  more vertical space than the references they operate on.
+
 ## Review checklist
 
 For every changed surface, verify:

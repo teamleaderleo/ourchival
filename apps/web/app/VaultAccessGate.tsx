@@ -5,6 +5,7 @@ import { GoogleOwnerSignIn } from "./GoogleOwnerSignIn";
 import {
   clearOwnerAccessKey,
   getOwnerAccessKey,
+  isOwnerCredentialRejection,
   onOwnerAccessChange,
   resolveConvexSiteUrl,
   saveOwnerAccessKey,
@@ -23,6 +24,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   const [accessKey, setAccessKey] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const [message, setMessage] = useState("");
   const googleEnabled = Boolean(
     process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim(),
@@ -32,9 +34,12 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     const refresh = () => {
       const stored = getOwnerAccessKey();
       setAccessKey(stored);
-      if (stored) void verify(stored, true);
-      else {
+      if (stored) {
+        setSessionUnavailable(false);
+        void verify(stored, true);
+      } else {
         setUnlocked(false);
+        setSessionUnavailable(false);
         setChecking(false);
       }
     };
@@ -53,6 +58,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     }
 
     setChecking(true);
+    setSessionUnavailable(false);
     if (!quiet) setMessage("Signing in…");
     try {
       const response = await fetch(`${siteUrl}/auth-check`, {
@@ -64,23 +70,36 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
         credential?: string;
       };
       if (!response.ok || body.ok === false) {
+        if (!isOwnerCredentialRejection(response.status)) {
+          setUnlocked(false);
+          setSessionUnavailable(Boolean(getOwnerAccessKey()));
+          setMessage(
+            "Ourchival is temporarily unreachable. Your saved session is still available.",
+          );
+          return false;
+        }
         clearOwnerAccessKey();
         setUnlocked(false);
+        setSessionUnavailable(false);
         setMessage(body.error ?? "That sign-in or recovery key was rejected.");
         return false;
       }
       const verifiedCredential = body.credential?.trim() || key;
-      saveOwnerAccessKey(verifiedCredential);
+      saveOwnerAccessKey(verifiedCredential, { broadcast: false });
       setAccessKey(verifiedCredential);
       setUnlocked(true);
+      setSessionUnavailable(false);
       setMessage("");
       return true;
     } catch (error) {
       setUnlocked(false);
+      setSessionUnavailable(Boolean(quiet && getOwnerAccessKey()));
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Ourchival could not be reached.",
+        quiet && getOwnerAccessKey()
+          ? "Ourchival is temporarily unreachable. Your saved session is still available."
+          : error instanceof Error
+            ? error.message
+            : "Ourchival could not be reached.",
       );
       return false;
     } finally {
@@ -97,6 +116,35 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   async function acceptGoogleCredential(credential: string) {
     setAccessKey(credential);
     await verify(credential);
+  }
+
+  function forgetSavedSession() {
+    setSessionUnavailable(false);
+    setMessage("");
+    clearOwnerAccessKey();
+  }
+
+  if (checking && !unlocked) {
+    return (
+      <AccessStatusCard
+        title="Opening your vault"
+        message="Checking the saved Ourchival session…"
+        busy
+      />
+    );
+  }
+
+  if (sessionUnavailable && accessKey) {
+    return (
+      <AccessStatusCard
+        title="Vault temporarily unavailable"
+        message={message}
+        primaryLabel="Try again"
+        onPrimary={() => void verify(accessKey, true)}
+        secondaryLabel="Sign in again"
+        onSecondary={forgetSavedSession}
+      />
+    );
   }
 
   if (unlocked) {
@@ -146,6 +194,58 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
           <p className="access-message" role="alert">
             {message}
           </p>
+        ) : null}
+      </section>
+    </main>
+  );
+}
+
+function AccessStatusCard({
+  title,
+  message,
+  busy = false,
+  primaryLabel,
+  onPrimary,
+  secondaryLabel,
+  onSecondary,
+}: {
+  title: string;
+  message: string;
+  busy?: boolean;
+  primaryLabel?: string;
+  onPrimary?: () => void;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+}) {
+  return (
+    <main className="access-screen">
+      <section className="access-card access-status-card" aria-busy={busy}>
+        <div className="brand-mark" aria-hidden="true">
+          O
+        </div>
+        <p className="eyebrow">Private archive</p>
+        <h1>{title}</h1>
+        <p>{message}</p>
+        {busy ? <span className="access-progress" aria-hidden="true" /> : null}
+        {primaryLabel && onPrimary ? (
+          <div className="access-status-actions">
+            <button
+              type="button"
+              className="button primary"
+              onClick={onPrimary}
+            >
+              {primaryLabel}
+            </button>
+            {secondaryLabel && onSecondary ? (
+              <button
+                type="button"
+                className="button ghost"
+                onClick={onSecondary}
+              >
+                {secondaryLabel}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </section>
     </main>

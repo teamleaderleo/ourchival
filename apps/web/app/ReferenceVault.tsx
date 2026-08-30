@@ -17,12 +17,15 @@ export function ReferenceVault() {
   const [linkType, setLinkType] = useState("");
   const [quickLookId, setQuickLookId] = useState<string | null>(null);
   const currentViewLabel = viewLabels[vault.activeView];
-  const isReviewView = vault.activeView === "inbox" || vault.activeView === "later";
+  const isReviewView =
+    vault.activeView === "inbox" || vault.activeView === "later";
   const displayedCount = vault.query
     ? `${vault.filteredReferences.length}${vault.hasMore ? "+" : ""}`
     : String(vault.activeCount);
   const quickLookReference = quickLookId
-    ? vault.filteredReferences.find((reference) => reference._id === quickLookId) ?? null
+    ? (vault.filteredReferences.find(
+        (reference) => reference._id === quickLookId,
+      ) ?? null)
     : null;
 
   useEffect(() => {
@@ -60,7 +63,11 @@ export function ReferenceVault() {
     const freeText = stripLinkFilterTokens(vault.query);
     const domain = normalizeDomainToken(linkDomain);
     vault.setQuery(
-      [freeText, domain ? `site:${domain}` : "", linkType ? `type:${linkType}` : ""]
+      [
+        freeText,
+        domain ? `site:${domain}` : "",
+        linkType ? `type:${linkType}` : "",
+      ]
         .filter(Boolean)
         .join(" "),
     );
@@ -72,7 +79,10 @@ export function ReferenceVault() {
     vault.setQuery(stripLinkFilterTokens(vault.query));
   }
 
-  function applySavedSearch(search: { view: typeof vault.activeView; query: string }) {
+  function applySavedSearch(search: {
+    view: typeof vault.activeView;
+    query: string;
+  }) {
     setLinkDomain("");
     setLinkType("");
     vault.changeView(search.view);
@@ -88,7 +98,7 @@ export function ReferenceVault() {
           </div>
           <div>
             <p className="brand-name">Ourchival</p>
-            <p className="brand-subtitle">Reliquary</p>
+            <p className="brand-subtitle">Visual archive</p>
           </div>
         </div>
         <div className="header-actions">
@@ -204,7 +214,9 @@ export function ReferenceVault() {
         </form>
       ) : null}
 
-      <section className="vault-workspace">
+      <section
+        className={`vault-workspace ${vault.selectedReference ? "has-inspector" : ""}`}
+      >
         <VaultSidebar
           activeView={vault.activeView}
           counts={{
@@ -291,7 +303,11 @@ export function ReferenceVault() {
               <button type="submit" className="button secondary">
                 Apply filters
               </button>
-              <button type="button" className="button ghost" onClick={clearLinkFilters}>
+              <button
+                type="button"
+                className="button ghost"
+                onClick={clearLinkFilters}
+              >
                 Clear filters
               </button>
             </form>
@@ -303,14 +319,20 @@ export function ReferenceVault() {
             <div className="review-strip">
               <div>
                 <strong>Review queue</strong>
-                <span>←/→ move · K keep · L later · A archive · O open · Delete trash</span>
+                <span>
+                  ←/→ move · K keep · L later · A archive · O open · Delete
+                  trash
+                </span>
               </div>
               <div className="review-actions">
                 <button
                   type="button"
                   className="button primary"
                   onClick={() =>
-                    void vault.moveReference(vault.selectedReference!._id, "keep")
+                    void vault.moveReference(
+                      vault.selectedReference!._id,
+                      "keep",
+                    )
                   }
                 >
                   Keep <kbd>K</kbd>
@@ -320,7 +342,10 @@ export function ReferenceVault() {
                     type="button"
                     className="button secondary"
                     onClick={() =>
-                      void vault.moveReference(vault.selectedReference!._id, "later")
+                      void vault.moveReference(
+                        vault.selectedReference!._id,
+                        "later",
+                      )
                     }
                   >
                     Later <kbd>L</kbd>
@@ -330,7 +355,10 @@ export function ReferenceVault() {
                   type="button"
                   className="button ghost"
                   onClick={() =>
-                    void vault.moveReference(vault.selectedReference!._id, "archive")
+                    void vault.moveReference(
+                      vault.selectedReference!._id,
+                      "archive",
+                    )
                   }
                 >
                   Archive <kbd>A</kbd>
@@ -340,15 +368,13 @@ export function ReferenceVault() {
           ) : null}
 
           <div className="result-summary">
-            <span>Page {vault.pageNumber}</span>
-            <span>{vault.filteredReferences.length} mounted</span>
-            <span>{vault.libraryCount} in Library</span>
-            <span>{vault.inboxCount} in Inbox</span>
-            <span>{vault.laterCount} for Later</span>
+            <span>{vault.filteredReferences.length} on this page</span>
+            <span>{vault.activeCount} total</span>
+            {vault.pageNumber > 1 ? <span>Page {vault.pageNumber}</span> : null}
             {vault.query ? <span>Filtered by “{vault.query}”</span> : null}
           </div>
           <section
-            className={`reference-grid ${vault.activeView === "links" ? "link-grid" : ""}`}
+            className={`reference-grid ${vault.activeView === "links" ? "link-grid" : ""} ${vault.filteredReferences.length === 0 ? "empty-grid" : ""}`}
           >
             {vault.isLoading && vault.filteredReferences.length === 0 ? (
               <article className="empty-card loading-card" aria-live="polite">
@@ -357,6 +383,24 @@ export function ReferenceVault() {
                 </span>
                 <h2>Loading {currentViewLabel.toLowerCase()}</h2>
                 <p>Fetching the first page and current archive counts.</p>
+              </article>
+            ) : vault.loadFailed ? (
+              <article className="empty-card load-error-card" role="alert">
+                <span className="empty-mark" aria-hidden="true">
+                  !
+                </span>
+                <h2>Couldn’t reach your archive</h2>
+                <p>
+                  Your signed-in session is still saved. Check the connection
+                  and try loading this view again.
+                </p>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={vault.retryLoad}
+                >
+                  Try again
+                </button>
               </article>
             ) : vault.filteredReferences.length === 0 ? (
               <article className="empty-card">
@@ -377,15 +421,6 @@ export function ReferenceVault() {
                       : "Try a source domain, artist name, title, note, tag, board, project, or reuse reason."
                     : emptyMessage(vault.activeView)}
                 </p>
-                {!vault.query && vault.activeView === "inbox" ? (
-                  <button
-                    type="button"
-                    className="button secondary"
-                    onClick={() => vault.setCaptureOpen(true)}
-                  >
-                    Add a reference
-                  </button>
-                ) : null}
               </article>
             ) : (
               vault.filteredReferences.map((reference) => (
@@ -404,8 +439,11 @@ export function ReferenceVault() {
           {!vault.isLoading ? (
             <div className="pagination-bar" aria-live="polite">
               <p>
-                Page {vault.pageNumber} · {vault.filteredReferences.length} mounted
-                {vault.query ? " for this search" : ` · ${vault.activeCount} total`}
+                Page {vault.pageNumber} · {vault.filteredReferences.length}{" "}
+                mounted
+                {vault.query
+                  ? " for this search"
+                  : ` · ${vault.activeCount} total`}
               </p>
               <div className="pagination-actions">
                 <button
@@ -422,20 +460,34 @@ export function ReferenceVault() {
                   onClick={() => void vault.loadOlderPage()}
                   disabled={!vault.hasMore || vault.isLoadingPage}
                 >
-                  {vault.isLoadingPage ? "Loading…" : vault.hasMore ? "Older" : "End reached"}
+                  {vault.isLoadingPage
+                    ? "Loading…"
+                    : vault.hasMore
+                      ? "Older"
+                      : "End reached"}
                 </button>
               </div>
             </div>
           ) : null}
         </main>
-        <aside className="inspector" aria-label="Selected reference inspector">
-          <div className="inspector-label-row">
-            <p className="eyebrow">Inspector</p>
-            {vault.selectedReference ? (
-              <span>{referenceKindLabel(vault.selectedReference.kind)}</span>
-            ) : null}
-          </div>
-          {vault.selectedReference ? (
+        {vault.selectedReference ? (
+          <aside
+            className="inspector"
+            aria-label="Selected reference inspector"
+          >
+            <div className="inspector-label-row">
+              <p className="eyebrow">Details</p>
+              <div>
+                <span>{referenceKindLabel(vault.selectedReference.kind)}</span>
+                <button
+                  type="button"
+                  className="inspector-close"
+                  onClick={() => vault.setSelectedId(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
             <>
               <SelectedReference
                 key={vault.selectedReference._id}
@@ -450,15 +502,8 @@ export function ReferenceVault() {
                 reference={vault.selectedReference}
               />
             </>
-          ) : (
-            <div className="inspector-empty">
-              <span aria-hidden="true">↖</span>
-              <p>
-                Select a reference to inspect its source, notes, and workflow actions.
-              </p>
-            </div>
-          )}
-        </aside>
+          </aside>
+        ) : null}
       </section>
 
       {quickLookReference ? (
@@ -502,9 +547,12 @@ function emptyHeading(view: string, label: string) {
 }
 
 function emptyMessage(view: string) {
-  if (view === "inbox") return "New captures will arrive here for a quick decision.";
-  if (view === "later") return "Defer an Inbox item when it deserves another look.";
-  if (view === "archive") return "Archived references stay available without filling the Library.";
+  if (view === "inbox")
+    return "New captures will arrive here for a quick decision.";
+  if (view === "later")
+    return "Defer an Inbox item when it deserves another look.";
+  if (view === "archive")
+    return "Archived references stay available without filling the Library.";
   if (view === "trash") return "Items in Trash can be restored to Inbox.";
   return "Keep an Inbox reference to add it to this collection.";
 }

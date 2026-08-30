@@ -9,13 +9,16 @@ export function getOwnerAccessKey() {
   return window.localStorage.getItem(accessKeyStorageKey)?.trim() ?? "";
 }
 
-export function saveOwnerAccessKey(value: string) {
+export function saveOwnerAccessKey(
+  value: string,
+  { broadcast = true }: { broadcast?: boolean } = {},
+) {
   if (typeof window === "undefined") return;
   const key = value.trim();
   if (getOwnerAccessKey() === key) return;
   if (key) window.localStorage.setItem(accessKeyStorageKey, key);
   else window.localStorage.removeItem(accessKeyStorageKey);
-  window.dispatchEvent(new Event(accessChangedEvent));
+  if (broadcast) window.dispatchEvent(new Event(accessChangedEvent));
 }
 
 export function clearOwnerAccessKey() {
@@ -57,6 +60,10 @@ export function resolveConvexSiteUrl() {
   const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL?.trim();
   if (!convexUrl) return undefined;
   return convexUrl.replace(/\.convex\.cloud\/?$/, ".convex.site");
+}
+
+export function isOwnerCredentialRejection(status: number) {
+  return status === 401 || status === 403;
 }
 
 function installPrivateFetchInterceptor() {

@@ -22,6 +22,12 @@ export function TagFilterBar({
     () => tagChoices(tags, tagSearch, activeSlug, 12),
     [activeSlug, tagSearch, tags],
   );
+  const activeFilterCount = query
+    .trim()
+    .split(/\s+/)
+    .filter((token) =>
+      /^(tag|board|project|site|domain|type|kind):/i.test(token),
+    ).length;
 
   function applyTag(slug: string) {
     const text = stripTagToken(query);
@@ -29,80 +35,97 @@ export function TagFilterBar({
   }
 
   return (
-    <>
-      {tags.length > 0 ? (
-        <div className="tag-filter-bar searchable" aria-label="Filter by tag">
-          <label>
-            <span>Tag</span>
-            <select
-              value={activeSlug}
-              onChange={(event) => applyTag(event.target.value)}
-            >
-              <option value="">All tags</option>
-              {tags.map((tag) => (
-                <option key={tag._id} value={tag.slug}>
-                  {tag.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="tag-filter-search">
-            <span>Find</span>
-            <div>
-              <input
-                type="search"
-                value={tagSearch}
-                onChange={(event) => setTagSearch(event.target.value)}
-                placeholder="Search tag catalog…"
-                aria-label="Search tag catalog"
-              />
-              {tagSearch ? (
-                <button
-                  type="button"
-                  onClick={() => setTagSearch("")}
-                  aria-label="Clear tag search"
-                >
-                  ×
+    <details className="vault-tools">
+      <summary>
+        <span>
+          <strong>Filter &amp; organize</strong>
+          <small>Tags, boards, projects, batches, and enrichment</small>
+        </span>
+        <span>
+          {activeFilterCount ? `${activeFilterCount} active` : "Optional"}
+        </span>
+      </summary>
+      <div className="vault-tools-content">
+        {tags.length > 0 ? (
+          <div className="tag-filter-bar searchable" aria-label="Filter by tag">
+            <label>
+              <span>Tag</span>
+              <select
+                value={activeSlug}
+                onChange={(event) => applyTag(event.target.value)}
+              >
+                <option value="">All tags</option>
+                {tags.map((tag) => (
+                  <option key={tag._id} value={tag.slug}>
+                    {tag.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="tag-filter-search">
+              <span>Find</span>
+              <div>
+                <input
+                  type="search"
+                  value={tagSearch}
+                  onChange={(event) => setTagSearch(event.target.value)}
+                  placeholder="Search tag catalog…"
+                  aria-label="Search tag catalog"
+                />
+                {tagSearch ? (
+                  <button
+                    type="button"
+                    onClick={() => setTagSearch("")}
+                    aria-label="Clear tag search"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            </label>
+            <div className="tag-filter-chips" aria-label="Tag choices">
+              {visibleTags.length > 0 ? (
+                visibleTags.map((tag) => (
+                  <button
+                    key={tag._id}
+                    type="button"
+                    className={activeSlug === tag.slug ? "active" : ""}
+                    onClick={() =>
+                      applyTag(activeSlug === tag.slug ? "" : tag.slug)
+                    }
+                    title={
+                      activeSlug === tag.slug
+                        ? `Clear #${tag.name}`
+                        : `Filter by #${tag.name}`
+                    }
+                  >
+                    #{tag.name}
+                  </button>
+                ))
+              ) : (
+                <span className="tag-filter-empty">No matching tags</span>
+              )}
+            </div>
+            <div className="tag-filter-status" aria-live="polite">
+              <span>
+                {tagSearch.trim()
+                  ? `${visibleTags.length} shown · ${tags.length} total`
+                  : `${tags.length} tags`}
+              </span>
+              {activeTag ? (
+                <button type="button" onClick={() => applyTag("")}>
+                  Clear #{activeTag.name}
                 </button>
               ) : null}
             </div>
-          </label>
-          <div className="tag-filter-chips" aria-label="Tag choices">
-            {visibleTags.length > 0 ? (
-              visibleTags.map((tag) => (
-                <button
-                  key={tag._id}
-                  type="button"
-                  className={activeSlug === tag.slug ? "active" : ""}
-                  onClick={() => applyTag(activeSlug === tag.slug ? "" : tag.slug)}
-                  title={activeSlug === tag.slug ? `Clear #${tag.name}` : `Filter by #${tag.name}`}
-                >
-                  #{tag.name}
-                </button>
-              ))
-            ) : (
-              <span className="tag-filter-empty">No matching tags</span>
-            )}
           </div>
-          <div className="tag-filter-status" aria-live="polite">
-            <span>
-              {tagSearch.trim()
-                ? `${visibleTags.length} shown · ${tags.length} total`
-                : `${tags.length} tags`}
-            </span>
-            {activeTag ? (
-              <button type="button" onClick={() => applyTag("")}>
-                Clear #{activeTag.name}
-              </button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      <BoardPanel query={query} onChange={onChange} />
-      <ProjectPanel query={query} onChange={onChange} />
-      <BatchOrganizationBar />
-      <EnrichmentQueuePanel />
-    </>
+        ) : null}
+        <BoardPanel query={query} onChange={onChange} />
+        <ProjectPanel query={query} onChange={onChange} />
+        <BatchOrganizationBar />
+        <EnrichmentQueuePanel />
+      </div>
+    </details>
   );
 }
 
