@@ -45,6 +45,15 @@
   font-size: 0.82rem;
   line-height: 1.45;
 }
+.access-status-card { min-height: 260px; align-content: center; }
+.access-status-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.access-progress { display: block; width: 100%; height: 3px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.access-progress::after { display: block; width: 42%; height: 100%; border-radius: inherit; background: var(--accent); content: ""; animation: access-progress 1s ease-in-out infinite alternate; }
+
+@keyframes access-progress {
+  from { transform: translateX(0); }
+  to { transform: translateX(138%); }
+}
 
 .vault-session-controls {
   position: fixed;

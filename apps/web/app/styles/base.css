@@ -102,7 +102,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .utility-panel { display: grid; gap: 18px; margin-top: 16px; border-radius: 18px; padding: 18px; }
 .utility-panel h2 { margin: 3px 0 7px; font-size: 1.03rem; letter-spacing: -0.02em; }
 .utility-panel p { color: var(--muted); font-size: 0.84rem; line-height: 1.5; }
-.eyebrow, .nav-label { color: var(--muted); font-size: 0.68rem; font-weight: 760; letter-spacing: 0.12em; text-transform: uppercase; }
+.eyebrow, .nav-label { color: var(--muted); font-size: 0.72rem; font-weight: 760; letter-spacing: 0.1em; text-transform: uppercase; }
 .setup-panel { grid-template-columns: minmax(200px, 0.7fr) minmax(300px, 1.3fr); align-items: center; }
 .endpoint-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
 .endpoint-row code { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; background: var(--bg); color: var(--muted-strong); font-size: 0.8rem; text-overflow: ellipsis; white-space: nowrap; }

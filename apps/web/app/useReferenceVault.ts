@@ -39,7 +39,8 @@ type CaptureResponse = {
 };
 
 type StatusTone = "info" | "success" | "error";
-export type TriageDestination = "keep" | "later" | "archive" | "trash" | "restore";
+export type TriageDestination =
+  "keep" | "later" | "archive" | "trash" | "restore";
 
 type UndoMove = {
   referenceId: string;
@@ -94,7 +95,10 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       }),
     [query, references, favoritesOnly, lane, collection],
   );
-  const selectedReference = getSelectedReference(filteredReferences, selectedId);
+  const selectedReference = getSelectedReference(
+    filteredReferences,
+    selectedId,
+  );
   const activeCount = countForView(counts, activeView);
 
   useEffect(() => {
@@ -131,7 +135,13 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     ) {
       void loadOlderPage();
     }
-  }, [activeView, filteredReferences.length, hasMore, isLoading, isLoadingPage]);
+  }, [
+    activeView,
+    filteredReferences.length,
+    hasMore,
+    isLoading,
+    isLoadingPage,
+  ]);
 
   useEffect(() => {
     if (activeView !== "inbox" && activeView !== "later") return;
@@ -170,7 +180,11 @@ export function useReferenceVault(pageSize = defaultPageSize) {
         void moveReference(selectedReference._id, "trash");
       } else if (key === "o") {
         event.preventDefault();
-        window.open(selectedReference.sourceUrl, "_blank", "noopener,noreferrer");
+        window.open(
+          selectedReference.sourceUrl,
+          "_blank",
+          "noopener,noreferrer",
+        );
         void markReferenceOpened(selectedReference);
       }
     }
@@ -200,7 +214,9 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       if (debouncedQuery) params.set("query", debouncedQuery);
       if (cursor) params.set("cursor", cursor);
 
-      const response = await fetch(`${siteUrl}/references?${params.toString()}`);
+      const response = await fetch(
+        `${siteUrl}/references?${params.toString()}`,
+      );
       const body = (await response.json()) as ReferencesResponse;
       if (serial !== requestSerial.current) return;
       if (!response.ok || body.ok === false) {
@@ -223,7 +239,9 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     } catch (error) {
       if (serial === requestSerial.current) {
         report(
-          error instanceof Error ? error.message : "Could not load saved references.",
+          error instanceof Error
+            ? error.message
+            : "Could not load saved references.",
           "error",
         );
       }
@@ -237,7 +255,10 @@ export function useReferenceVault(pageSize = defaultPageSize) {
 
   async function loadOlderPage() {
     if (!continueCursor || !hasMore || isLoadingPage) return;
-    await requestReferencePage(continueCursor, [...cursorHistory, currentCursor]);
+    await requestReferencePage(continueCursor, [
+      ...cursorHistory,
+      currentCursor,
+    ]);
   }
 
   async function loadNewerPage() {
@@ -358,7 +379,10 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   async function toggleFavorite(reference: SavedReference) {
     const next = !reference.favorite;
     if (await patchReference(reference._id, { favorite: next })) {
-      report(next ? "Added to favorites." : "Removed from favorites.", "success");
+      report(
+        next ? "Added to favorites." : "Removed from favorites.",
+        "success",
+      );
     }
   }
 
@@ -401,7 +425,9 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   async function undoLastMove() {
     if (!undoMove) return;
 
-    const current = references.find((item) => item._id === undoMove.referenceId);
+    const current = references.find(
+      (item) => item._id === undoMove.referenceId,
+    );
     if (!current) {
       setUndoMove(null);
       return;
@@ -446,7 +472,9 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   function selectRelative(offset: number) {
     if (!filteredReferences.length) return;
     const currentIndex = selectedReference
-      ? filteredReferences.findIndex((item) => item._id === selectedReference._id)
+      ? filteredReferences.findIndex(
+          (item) => item._id === selectedReference._id,
+        )
       : 0;
     const nextIndex = Math.min(
       filteredReferences.length - 1,
@@ -456,7 +484,9 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   }
 
   function nextVisibleReferenceId(referenceId: string) {
-    const index = filteredReferences.findIndex((item) => item._id === referenceId);
+    const index = filteredReferences.findIndex(
+      (item) => item._id === referenceId,
+    );
     return (
       filteredReferences[index + 1]?._id ??
       filteredReferences[index - 1]?._id ??
@@ -468,6 +498,10 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     setActiveView(view);
     setSelectedId(null);
     setUndoMove(null);
+  }
+
+  function retryLoad() {
+    setRefreshKey((key) => key + 1);
   }
 
   return {
@@ -508,6 +542,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     pageNumber: cursorHistory.length + 1,
     isLoading,
     isLoadingPage,
+    loadFailed: statusTone === "error" && references.length === 0 && !isLoading,
+    retryLoad,
     loadOlderPage,
     loadNewerPage,
     saveManualReference,
@@ -547,7 +583,8 @@ function updateCountsForReferenceChange(
   after: SavedReference,
 ): VaultCounts {
   const next = { ...counts };
-  for (const key of referenceCountKeys(before)) next[key] = Math.max(0, next[key] - 1);
+  for (const key of referenceCountKeys(before))
+    next[key] = Math.max(0, next[key] - 1);
   for (const key of referenceCountKeys(after)) next[key] += 1;
   return next;
 }
@@ -627,7 +664,9 @@ function triageStatus(destination: TriageDestination) {
   return "Reference restored.";
 }
 
-function formatDuplicateStatus(existingReference: CaptureResponse["existingReference"]) {
+function formatDuplicateStatus(
+  existingReference: CaptureResponse["existingReference"],
+) {
   const title = existingReference?.title?.trim();
   const savedDate = existingReference?.capturedAt
     ? new Date(existingReference.capturedAt).toLocaleDateString()

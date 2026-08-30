@@ -94,11 +94,6 @@ export function VaultSidebar({
           icon="×"
         />
       </nav>
-
-      <div className="sidebar-note">
-        <p className="eyebrow">Capture loop</p>
-        <p>New saves land in Inbox. Keep them, defer them, archive them, or send them to Trash.</p>
-      </div>
     </aside>
   );
 }

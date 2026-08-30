@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isTrustedSiteRequest } from "./privateAccess";
+import {
+  isOwnerCredentialRejection,
+  isTrustedSiteRequest,
+} from "./privateAccess";
 
 describe("isTrustedSiteRequest", () => {
   const siteUrl = "https://safe.convex.site";
@@ -24,5 +27,15 @@ describe("isTrustedSiteRequest", () => {
     expect(
       isTrustedSiteRequest("https://safe.convex.site:444/drive-file", siteUrl),
     ).toBe(false);
+  });
+});
+
+describe("isOwnerCredentialRejection", () => {
+  it("invalidates saved access only for explicit authentication failures", () => {
+    expect(isOwnerCredentialRejection(401)).toBe(true);
+    expect(isOwnerCredentialRejection(403)).toBe(true);
+    expect(isOwnerCredentialRejection(429)).toBe(false);
+    expect(isOwnerCredentialRejection(500)).toBe(false);
+    expect(isOwnerCredentialRejection(503)).toBe(false);
   });
 });
