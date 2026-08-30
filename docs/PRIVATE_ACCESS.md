@@ -42,8 +42,9 @@ The owner key protects the HTTP archive, private Drive proxy, organization panel
 2. Open **Clipper access**.
 3. Create a pairing code.
 4. Open the Ourchival Clipper popup.
-5. Enter the Convex site URL, a recognizable browser name, and the pairing code.
-6. Select **Pair browser**.
+5. Confirm the prefilled Ourchival capture address and browser name, then enter
+   the pairing code.
+6. Select **Pair this browser**.
 
 Use the Convex HTTP Actions site URL without `/capture`, for example:
 
