@@ -65,6 +65,51 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 
+  reviewPreferences: defineTable({
+    referenceId: v.id("references"),
+    decision: v.union(v.literal("yes"), v.literal("maybe"), v.literal("no")),
+    triageState: v.union(
+      v.literal("kept"),
+      v.literal("later"),
+      v.literal("archived"),
+    ),
+    reviewedAt: v.number(),
+    title: v.optional(v.string()),
+    sourceUrl: v.string(),
+    canonicalUrl: v.optional(v.string()),
+    character: v.optional(v.string()),
+    authorName: v.optional(v.string()),
+    authorHandle: v.optional(v.string()),
+    platform: v.union(
+      v.literal("x"),
+      v.literal("pinterest"),
+      v.literal("pixiv"),
+      v.literal("discord"),
+      v.literal("manual"),
+      v.literal("generic"),
+    ),
+    sourceKind: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_reference", ["referenceId"])
+    .index("by_reviewed_at", ["reviewedAt"]),
+
+  preferenceExportState: defineTable({
+    key: v.string(),
+    generation: v.number(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("ready"),
+      v.literal("error"),
+    ),
+    requestedAt: v.number(),
+    exportedAt: v.optional(v.number()),
+    driveFileId: v.optional(v.string()),
+    itemCount: v.optional(v.number()),
+    error: v.optional(v.string()),
+  }).index("by_key", ["key"]),
+
   assets: defineTable({
     referenceId: v.id("references"),
     storageProvider: v.optional(

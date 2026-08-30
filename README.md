@@ -96,9 +96,11 @@ pnpm convex:dev         # start Convex dev
 GET    /auth-check
 GET    /references
 GET    /drive-file?id=...
+GET    /preference-export
 PATCH  /reference?id=...
 DELETE /reference?id=...
 POST   /reference-metadata?id=...
+POST   /preference-export
 POST   /capture
 POST   /clipper-pairing
 POST   /clipper-exchange
@@ -106,7 +108,7 @@ GET    /clipper-devices
 DELETE /clipper-devices?id=...
 ```
 
-The web vault sends the owner access key through the `Authorization` header. Ourchival Clipper uses a separate paired device credential for `/capture`. Drive-backed images render through `/drive-file` so originals can stay private. Link-only captures save metadata without creating a Drive file.
+The web vault normally sends its short-lived Google owner credential through the `Authorization` header; the owner key is a recovery fallback. Ourchival Clipper uses a separate paired device credential for `/capture`. Drive-backed images render through `/drive-file` so originals can stay private. Link-only captures save metadata without creating a Drive file. The private preference snapshot is rebuilt or inspected through `/preference-export`.
 
 ## Storage principle
 

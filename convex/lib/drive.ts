@@ -2,6 +2,7 @@ const tokenEndpoint = "https://oauth2.googleapis.com/token";
 const driveFilesEndpoint = "https://www.googleapis.com/drive/v3/files";
 const driveAboutEndpoint = "https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress,permissionId)";
 const driveUploadEndpoint = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size,webViewLink,webContentLink,thumbnailLink,parents";
+const preferenceFileName = "ourchival-preferences.json";
 
 type DriveConfig = {
   clientId: string;
@@ -139,6 +140,73 @@ export async function uploadBlobToDrive(args: {
     status: "stored original asset in Google Drive",
     file,
   };
+}
+
+export async function upsertPreferenceSnapshotToDrive(args: {
+  json: string;
+  driveFileId?: string;
+}) {
+  const config = getDriveConfig();
+  if (!config) throw new Error("Google Drive env vars are missing");
+
+  const accessToken = await getAccessToken(config);
+  if (args.driveFileId) {
+    const updated = await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(args.driveFileId)}?uploadType=media&fields=id,name,mimeType,size,webViewLink,parents`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+        },
+        body: args.json,
+      },
+    );
+    const file = (await updated.json().catch(() => undefined)) as DriveFile | undefined;
+    if (updated.ok && file?.id) return file;
+    if (updated.status !== 404) {
+      throw new Error(`Drive preference snapshot update failed: ${updated.status}`);
+    }
+  }
+
+  const metadata = {
+    name: preferenceFileName,
+    mimeType: "application/json",
+    ...(config.parentFolderId ? { parents: [config.parentFolderId] } : {}),
+    appProperties: {
+      ourchival: "true",
+      purpose: "preference_snapshot",
+      schemaVersion: "1",
+    },
+  };
+  const boundary = `ourchival_preferences_${crypto.randomUUID()}`;
+  const body = new Blob(
+    [
+      `--${boundary}\r\n`,
+      "Content-Type: application/json; charset=UTF-8\r\n\r\n",
+      JSON.stringify(metadata),
+      "\r\n",
+      `--${boundary}\r\n`,
+      "Content-Type: application/json; charset=UTF-8\r\n\r\n",
+      args.json,
+      "\r\n",
+      `--${boundary}--\r\n`,
+    ],
+    { type: `multipart/related; boundary=${boundary}` },
+  );
+  const response = await fetch(driveUploadEndpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  });
+  const file = (await response.json().catch(() => undefined)) as DriveFile | undefined;
+  if (!response.ok || !file?.id) {
+    throw new Error(`Drive preference snapshot creation failed: ${response.status}`);
+  }
+  return file;
 }
 
 export async function fetchDriveFile(fileId: string) {

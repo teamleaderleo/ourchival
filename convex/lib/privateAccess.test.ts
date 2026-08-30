@@ -3,6 +3,7 @@ import {
   cleanDeviceName,
   createDeviceToken,
   createPairingCode,
+  googleOwnerEmailMatches,
   hashSecret,
   normalizePairingCode,
 } from "./privateAccess";
@@ -30,5 +31,10 @@ describe("private access helpers", () => {
   it("cleans device labels", () => {
     expect(cleanDeviceName("  Leo's   Edge  ")).toBe("Leo's Edge");
     expect(cleanDeviceName(42)).toBe("Ourchival Clipper");
+  });
+
+  it("accepts only the Google account that owns the configured Drive", () => {
+    expect(googleOwnerEmailMatches("owner@example.com", " Owner@Example.com ")).toBe(true);
+    expect(googleOwnerEmailMatches("different@example.com", "owner@example.com")).toBe(false);
   });
 });

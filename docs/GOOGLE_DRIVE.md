@@ -12,7 +12,9 @@ Convex remains the catalog:
 - projects
 - project reuse notes
 
-Drive stores the original file bytes. Reliquary renders private Drive files through the Convex `/drive-file?id=...` proxy, so the files do not need to be made public.
+Drive stores the original file bytes. Ourchival renders private Drive files through the Convex `/drive-file?id=...` proxy, so the files do not need to be made public.
+
+Drive also holds `ourchival-preferences.json`, a compact private review snapshot for connected tools. It contains reference IDs, decisions, triage state, review timestamps, titles, source/canonical URLs, character, artist/handle, platform, and source kind. It contains no image bytes or credentials.
 
 ## 1. Create Google OAuth credentials
 
@@ -21,8 +23,14 @@ In Google Cloud Console:
 1. Create or select a project.
 2. Enable the Google Drive API.
 3. Configure the OAuth consent screen.
-4. Create an OAuth client.
-5. Add this redirect URI:
+4. Create a Web application OAuth client.
+5. Add the production JavaScript origin:
+
+```txt
+https://app.ourchival.com
+```
+
+6. Add this local token-generation redirect URI:
 
 ```txt
 http://127.0.0.1:53682/oauth2callback
@@ -46,7 +54,7 @@ npx convex env set GOOGLE_CLIENT_SECRET '...'
 npx convex env set GOOGLE_REFRESH_TOKEN '...'
 ```
 
-Run those commands.
+Run those commands. The backend `GOOGLE_CLIENT_ID` must match the public `NEXT_PUBLIC_GOOGLE_CLIENT_ID` configured for the web app.
 
 ## 3. Optional: choose a Drive folder
 
@@ -85,6 +93,12 @@ Asset: Google Drive original
 ```
 
 and expose an **Open in Drive** action.
+
+## Preference snapshot
+
+`POST /preference-export` queues a bounded, paginated rebuild of the review projection. Subsequent Yes/Maybe/No reviews update only the affected projection row and schedule a coalesced Drive write. `GET /preference-export` reports queued, running, ready, or error status without exposing the Drive file ID.
+
+The snapshot is updated in place so its Drive identity remains stable and connected Drive search can discover it by the exact name `ourchival-preferences.json`.
 
 ## Fallback behavior
 

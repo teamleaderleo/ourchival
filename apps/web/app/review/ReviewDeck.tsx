@@ -92,13 +92,16 @@ export function ReviewDeck() {
       while (nextIndex < candidates.length) {
         const index = nextIndex++;
         const candidate = candidates[index]!;
+        const assetUrl = candidate.originalImageUrl ?? candidate.previewImageUrl;
         try {
           const response = await fetch(`${vault.siteUrl}/capture`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              kind: "link",
+              kind: assetUrl ? "image" : "link",
               sourceUrl: candidate.sourceUrl,
+              assetUrl,
+              previewImageUrl: candidate.previewImageUrl ?? assetUrl,
               pageTitle: `${reviewQuery} · ${candidate.character} · ${candidate.title}`,
               authorName: candidate.artist,
               rawMetadata: JSON.stringify({
@@ -106,6 +109,8 @@ export function ReviewDeck() {
                 character: candidate.character,
                 sourceKind: candidate.sourceKind,
                 artist: candidate.artist,
+                previewImageUrl: candidate.previewImageUrl,
+                originalImageUrl: candidate.originalImageUrl,
               }),
               capturedAt: new Date().toISOString(),
             }),

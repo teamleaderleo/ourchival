@@ -1,4 +1,5 @@
 import { httpRouter } from "convex/server";
+import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
 import {
@@ -93,6 +94,7 @@ for (const path of [
   "/references",
   "/reference",
   "/reference-metadata",
+  "/preference-export",
   "/drive-file",
   "/clipper-pairing",
   "/clipper-exchange",
@@ -279,6 +281,40 @@ http.route({
 });
 
 http.route({
+  path: "/preference-export",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const denied = await ownerDenied(request);
+    if (denied) return denied;
+    const state = await ctx.runQuery(internal.preferenceExport.getExportState, {});
+    return jsonResponse(request, {
+      ok: true,
+      export: state
+        ? {
+            status: state.status,
+            requestedAt: state.requestedAt,
+            exportedAt: state.exportedAt,
+            itemCount: state.itemCount,
+            hasDriveFile: Boolean(state.driveFileId),
+            error: state.error,
+          }
+        : null,
+    });
+  }),
+});
+
+http.route({
+  path: "/preference-export",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const denied = await ownerDenied(request);
+    if (denied) return denied;
+    await ctx.runMutation(internal.preferenceExport.requestRebuild, {});
+    return jsonResponse(request, { ok: true, status: "queued" }, 202);
+  }),
+});
+
+http.route({
   path: "/reference-metadata",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
@@ -318,6 +354,9 @@ http.route({
     }
 
     if (Object.keys(patch).length > 0) await ctx.db.patch(reference._id, patch);
+    await ctx.runMutation(internal.preferenceExport.syncReferencePreference, {
+      referenceId: reference._id,
+    });
     return jsonResponse(request, {
       ok: true,
       reference: patch,
@@ -356,6 +395,11 @@ http.route({
 
     await ctx.db.patch(referenceId as any, patch);
     await applyReferenceStatsDelta(ctx, before, { ...before, ...patch });
+    if (shouldSyncPreference(body)) {
+      await ctx.runMutation(internal.preferenceExport.syncReferencePreference, {
+        referenceId: before._id,
+      });
+    }
     return jsonResponse(request, { ok: true });
   }),
 });
@@ -374,6 +418,9 @@ http.route({
     const patch = { deleted: true, archived: true, reviewedAt: Date.now() };
     await ctx.db.patch(referenceId as any, patch);
     await applyReferenceStatsDelta(ctx, before, { ...before, ...patch });
+    await ctx.runMutation(internal.preferenceExport.syncReferencePreference, {
+      referenceId: before._id,
+    });
     return jsonResponse(request, { ok: true });
   }),
 });
@@ -614,7 +661,7 @@ async function enrichDuplicateReference(
   },
 ) {
   const authorName = args.explicitAuthorName ?? args.metadata?.author;
-  const patch = {
+  const patch: Record<string, unknown> = {
     ...(!duplicate.reference.canonicalUrl ? { canonicalUrl: args.canonicalUrl } : {}),
     ...(!duplicate.reference.title && (args.pageTitle ?? args.metadata?.title)
       ? { title: args.pageTitle ?? args.metadata?.title }
@@ -632,7 +679,47 @@ async function enrichDuplicateReference(
       ? { captureSessionId: args.captureSessionId }
       : {}),
   };
-  if (Object.keys(patch).length > 0) await ctx.db.patch(duplicate.reference._id, patch);
+
+  const assetUrl = cleanString(args.body.assetUrl);
+  if (assetUrl && !duplicate.assetId) {
+    const storedAsset = await fetchAndStoreRemoteAsset(ctx, {
+      assetUrl,
+      sourceUrl: duplicate.reference.sourceUrl,
+      title: args.pageTitle ?? duplicate.reference.title,
+    });
+    duplicate.assetId = await ctx.db.insert("assets", {
+      referenceId: duplicate.reference._id,
+      storageProvider: storedAsset.storageProvider,
+      originalUrl: assetUrl,
+      ...(storedAsset.storageId ? { originalStorageId: storedAsset.storageId } : {}),
+      ...(storedAsset.mimeType ? { mimeType: storedAsset.mimeType } : {}),
+      ...(storedAsset.fileSize ? { fileSize: storedAsset.fileSize } : {}),
+      ...(storedAsset.driveFileId ? { driveFileId: storedAsset.driveFileId } : {}),
+      ...(storedAsset.driveFolderId ? { driveFolderId: storedAsset.driveFolderId } : {}),
+      ...(storedAsset.driveWebViewLink ? { driveWebViewLink: storedAsset.driveWebViewLink } : {}),
+      ...(storedAsset.driveWebContentLink
+        ? { driveWebContentLink: storedAsset.driveWebContentLink }
+        : {}),
+      ...(storedAsset.driveThumbnailLink
+        ? { driveThumbnailLink: storedAsset.driveThumbnailLink }
+        : {}),
+      ...(storedAsset.driveMimeType ? { driveMimeType: storedAsset.driveMimeType } : {}),
+      dominantColors: [],
+    });
+    if (args.body.kind === "image" && isLinkKind(duplicate.reference.kind)) {
+      patch.kind = "image";
+    }
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await ctx.db.patch(duplicate.reference._id, patch);
+    if (patch.kind) {
+      await applyReferenceStatsDelta(ctx, duplicate.reference, {
+        ...duplicate.reference,
+        ...patch,
+      });
+    }
+  }
 
   if (args.postText || args.altText || args.selectedText || args.rawMetadata || args.metadata) {
     await insertSourceSnapshot(ctx, {
@@ -784,6 +871,16 @@ function isLinkKind(kind: string) {
   return kind === "link" || kind === "page" || kind === "article";
 }
 
+function shouldSyncPreference(body: UpdateReferenceBody) {
+  return (
+    typeof body.title === "string" ||
+    body.triageState !== undefined ||
+    typeof body.reviewedAt === "number" ||
+    typeof body.archived === "boolean" ||
+    typeof body.deleted === "boolean"
+  );
+}
+
 async function findDuplicateCapture(
   ctx: { db: any },
   args: { sourceUrl: string; canonicalUrl: string; assetUrl?: string },
@@ -799,7 +896,6 @@ async function findDuplicateCapture(
         return { reference, assetId: asset._id, reason: "asset_url" };
       }
     }
-    return undefined;
   }
 
   const canonicalMatches = await ctx.db

@@ -123,7 +123,7 @@ async function isGoogleOwnerCredential(candidate: string) {
 
   const driveOwner = await getDriveOwnerIdentity();
   if (!driveOwner?.emailAddress) return false;
-  if (driveOwner.emailAddress.trim().toLowerCase() !== info.email.trim().toLowerCase()) return false;
+  if (!googleOwnerEmailMatches(info.email, driveOwner.emailAddress)) return false;
 
   googleCredentialCache.set(candidate, Math.min(expiresAt, Date.now() + 5 * 60 * 1000));
   if (googleCredentialCache.size > 32) {
@@ -132,6 +132,10 @@ async function isGoogleOwnerCredential(candidate: string) {
     }
   }
   return true;
+}
+
+export function googleOwnerEmailMatches(tokenEmail: string, driveOwnerEmail: string) {
+  return tokenEmail.trim().toLowerCase() === driveOwnerEmail.trim().toLowerCase();
 }
 
 function allowedCorsOrigin(origin: string | null) {
