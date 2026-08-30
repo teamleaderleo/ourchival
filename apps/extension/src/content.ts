@@ -15,6 +15,15 @@ type ContextCapture = {
 };
 
 let lastContextCapture: ContextCapture | undefined;
+let activeXLikesImport: Promise<void> | undefined;
+let stopXLikesImport = false;
+let positionedXLikesCursor: string | undefined;
+let positionedXLikesImportId: string | undefined;
+const observedXLikesSources = new Set<string>();
+
+const xLikesChunkSize = 12;
+const xLikesIdleRoundLimit = 12;
+const xLikesRoundLimit = 5_000;
 
 function snapshotPage(): PageSnapshot {
   const images = Array.from(document.images).map((image) => ({
@@ -144,58 +153,170 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return;
   }
 
-  if (message?.type === "OURCHIVAL_COLLECT_X_LIKES") {
-    void collectXLikeSnapshots()
-      .then((snapshots) => sendResponse({ ok: true, snapshots }))
-      .catch((error) =>
-        sendResponse({
-          ok: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Could not collect this Likes page.",
-        }),
-      );
-    return true;
+  if (message?.type === "OURCHIVAL_START_X_LIKES") {
+    if (activeXLikesImport) {
+      sendResponse({ ok: true, alreadyRunning: true });
+      return;
+    }
+    stopXLikesImport = false;
+    const importId = String(message.importId ?? "");
+    if (positionedXLikesImportId !== importId) {
+      positionedXLikesImportId = importId;
+      positionedXLikesCursor = undefined;
+      observedXLikesSources.clear();
+    }
+    activeXLikesImport = runXLikesImport({
+      importId,
+      profileUrl: String(message.profileUrl ?? ""),
+      resumeAfterSourceUrl:
+        typeof message.resumeAfterSourceUrl === "string"
+          ? message.resumeAfterSourceUrl
+          : undefined,
+    })
+      .catch(() => {
+        // runXLikesImport reports its own bounded error state to the worker.
+      })
+      .finally(() => {
+        activeXLikesImport = undefined;
+      });
+    sendResponse({ ok: true, started: true });
+    return;
+  }
+
+  if (message?.type === "OURCHIVAL_STOP_X_LIKES") {
+    stopXLikesImport = true;
+    sendResponse({ ok: true });
+    return;
   }
 });
 
-async function collectXLikeSnapshots() {
-  if (
-    !isXPage() ||
-    !/^\/[A-Za-z0-9_]{1,15}\/likes\/?$/i.test(location.pathname)
-  ) {
-    throw new Error("Open your X profile Likes page before importing.");
-  }
-
-  const startingScroll = window.scrollY;
-  const collected = new Map<string, XDomSnapshot>();
+async function runXLikesImport(args: {
+  importId: string;
+  profileUrl: string;
+  resumeAfterSourceUrl?: string;
+}) {
+  const seen = new Set(observedXLikesSources);
+  let pending: XDomSnapshot[] = [];
   let idleRounds = 0;
+  let lastSourceUrl = args.resumeAfterSourceUrl;
+  let seekingCursor = Boolean(
+    args.resumeAfterSourceUrl &&
+    positionedXLikesCursor !== args.resumeAfterSourceUrl,
+  );
+  let stopReason:
+    "paused" | "timeline_end" | "round_limit" | "cursor_not_found" | "error" =
+    "round_limit";
+  let finishMessage: string | undefined;
 
   try {
-    for (let round = 0; round < 60 && collected.size < 250; round += 1) {
-      const before = collected.size;
-      for (const article of document.querySelectorAll("article")) {
+    if (
+      !isXPage() ||
+      !/^\/[A-Za-z0-9_]{1,15}\/likes\/?$/i.test(location.pathname)
+    ) {
+      throw new Error("Open your X profile Likes page before importing.");
+    }
+    if (
+      !args.importId ||
+      args.profileUrl !== canonicalLikesUrl(location.href)
+    ) {
+      throw new Error(
+        "The X Likes import checkpoint does not match this page.",
+      );
+    }
+    if (!args.resumeAfterSourceUrl) {
+      window.scrollTo({ top: 0 });
+      await wait(400);
+    }
+
+    for (let round = 0; round < xLikesRoundLimit; round += 1) {
+      if (stopXLikesImport) {
+        stopReason = "paused";
+        break;
+      }
+
+      let discoveredThisRound = 0;
+      const articles = Array.from(document.querySelectorAll("article"));
+      for (const article of articles) {
         const snapshot = snapshotXArticle(article, undefined);
         const parsed = parseXSnapshot(snapshot);
         if (!parsed.postId || !/\/status\/\d+$/i.test(parsed.sourceUrl))
           continue;
-        collected.set(parsed.sourceUrl, snapshot);
-        if (collected.size >= 250) break;
+
+        if (seekingCursor) {
+          if (parsed.sourceUrl === args.resumeAfterSourceUrl) {
+            seekingCursor = false;
+            positionedXLikesCursor = parsed.sourceUrl;
+          }
+          continue;
+        }
+        if (parsed.sourceUrl === args.resumeAfterSourceUrl) continue;
+        if (seen.has(parsed.sourceUrl)) continue;
+        seen.add(parsed.sourceUrl);
+        observedXLikesSources.add(parsed.sourceUrl);
+        pending.push(snapshot);
+        discoveredThisRound += 1;
+        lastSourceUrl = parsed.sourceUrl;
+
+        if (pending.length >= xLikesChunkSize) {
+          await sendXLikesChunk(args, pending, lastSourceUrl);
+          positionedXLikesCursor = lastSourceUrl;
+          pending = [];
+        }
       }
 
-      idleRounds = collected.size === before ? idleRounds + 1 : 0;
-      if (idleRounds >= 5 || collected.size >= 250) break;
+      idleRounds = discoveredThisRound === 0 ? idleRounds + 1 : 0;
+      if (!seekingCursor && idleRounds >= xLikesIdleRoundLimit) {
+        stopReason = "timeline_end";
+        break;
+      }
       window.scrollBy({
         top: Math.max(520, Math.floor(window.innerHeight * 0.82)),
       });
-      await wait(650);
+      await wait(700);
     }
-  } finally {
-    window.scrollTo({ top: startingScroll });
-  }
 
-  return Array.from(collected.values());
+    if (seekingCursor) {
+      stopReason = "cursor_not_found";
+      finishMessage =
+        "The saved Likes cursor was not found. Leave the Likes page at the last imported position and continue again.";
+    }
+    if (pending.length > 0 && !seekingCursor) {
+      await sendXLikesChunk(args, pending, lastSourceUrl);
+      positionedXLikesCursor = lastSourceUrl;
+    }
+  } catch (error) {
+    stopReason = "error";
+    finishMessage =
+      error instanceof Error ? error.message : "The X Likes import stopped.";
+  } finally {
+    await chrome.runtime.sendMessage({
+      type: "OURCHIVAL_X_LIKES_FINISHED",
+      importId: args.importId,
+      profileUrl: args.profileUrl,
+      stopReason,
+      ...(lastSourceUrl ? { lastSourceUrl } : {}),
+      ...(finishMessage ? { message: finishMessage } : {}),
+    });
+  }
+}
+
+async function sendXLikesChunk(
+  args: { importId: string; profileUrl: string },
+  snapshots: XDomSnapshot[],
+  lastSourceUrl: string | undefined,
+) {
+  const response = (await chrome.runtime.sendMessage({
+    type: "OURCHIVAL_X_LIKES_CHUNK",
+    importId: args.importId,
+    profileUrl: args.profileUrl,
+    snapshots,
+    ...(lastSourceUrl ? { lastSourceUrl } : {}),
+  })) as { ok?: boolean; error?: string } | undefined;
+  if (!response?.ok) {
+    throw new Error(
+      response?.error || "Ourchival could not save this Likes chunk.",
+    );
+  }
 }
 
 function wait(milliseconds: number) {
@@ -272,4 +393,13 @@ function isXPage() {
     host === "twitter.com" ||
     host.endsWith(".twitter.com")
   );
+}
+
+function canonicalLikesUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return `https://x.com${url.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return "";
+  }
 }

@@ -104,6 +104,78 @@ export const authenticateClipper = internalMutation({
   },
 });
 
+export const upsertCaptureSession = internalMutation({
+  args: {
+    sessionKey: v.string(),
+    source: v.string(),
+    label: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    expectedCount: v.number(),
+    completedCount: v.number(),
+    savedCount: v.number(),
+    duplicateCount: v.number(),
+    skippedCount: v.number(),
+    failedCount: v.number(),
+    status: v.union(
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("interrupted"),
+    ),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("captureSessions")
+      .withIndex("by_session_key", (q) => q.eq("sessionKey", args.sessionKey))
+      .unique();
+    const counts = {
+      expectedCount: Math.max(existing?.expectedCount ?? 0, args.expectedCount),
+      completedCount: Math.max(
+        existing?.completedCount ?? 0,
+        args.completedCount,
+      ),
+      savedCount: Math.max(existing?.savedCount ?? 0, args.savedCount),
+      duplicateCount: Math.max(
+        existing?.duplicateCount ?? 0,
+        args.duplicateCount,
+      ),
+      skippedCount: Math.max(existing?.skippedCount ?? 0, args.skippedCount),
+      failedCount: Math.max(existing?.failedCount ?? 0, args.failedCount),
+    };
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        source: args.source,
+        kind: "import",
+        ...(args.label ? { label: args.label } : {}),
+        ...(args.sourceUrl ? { sourceUrl: args.sourceUrl } : {}),
+        ...counts,
+        status: args.status,
+        startedAt: Math.min(existing.startedAt, args.startedAt),
+        ...(args.completedAt ? { completedAt: args.completedAt } : {}),
+        updatedAt: args.updatedAt,
+      });
+      return await ctx.db.get(existing._id);
+    }
+    const sessionId = await ctx.db.insert("captureSessions", {
+      sessionKey: args.sessionKey,
+      source: args.source,
+      kind: "import",
+      ...(args.label ? { label: args.label } : {}),
+      ...(args.sourceUrl ? { sourceUrl: args.sourceUrl } : {}),
+      ...counts,
+      status: args.status,
+      reviewState: "unreviewed",
+      startedAt: args.startedAt,
+      ...(args.completedAt ? { completedAt: args.completedAt } : {}),
+      createdAt: args.updatedAt,
+      updatedAt: args.updatedAt,
+    });
+    return await ctx.db.get(sessionId);
+  },
+});
+
 export const getReferenceSource = internalQuery({
   args: { referenceId: v.string() },
   handler: async (ctx, args) => {

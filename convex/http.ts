@@ -57,6 +57,22 @@ type CaptureBody = {
   capturedAt?: string;
 };
 
+type CaptureSessionBody = {
+  sessionKey?: string;
+  source?: string;
+  label?: string;
+  sourceUrl?: string;
+  expectedCount?: number;
+  completedCount?: number;
+  savedCount?: number;
+  duplicateCount?: number;
+  skippedCount?: number;
+  failedCount?: number;
+  status?: "running" | "completed" | "interrupted";
+  startedAt?: string;
+  completedAt?: string;
+};
+
 type UpdateReferenceBody = {
   title?: string;
   notes?: string;
@@ -91,6 +107,7 @@ type DuplicateCapture = {
 for (const path of [
   "/auth-check",
   "/capture",
+  "/capture-session",
   "/references",
   "/reference",
   "/reference-metadata",
@@ -498,6 +515,69 @@ http.route({
 });
 
 http.route({
+  path: "/capture-session",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+
+    const body = (await readJson(request)) as CaptureSessionBody | undefined;
+    if (!body)
+      return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
+    const sessionKey = cleanString(body.sessionKey);
+    const source = cleanString(body.source);
+    const status =
+      body.status === "running" ||
+      body.status === "completed" ||
+      body.status === "interrupted"
+        ? body.status
+        : undefined;
+    if (!sessionKey || !source || !status) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "sessionKey, source, and status are required" },
+        400,
+      );
+    }
+    if (sessionKey.length > 160 || source.length > 64) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Capture session identity is too long" },
+        400,
+      );
+    }
+
+    const label = cleanString(body.label);
+    const sourceUrl = cleanUrl(body.sourceUrl);
+    const startedAt = parseOptionalDate(body.startedAt) ?? Date.now();
+    const completedAt = parseOptionalDate(body.completedAt);
+    const session = await ctx.runMutation(
+      internal.httpDb.upsertCaptureSession,
+      {
+        sessionKey,
+        source,
+        ...(label ? { label: label.slice(0, 160) } : {}),
+        ...(sourceUrl ? { sourceUrl } : {}),
+        expectedCount: boundedSessionCount(body.expectedCount),
+        completedCount: boundedSessionCount(body.completedCount),
+        savedCount: boundedSessionCount(body.savedCount),
+        duplicateCount: boundedSessionCount(body.duplicateCount),
+        skippedCount: boundedSessionCount(body.skippedCount),
+        failedCount: boundedSessionCount(body.failedCount),
+        status,
+        startedAt,
+        ...(completedAt ? { completedAt } : {}),
+        updatedAt: Date.now(),
+      },
+    );
+    return jsonResponse(request, { ok: true, session });
+  }),
+});
+
+http.route({
   path: "/capture",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
@@ -842,6 +922,12 @@ function cleanTagNames(value: unknown) {
         .filter(Boolean),
     ),
   ).slice(0, 12);
+}
+
+function boundedSessionCount(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(1_000_000, Math.max(0, Math.floor(value)))
+    : 0;
 }
 
 function duplicateResponse(request: Request, duplicate: DuplicateCapture) {
