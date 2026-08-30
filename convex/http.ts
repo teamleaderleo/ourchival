@@ -242,6 +242,7 @@ http.route({
     const denied = await ownerDenied(request);
     if (denied) return denied;
     try {
+      await ctx.runMutation(internal.httpDb.initializeReferenceStats, {});
       const page = await ctx.runQuery(internal.httpDb.listReferences, {
         url: request.url,
       });

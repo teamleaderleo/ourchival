@@ -3,10 +3,16 @@ import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
 import {
   applyReferenceStatsDelta,
+  ensureReferenceStats,
   listReferencePage,
   sourceSnapshotPayload,
 } from "./lib/referenceCatalog";
 import { normalizeSourceUrl } from "./lib/urls";
+
+export const initializeReferenceStats = internalMutation({
+  args: {},
+  handler: async (ctx) => await ensureReferenceStats(ctx),
+});
 
 export const listReferences = internalQuery({
   args: { url: v.string() },

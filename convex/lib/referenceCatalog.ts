@@ -182,7 +182,13 @@ export async function applyReferenceStatsDelta(
 export async function getReferenceCounts(ctx: any): Promise<ReferenceCounts> {
   const stats = await getReferenceStatsDocument(ctx);
   if (stats) return countsFromStats(stats);
-  return await scanReferenceCounts(ctx);
+  return emptyCounts();
+}
+
+export async function ensureReferenceStats(ctx: any) {
+  const stats = await getReferenceStatsDocument(ctx);
+  if (stats) return countsFromStats(stats);
+  return await rebuildReferenceStats(ctx);
 }
 
 export async function hydrateReference(
