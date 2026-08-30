@@ -22,6 +22,13 @@ export function ReferenceVault() {
   const displayedCount = vault.query
     ? `${vault.filteredReferences.length}${vault.hasMore ? "+" : ""}`
     : String(vault.activeCount);
+  const displayedCountLabel = vault.query
+    ? vault.filteredReferences.length === 1 && !vault.hasMore
+      ? "result"
+      : "results"
+    : vault.activeCount === 1
+      ? "reference"
+      : "references";
   const quickLookReference = quickLookId
     ? (vault.filteredReferences.find(
         (reference) => reference._id === quickLookId,
@@ -203,7 +210,7 @@ export function ReferenceVault() {
             <h1>{currentViewLabel}</h1>
             <p className="vault-count">
               <strong>{displayedCount}</strong>
-              <span>{vault.query ? "matches on page" : "references"}</span>
+              <span>{displayedCountLabel}</span>
             </p>
           </div>
           <div className="vault-toolbar">
@@ -331,16 +338,6 @@ export function ReferenceVault() {
             </div>
           ) : null}
 
-          {vault.query || vault.pageNumber > 1 ? (
-            <div className="result-summary">
-              <span>
-                {vault.filteredReferences.length}
-                {vault.hasMore ? "+" : ""} matches
-              </span>
-              {vault.pageNumber > 1 ? <span>Page {vault.pageNumber}</span> : null}
-              {vault.query ? <span>“{vault.query}”</span> : null}
-            </div>
-          ) : null}
           <section
             className={`reference-grid ${vault.activeView === "links" ? "link-grid" : ""} ${vault.filteredReferences.length === 0 ? "empty-grid" : ""}`}
           >
@@ -349,8 +346,7 @@ export function ReferenceVault() {
                 <span className="empty-mark" aria-hidden="true">
                   ◌
                 </span>
-                <h2>Loading {currentViewLabel.toLowerCase()}</h2>
-                <p>Fetching the first page and current archive counts.</p>
+                <h2>Opening {currentViewLabel.toLowerCase()}…</h2>
               </article>
             ) : vault.loadFailed ? (
               <article className="empty-card load-error-card" role="alert">
@@ -404,7 +400,7 @@ export function ReferenceVault() {
             )}
           </section>
 
-          {!vault.isLoading ? (
+          {!vault.isLoading && (vault.canLoadNewer || vault.hasMore) ? (
             <div className="pagination-bar" aria-live="polite">
               <div className="pagination-actions">
                 <button

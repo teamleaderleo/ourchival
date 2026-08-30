@@ -64,7 +64,7 @@ button:disabled { cursor: default; opacity: 0.48; }
   font-weight: 700;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
-.brand-name, .brand-subtitle, .eyebrow, .nav-label, .card-domain, .card-meta, .inspector-domain, .utility-panel p, .sidebar-note p, .result-summary, .vault-count, .inspector-empty p { margin: 0; }
+.brand-name, .brand-subtitle, .eyebrow, .nav-label, .card-domain, .card-meta, .inspector-domain, .utility-panel p, .sidebar-note p, .vault-count, .inspector-empty p { margin: 0; }
 .brand-name { color: var(--text); font-size: 0.96rem; font-weight: 680; letter-spacing: -0.025em; }
 .brand-subtitle { margin-top: 2px; color: var(--muted); font-size: 0.73rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .header-actions { justify-content: flex-end; gap: 8px; }
