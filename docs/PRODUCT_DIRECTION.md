@@ -75,6 +75,8 @@ Reliquary should feel like a working artist table:
 - quick copy/download/open actions
 - reused-in-projects history
 
+The interaction rules in [UI design guidelines](UI_DESIGN_GUIDELINES.md) are part of this product direction.
+
 ## Data model direction
 
 Core objects:

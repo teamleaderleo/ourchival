@@ -33,6 +33,7 @@ type PairingResponse = {
 };
 
 let transientMessage = "";
+const DEFAULT_OURCHIVAL_SITE_URL = "https://accurate-anteater-437.convex.site";
 
 async function render() {
   const root = document.getElementById("root");
@@ -47,11 +48,17 @@ async function render() {
     XLikesImportState | undefined;
   const normalizedEndpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
   const connected = Boolean(normalizedEndpoint && settings.deviceToken);
+
+  if (!connected) {
+    root.innerHTML = renderPairingState(settings);
+    bindPairingForm();
+    return;
+  }
+
   const batchRunning = Boolean(batch?.running);
   const xLikesRunning = Boolean(xLikesImport?.running);
-  const disabled =
-    !connected || batchRunning || xLikesRunning ? "disabled" : "";
-  const xLikesDisabled = !connected || batchRunning ? "disabled" : "";
+  const disabled = batchRunning || xLikesRunning ? "disabled" : "";
+  const xLikesDisabled = batchRunning ? "disabled" : "";
 
   root.innerHTML = `
     <main>
@@ -59,27 +66,9 @@ async function render() {
         <div class="brand-mark" aria-hidden="true">O</div>
         <div>
           <p class="eyebrow">Ourchival Clipper</p>
-          <h1>Send it to Inbox</h1>
+          <h1>Import from this browser</h1>
         </div>
       </header>
-
-      <section class="dump-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Tab dump</p>
-            <h2>Clear browser backlog</h2>
-          </div>
-          <span class="endpoint-state ${connected ? "ready" : ""}">
-            ${connected ? "Paired" : "Pairing needed"}
-          </span>
-        </div>
-        <div class="action-grid">
-          <button type="button" data-tab-mode="current" ${disabled}>Current tab</button>
-          <button type="button" data-tab-mode="selected" ${disabled}>Selected tabs</button>
-          <button type="button" data-tab-mode="window" ${disabled}>Entire window</button>
-        </div>
-        <p class="hint">Saved and previously captured tabs both qualify for the separate close action.</p>
-      </section>
 
       <section class="x-likes-panel">
         <div class="section-heading">
@@ -100,31 +89,6 @@ async function render() {
         <p class="hint">Keep your profile’s Likes tab open. Ourchival visibly advances the timeline, checkpoints every small chunk, preserves source and artist provenance, and stores every fetchable original from multi-image posts.</p>
       </section>
 
-      <form id="url-import-form" class="import-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Paste import</p>
-            <h2>URLs or OneTab export</h2>
-          </div>
-        </div>
-        <label for="url-list">One URL per line, with optional titles</label>
-        <textarea
-          id="url-list"
-          name="url-list"
-          rows="5"
-          placeholder="https://example.com/art | Gesture reference"
-          ${disabled}
-        ></textarea>
-        <div class="import-actions">
-          <button type="submit" class="primary" ${disabled}>Import pasted links</button>
-          <label class="file-button ${disabled ? "disabled" : ""}">
-            Import bookmarks HTML
-            <input id="bookmarks-file" type="file" accept=".html,.htm,text/html" ${disabled} />
-          </label>
-        </div>
-        <p id="import-feedback" class="hint">Duplicate lines and bookmark entries are removed before the job starts.</p>
-      </form>
-
       ${renderBatch(batch)}
 
       <section class="status-panel ${result?.ok ? "ok" : result ? "error" : ""}">
@@ -132,48 +96,61 @@ async function render() {
           <h2>${result?.alreadySaved ? "Already in Reliquary" : result?.ok ? "Last capture worked" : "Capture status"}</h2>
           ${result?.savedAt ? `<time>${escapeHtml(formatTime(result.savedAt))}</time>` : ""}
         </div>
-        <p>${escapeHtml(transientMessage || result?.message || (connected ? "Right-click an image or use a dump action above." : "Create a pairing code in Ourchival, then connect this browser."))}</p>
+        <p>${escapeHtml(transientMessage || result?.message || "Keep this popup open for bulk progress, or right-click an image for a quick save.")}</p>
       </section>
 
-      <details class="settings-panel" ${connected ? "" : "open"}>
-        <summary>${connected ? "Clipper connection" : "Pair this Clipper"}</summary>
-        ${
-          connected
-            ? `
+      <details class="import-tools">
+        <summary>Other import tools</summary>
+        <div class="details-stack">
+          <section class="dump-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Tab dump</p>
+                <h2>Clear browser backlog</h2>
+              </div>
+            </div>
+            <div class="action-grid">
+              <button type="button" data-tab-mode="current" ${disabled}>Current tab</button>
+              <button type="button" data-tab-mode="selected" ${disabled}>Selected tabs</button>
+              <button type="button" data-tab-mode="window" ${disabled}>Entire window</button>
+            </div>
+            <p class="hint">Saved and previously captured tabs both qualify for the separate close action.</p>
+          </section>
+
+          <form id="url-import-form" class="import-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Paste import</p>
+                <h2>URLs or OneTab export</h2>
+              </div>
+            </div>
+            <label for="url-list">One URL per line, with optional titles</label>
+            <textarea
+              id="url-list"
+              name="url-list"
+              rows="5"
+              placeholder="https://example.com/art | Gesture reference"
+              ${disabled}
+            ></textarea>
+            <div class="import-actions">
+              <button type="submit" class="primary" ${disabled}>Import pasted links</button>
+              <label class="file-button ${disabled ? "disabled" : ""}">
+                Import bookmarks HTML
+                <input id="bookmarks-file" type="file" accept=".html,.htm,text/html" ${disabled} />
+              </label>
+            </div>
+            <p id="import-feedback" class="hint">Duplicate lines and bookmark entries are removed before the job starts.</p>
+          </form>
+        </div>
+      </details>
+
+      <details class="settings-panel">
+        <summary>Clipper connection</summary>
           <div class="connected-device">
             <p><strong>${escapeHtml(settings.deviceName || "Ourchival Clipper")}</strong></p>
             <p class="hint">Captures are authorized with a revocable device credential.</p>
             <button id="disconnect-device" type="button">Disconnect this browser</button>
           </div>
-        `
-            : `
-          <form id="pairing-form">
-            <label for="endpoint">Convex site URL</label>
-            <input
-              id="endpoint"
-              name="endpoint"
-              placeholder="https://your-deployment.convex.site"
-              value="${escapeHtml(normalizeSiteRoot(settings.captureEndpoint) ?? "")}"
-            />
-            <label for="device-name">Device name</label>
-            <input
-              id="device-name"
-              name="device-name"
-              placeholder="Leo's Edge"
-              value="${escapeHtml(settings.deviceName ?? defaultDeviceName())}"
-            />
-            <label for="pairing-code">One-time pairing code</label>
-            <input
-              id="pairing-code"
-              name="pairing-code"
-              placeholder="ABCDE-23456"
-              autocomplete="one-time-code"
-            />
-            <button type="submit">Pair Clipper</button>
-            <p class="hint">Codes expire after ten minutes and work once.</p>
-          </form>
-        `
-        }
       </details>
 
       <details class="capture-details">
@@ -292,6 +269,82 @@ async function render() {
   });
 
   document
+    .getElementById("disconnect-device")
+    ?.addEventListener("click", async () => {
+      await saveSettings({
+        captureEndpoint: normalizeSiteRoot(settings.captureEndpoint),
+        deviceName: settings.deviceName,
+      });
+      await chrome.action.setBadgeText({ text: "" });
+      transientMessage =
+        "This browser is disconnected. Revoke it in Ourchival as well if it was lost.";
+      await render();
+    });
+}
+
+function renderPairingState(settings: ExtensionSettings) {
+  const siteUrl =
+    normalizeSiteRoot(settings.captureEndpoint) ?? DEFAULT_OURCHIVAL_SITE_URL;
+  const message =
+    transientMessage ||
+    "In Ourchival, open Clipper access and create a one-time pairing code.";
+
+  return `
+    <main class="pairing-view">
+      <header class="popup-header">
+        <div class="brand-mark" aria-hidden="true">O</div>
+        <div>
+          <p class="eyebrow">Ourchival Clipper</p>
+          <h1>Connect this browser</h1>
+        </div>
+      </header>
+
+      <section class="pairing-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">One-time setup</p>
+            <h2>Pair with your private vault</h2>
+          </div>
+        </div>
+        <p class="pairing-intro">${escapeHtml(message)}</p>
+        <form id="pairing-form">
+          <label for="endpoint">Ourchival capture address</label>
+          <input
+            id="endpoint"
+            name="endpoint"
+            type="url"
+            inputmode="url"
+            required
+            value="${escapeHtml(siteUrl)}"
+          />
+          <label for="device-name">This browser</label>
+          <input
+            id="device-name"
+            name="device-name"
+            required
+            value="${escapeHtml(settings.deviceName ?? defaultDeviceName())}"
+          />
+          <label for="pairing-code">One-time code</label>
+          <input
+            id="pairing-code"
+            name="pairing-code"
+            placeholder="ABCDE-23456"
+            autocomplete="one-time-code"
+            autocapitalize="characters"
+            spellcheck="false"
+            required
+            autofocus
+          />
+          <button type="submit" class="primary full-width">Pair this browser</button>
+          <p class="hint">The code expires after ten minutes and works once.</p>
+        </form>
+      </section>
+    </main>
+  `;
+}
+
+function bindPairingForm() {
+  document
     .getElementById("pairing-form")
     ?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -302,7 +355,7 @@ async function render() {
       const code = String(data.get("pairing-code") ?? "").trim();
       const deviceName = String(data.get("device-name") ?? "").trim();
       if (!pairingEndpoint || !code) {
-        transientMessage = "Enter the Convex site URL and pairing code.";
+        transientMessage = "Enter your Ourchival address and pairing code.";
         await render();
         return;
       }
@@ -335,19 +388,6 @@ async function render() {
         transientMessage =
           error instanceof Error ? error.message : "Pairing failed.";
       }
-      await render();
-    });
-
-  document
-    .getElementById("disconnect-device")
-    ?.addEventListener("click", async () => {
-      await saveSettings({
-        captureEndpoint: normalizeSiteRoot(settings.captureEndpoint),
-        deviceName: settings.deviceName,
-      });
-      await chrome.action.setBadgeText({ text: "" });
-      transientMessage =
-        "This browser is disconnected. Revoke it in Ourchival as well if it was lost.";
       await render();
     });
 }
