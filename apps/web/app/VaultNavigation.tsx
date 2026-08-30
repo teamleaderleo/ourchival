@@ -44,7 +44,7 @@ export function VaultSidebar({
       <nav className="sidebar-section">
         <p className="nav-label">Library</p>
         <VaultNavButton
-          label="All references"
+          label="Kept"
           count={counts.all}
           active={activeView === "all"}
           onClick={() => onChange("all")}

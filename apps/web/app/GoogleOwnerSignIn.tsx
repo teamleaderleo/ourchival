@@ -36,7 +36,12 @@ export function GoogleOwnerSignIn({
 }) {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim();
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const onCredentialRef = useRef(onCredential);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    onCredentialRef.current = onCredential;
+  }, [onCredential]);
 
   useEffect(() => {
     if (!clientId || disabled) return;
@@ -62,7 +67,7 @@ export function GoogleOwnerSignIn({
               return;
             }
             setMessage("");
-            void onCredential(credential);
+            void onCredentialRef.current(credential);
           },
         });
         google.accounts.id.renderButton(mountRef.current, {
@@ -83,7 +88,7 @@ export function GoogleOwnerSignIn({
     return () => {
       cancelled = true;
     };
-  }, [clientId, disabled, onCredential]);
+  }, [clientId, disabled]);
 
   if (!clientId) return null;
 

@@ -66,6 +66,28 @@ export function isOwnerCredentialRejection(status: number) {
   return status === 401 || status === 403;
 }
 
+export function ownerAuthRequestErrorMessage(
+  error: unknown,
+  hasSavedSession: boolean,
+) {
+  if (isRequestTimeout(error)) {
+    return hasSavedSession
+      ? "Ourchival took too long to respond. Your saved session is still available."
+      : "Ourchival took too long to respond. Try again.";
+  }
+  if (hasSavedSession) {
+    return "Ourchival is temporarily unreachable. Your saved session is still available.";
+  }
+  return error instanceof Error ? error.message : "Ourchival could not be reached.";
+}
+
+function isRequestTimeout(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  );
+}
+
 function installPrivateFetchInterceptor() {
   if (typeof window === "undefined") return;
   const markedWindow = window as unknown as Window & Record<string, unknown>;
