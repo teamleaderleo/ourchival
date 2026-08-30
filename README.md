@@ -1,6 +1,6 @@
 # Ourchival
 
-A private archive for saving images, links, sources, notes, tags, boards, and project references.
+An open-source, single-owner archive app for saving images, links, sources, notes, tags, boards, and project references. Vault records and media stay private in Convex and the owner’s Google Drive; this repository contains the application layer.
 
 Ourchival is the overall project. **Reliquary** is the vault experience inside it. **Ourchival Clipper** is the browser extension for saving images, links, pages, and source metadata from the web.
 
@@ -35,6 +35,7 @@ Save a reference through any path:
 - right-click an image in Edge with Ourchival Clipper
 - right-click a link in Edge with Ourchival Clipper
 - right-click the current page in Edge with Ourchival Clipper
+- open your X profile’s Likes page and import a bounded batch with Ourchival Clipper
 - paste source/image URLs into the manual Reliquary form
 
 Saved items appear in the Reliquary gallery with:
@@ -108,7 +109,7 @@ GET    /clipper-devices
 DELETE /clipper-devices?id=...
 ```
 
-The web vault normally sends its short-lived Google owner credential through the `Authorization` header; the owner key is a recovery fallback. Ourchival Clipper uses a separate paired device credential for `/capture`. Drive-backed images render through `/drive-file` so originals can stay private. Link-only captures save metadata without creating a Drive file. The private preference snapshot is rebuilt or inspected through `/preference-export`.
+The web vault exchanges a short-lived Google identity credential for a signed, sliding one-year Ourchival session; the owner key is a recovery fallback and session signer. Ourchival Clipper uses a separate paired device credential for `/capture`. Drive-backed images render through `/drive-file` so originals can stay private. Link-only captures save metadata without creating a Drive file. The private preference snapshot is rebuilt or inspected through `/preference-export`.
 
 ## Storage principle
 

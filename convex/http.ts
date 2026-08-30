@@ -52,6 +52,7 @@ type CaptureBody = {
   publishedAt?: string;
   altText?: string;
   rawMetadata?: string;
+  tags?: string[];
   captureSessionId?: string;
   capturedAt?: string;
 };
@@ -522,6 +523,7 @@ http.route({
     const postText = cleanString(body.postText);
     const altText = cleanString(body.altText);
     const rawMetadata = cleanString(body.rawMetadata);
+    const tagNames = cleanTagNames(body.tags);
     const captureSessionId = cleanString(body.captureSessionId);
     const deferMetadata =
       body.deferMetadata === true || Boolean(captureSessionId);
@@ -668,6 +670,7 @@ http.route({
 
     const created = await ctx.runMutation(internal.httpDb.createCapture, {
       reference: referenceDocument,
+      tagNames,
       ...(assetUrl ? { assetUrl } : {}),
       ...(storedAsset ? { storedAsset: serializableValue(storedAsset) } : {}),
       snapshot: serializableValue({
@@ -803,6 +806,7 @@ async function persistDuplicateCapture(
     ...(assetUrl ? { assetUrl } : {}),
     ...(storedAsset ? { storedAsset: serializableValue(storedAsset) } : {}),
     body: serializableValue(args.body),
+    tagNames: cleanTagNames(args.body.tags),
     details: serializableValue({
       canonicalUrl: args.canonicalUrl,
       pageTitle: args.pageTitle,
@@ -826,6 +830,18 @@ async function persistDuplicateCapture(
         reason: duplicate.reason,
       }
     : null;
+}
+
+function cleanTagNames(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim().replace(/\s+/g, " ").slice(0, 48))
+        .filter(Boolean),
+    ),
+  ).slice(0, 12);
 }
 
 function duplicateResponse(request: Request, duplicate: DuplicateCapture) {

@@ -1,4 +1,4 @@
-import type { ParsedXSource } from "@ourchival/parsers";
+import type { ParsedXSource, XDomSnapshot } from "@ourchival/parsers";
 import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
 import {
@@ -13,6 +13,7 @@ import {
   type BatchCaptureState,
   type CaptureResult,
 } from "./storage";
+import { buildXLikePayloads, isXLikesUrl } from "./xLikes";
 
 type TabCaptureMode = "current" | "selected" | "window";
 type ImportSource = "url_list" | "bookmarks" | "retry";
@@ -50,7 +51,8 @@ type ExtensionMessage =
       payloads: CapturePayload[];
       source?: BatchCaptureSource;
     }
-  | { type: "OURCHIVAL_CLOSE_SAVED_TABS"; tabIds: number[] };
+  | { type: "OURCHIVAL_CLOSE_SAVED_TABS"; tabIds: number[] }
+  | { type: "OURCHIVAL_IMPORT_X_LIKES" };
 
 type CaptureConnection = {
   endpoint: string;
@@ -173,6 +175,18 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
+    if (message?.type === "OURCHIVAL_IMPORT_X_LIKES") {
+      void importXLikes()
+        .then((state) => sendResponse({ ok: true, state }))
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "X Likes import failed."),
+          }),
+        );
+      return true;
+    }
+
     if (message?.type === "OURCHIVAL_CLOSE_SAVED_TABS") {
       void closeSavedTabs(message.tabIds)
         .then((closed) => sendResponse({ ok: true, closed }))
@@ -212,6 +226,30 @@ async function captureTabs(mode: TabCaptureMode) {
     source,
     tabs.map((tab) => ({ url: tab.url, title: tab.title, tabId: tab.id })),
   );
+}
+
+async function importXLikes() {
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  if (typeof tab?.id !== "number" || !isXLikesUrl(tab.url)) {
+    throw new Error("Open your X profile Likes page before importing.");
+  }
+
+  const collected = (await chrome.tabs.sendMessage(tab.id, {
+    type: "OURCHIVAL_COLLECT_X_LIKES",
+  })) as
+    { ok?: boolean; error?: string; snapshots?: XDomSnapshot[] } | undefined;
+  if (!collected?.ok) {
+    throw new Error(collected?.error || "Could not read the X Likes timeline.");
+  }
+
+  const payloads = buildXLikePayloads(collected.snapshots ?? []);
+  if (payloads.length === 0) {
+    throw new Error("No liked posts were found on the loaded timeline.");
+  }
+  return await runPayloadBatch(payloads, "x_likes");
 }
 
 async function queryTabs(mode: TabCaptureMode) {

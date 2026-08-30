@@ -26,7 +26,8 @@ export type BatchCaptureSource =
   | "url_list"
   | "bookmarks"
   | "retry"
-  | "x_post";
+  | "x_post"
+  | "x_likes";
 
 export type BatchCaptureItem = {
   url?: string;

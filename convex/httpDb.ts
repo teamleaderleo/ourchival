@@ -8,6 +8,7 @@ import {
   sourceSnapshotPayload,
 } from "./lib/referenceCatalog";
 import { normalizeSourceUrl } from "./lib/urls";
+import { updateReferenceTags } from "./lib/tags";
 
 export const initializeReferenceStats = internalMutation({
   args: {},
@@ -53,7 +54,9 @@ export const exchangePairingGrant = internalMutation({
       tokenHash: args.tokenHash,
       createdAt: args.now,
       lastUsedAt: args.now,
-      ...(args.extensionVersion ? { extensionVersion: args.extensionVersion } : {}),
+      ...(args.extensionVersion
+        ? { extensionVersion: args.extensionVersion }
+        : {}),
     });
     await ctx.db.patch(grant._id, { usedAt: args.now });
     return { ok: true as const, deviceId };
@@ -90,7 +93,8 @@ export const authenticateClipper = internalMutation({
       .withIndex("by_token_hash", (q) => q.eq("tokenHash", args.tokenHash))
       .first();
     if (!device) return { ok: false as const, reason: "invalid" as const };
-    if (device.revokedAt) return { ok: false as const, reason: "revoked" as const };
+    if (device.revokedAt)
+      return { ok: false as const, reason: "revoked" as const };
     await ctx.db.patch(device._id, { lastUsedAt: args.usedAt });
     return {
       ok: true as const,
@@ -126,17 +130,23 @@ export const applyReferenceMetadata = internalMutation({
     const snapshot = await ctx.db.get(snapshotId);
     const referencePatch: Record<string, unknown> = {};
 
-    if (!reference.title && metadata.title) referencePatch.title = metadata.title;
-    if (!reference.authorName && metadata.author) referencePatch.authorName = metadata.author;
+    if (!reference.title && metadata.title)
+      referencePatch.title = metadata.title;
+    if (!reference.authorName && metadata.author)
+      referencePatch.authorName = metadata.author;
     const refreshedCanonical = cleanUrl(metadata.canonicalUrl);
     if (refreshedCanonical) {
       const normalizedCanonical = normalizeSourceUrl(refreshedCanonical);
       if (normalizedCanonical !== reference.canonicalUrl) {
         const matches = await ctx.db
           .query("references")
-          .withIndex("by_canonical_url", (q) => q.eq("canonicalUrl", normalizedCanonical))
+          .withIndex("by_canonical_url", (q) =>
+            q.eq("canonicalUrl", normalizedCanonical),
+          )
           .collect();
-        if (!matches.some((item) => item._id !== reference._id && !item.deleted)) {
+        if (
+          !matches.some((item) => item._id !== reference._id && !item.deleted)
+        ) {
           referencePatch.canonicalUrl = normalizedCanonical;
         }
       }
@@ -145,9 +155,13 @@ export const applyReferenceMetadata = internalMutation({
     if (Object.keys(referencePatch).length > 0) {
       await ctx.db.patch(referenceId, referencePatch);
     }
-    await ctx.scheduler.runAfter(0, internal.preferenceExport.syncReferencePreference, {
-      referenceId,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.preferenceExport.syncReferencePreference,
+      {
+        referenceId,
+      },
+    );
     return {
       reference: referencePatch,
       sourceSnapshot: snapshot ? sourceSnapshotPayload(snapshot) : undefined,
@@ -157,7 +171,11 @@ export const applyReferenceMetadata = internalMutation({
 });
 
 export const updateReference = internalMutation({
-  args: { referenceId: v.string(), patch: v.any(), syncPreference: v.boolean() },
+  args: {
+    referenceId: v.string(),
+    patch: v.any(),
+    syncPreference: v.boolean(),
+  },
   handler: async (ctx, args) => {
     const referenceId = ctx.db.normalizeId("references", args.referenceId);
     if (!referenceId) return false;
@@ -167,9 +185,13 @@ export const updateReference = internalMutation({
     await ctx.db.patch(referenceId, patch);
     await applyReferenceStatsDelta(ctx, before, { ...before, ...patch });
     if (args.syncPreference) {
-      await ctx.scheduler.runAfter(0, internal.preferenceExport.syncReferencePreference, {
-        referenceId,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.preferenceExport.syncReferencePreference,
+        {
+          referenceId,
+        },
+      );
     }
     return true;
   },
@@ -188,10 +210,17 @@ export const deleteReference = internalMutation({
       reviewedAt: args.deletedAt,
     };
     await ctx.db.patch(referenceId, referencePatch);
-    await applyReferenceStatsDelta(ctx, before, { ...before, ...referencePatch });
-    await ctx.scheduler.runAfter(0, internal.preferenceExport.syncReferencePreference, {
-      referenceId,
+    await applyReferenceStatsDelta(ctx, before, {
+      ...before,
+      ...referencePatch,
     });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.preferenceExport.syncReferencePreference,
+      {
+        referenceId,
+      },
+    );
     return true;
   },
 });
@@ -212,6 +241,7 @@ export const saveDuplicateCapture = internalMutation({
     assetUrl: v.optional(v.string()),
     storedAsset: v.optional(v.any()),
     body: v.any(),
+    tagNames: v.array(v.string()),
     details: v.any(),
     metadata: v.optional(v.any()),
   },
@@ -230,14 +260,19 @@ export const saveDuplicateCapture = internalMutation({
       ...(!reference.title && (details.pageTitle ?? metadata?.title)
         ? { title: details.pageTitle ?? metadata?.title }
         : {}),
-      ...(!reference.authorName && (details.explicitAuthorName ?? metadata?.author)
+      ...(!reference.authorName &&
+      (details.explicitAuthorName ?? metadata?.author)
         ? { authorName: details.explicitAuthorName ?? metadata?.author }
         : {}),
       ...(!reference.authorHandle && details.authorHandle
         ? { authorHandle: details.authorHandle }
         : {}),
-      ...(!reference.authorUrl && details.authorUrl ? { authorUrl: details.authorUrl } : {}),
-      ...(!reference.postId && details.postId ? { postId: details.postId } : {}),
+      ...(!reference.authorUrl && details.authorUrl
+        ? { authorUrl: details.authorUrl }
+        : {}),
+      ...(!reference.postId && details.postId
+        ? { postId: details.postId }
+        : {}),
       ...(!reference.publishedAt && details.publishedAt
         ? { publishedAt: details.publishedAt }
         : {}),
@@ -252,10 +287,17 @@ export const saveDuplicateCapture = internalMutation({
         .query("assets")
         .withIndex("by_reference", (q) => q.eq("referenceId", referenceId))
         .collect();
-      const existingAsset = matchingAssets.find((asset) => asset.originalUrl === args.assetUrl);
+      const existingAsset = matchingAssets.find(
+        (asset) => asset.originalUrl === args.assetUrl,
+      );
       assetId = existingAsset?._id ?? null;
       if (!assetId) {
-        assetId = await insertAsset(ctx, referenceId, args.assetUrl, args.storedAsset);
+        assetId = await insertAsset(
+          ctx,
+          referenceId,
+          args.assetUrl,
+          args.storedAsset,
+        );
       }
       if (body.kind === "image" && isLinkKind(reference.kind)) {
         referencePatch.kind = "image";
@@ -265,8 +307,17 @@ export const saveDuplicateCapture = internalMutation({
     if (Object.keys(referencePatch).length > 0) {
       await ctx.db.patch(referenceId, referencePatch);
       if (referencePatch.kind) {
-        await applyReferenceStatsDelta(ctx, reference, { ...reference, ...referencePatch });
+        await applyReferenceStatsDelta(ctx, reference, {
+          ...reference,
+          ...referencePatch,
+        });
       }
+    }
+
+    if (args.tagNames.length > 0) {
+      await updateReferenceTags(ctx, referenceId, {
+        addNames: args.tagNames,
+      });
     }
 
     if (
@@ -302,12 +353,18 @@ export const saveDuplicateCapture = internalMutation({
 export const createCapture = internalMutation({
   args: {
     reference: v.any(),
+    tagNames: v.array(v.string()),
     assetUrl: v.optional(v.string()),
     storedAsset: v.optional(v.any()),
     snapshot: v.any(),
   },
   handler: async (ctx, args) => {
     const referenceId = await ctx.db.insert("references", args.reference);
+    if (args.tagNames.length > 0) {
+      await updateReferenceTags(ctx, referenceId, {
+        addNames: args.tagNames,
+      });
+    }
     const insertedReference = await ctx.db.get(referenceId);
     await applyReferenceStatsDelta(ctx, null, insertedReference);
     const assetId =
@@ -329,7 +386,9 @@ async function findDuplicate(
   if (args.assetUrl) {
     const matchingAssets = await ctx.db
       .query("assets")
-      .withIndex("by_original_url", (q: any) => q.eq("originalUrl", args.assetUrl))
+      .withIndex("by_original_url", (q: any) =>
+        q.eq("originalUrl", args.assetUrl),
+      )
       .collect();
     for (const asset of matchingAssets) {
       const reference = await ctx.db.get(asset.referenceId);
@@ -341,20 +400,34 @@ async function findDuplicate(
 
   const canonicalMatches = await ctx.db
     .query("references")
-    .withIndex("by_canonical_url", (q: any) => q.eq("canonicalUrl", args.canonicalUrl))
+    .withIndex("by_canonical_url", (q: any) =>
+      q.eq("canonicalUrl", args.canonicalUrl),
+    )
     .collect();
-  const canonicalReference = canonicalMatches.find((reference: any) => !reference.deleted);
+  const canonicalReference = canonicalMatches.find(
+    (reference: any) => !reference.deleted,
+  );
   if (canonicalReference) {
-    return { reference: canonicalReference, assetId: null, reason: "canonical_url" as const };
+    return {
+      reference: canonicalReference,
+      assetId: null,
+      reason: "canonical_url" as const,
+    };
   }
 
   const sourceMatches = await ctx.db
     .query("references")
     .withIndex("by_source_url", (q: any) => q.eq("sourceUrl", args.sourceUrl))
     .collect();
-  const sourceReference = sourceMatches.find((reference: any) => !reference.deleted);
+  const sourceReference = sourceMatches.find(
+    (reference: any) => !reference.deleted,
+  );
   return sourceReference
-    ? { reference: sourceReference, assetId: null, reason: "source_url" as const }
+    ? {
+        reference: sourceReference,
+        assetId: null,
+        reason: "source_url" as const,
+      }
     : null;
 }
 
@@ -368,11 +441,17 @@ async function insertAsset(
     referenceId,
     storageProvider: storedAsset.storageProvider,
     originalUrl: assetUrl,
-    ...(storedAsset.storageId ? { originalStorageId: storedAsset.storageId } : {}),
+    ...(storedAsset.storageId
+      ? { originalStorageId: storedAsset.storageId }
+      : {}),
     ...(storedAsset.mimeType ? { mimeType: storedAsset.mimeType } : {}),
     ...(storedAsset.fileSize ? { fileSize: storedAsset.fileSize } : {}),
-    ...(storedAsset.driveFileId ? { driveFileId: storedAsset.driveFileId } : {}),
-    ...(storedAsset.driveFolderId ? { driveFolderId: storedAsset.driveFolderId } : {}),
+    ...(storedAsset.driveFileId
+      ? { driveFileId: storedAsset.driveFileId }
+      : {}),
+    ...(storedAsset.driveFolderId
+      ? { driveFolderId: storedAsset.driveFolderId }
+      : {}),
     ...(storedAsset.driveWebViewLink
       ? { driveWebViewLink: storedAsset.driveWebViewLink }
       : {}),
@@ -382,7 +461,9 @@ async function insertAsset(
     ...(storedAsset.driveThumbnailLink
       ? { driveThumbnailLink: storedAsset.driveThumbnailLink }
       : {}),
-    ...(storedAsset.driveMimeType ? { driveMimeType: storedAsset.driveMimeType } : {}),
+    ...(storedAsset.driveMimeType
+      ? { driveMimeType: storedAsset.driveMimeType }
+      : {}),
     dominantColors: [],
   });
 }
@@ -405,15 +486,23 @@ async function insertSourceSnapshot(
     ...(args.postText ? { postText: args.postText } : {}),
     ...(args.altText ? { altText: args.altText } : {}),
     ...(args.selectedText ? { selectedText: args.selectedText } : {}),
-    ...(args.metadata?.description ? { description: args.metadata.description } : {}),
+    ...(args.metadata?.description
+      ? { description: args.metadata.description }
+      : {}),
     ...(args.metadata?.siteName ? { siteName: args.metadata.siteName } : {}),
-    ...(args.metadata?.faviconUrl ? { faviconUrl: args.metadata.faviconUrl } : {}),
+    ...(args.metadata?.faviconUrl
+      ? { faviconUrl: args.metadata.faviconUrl }
+      : {}),
     ...(args.metadata?.previewImageUrl
       ? { previewImageUrl: args.metadata.previewImageUrl }
       : {}),
     ...(args.metadata?.author ? { pageAuthor: args.metadata.author } : {}),
-    ...(args.metadata?.canonicalUrl ? { canonicalUrl: args.metadata.canonicalUrl } : {}),
-    ...(args.metadata?.contentType ? { contentType: args.metadata.contentType } : {}),
+    ...(args.metadata?.canonicalUrl
+      ? { canonicalUrl: args.metadata.canonicalUrl }
+      : {}),
+    ...(args.metadata?.contentType
+      ? { contentType: args.metadata.contentType }
+      : {}),
     ...(args.metadata?.metadataStatus
       ? { metadataStatus: args.metadata.metadataStatus }
       : {}),

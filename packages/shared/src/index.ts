@@ -1,11 +1,5 @@
 export type ReferenceKind =
-  | "image"
-  | "post"
-  | "page"
-  | "link"
-  | "article"
-  | "video_frame"
-  | "file";
+  "image" | "post" | "page" | "link" | "article" | "video_frame" | "file";
 
 export type CapturePayload = {
   kind: ReferenceKind;
@@ -29,6 +23,7 @@ export type CapturePayload = {
   publishedAt?: string;
   altText?: string;
   rawMetadata?: string;
+  tags?: string[];
   captureSessionId?: string;
   capturedAt: string;
 };
@@ -53,12 +48,7 @@ export type PageSnapshot = {
 };
 
 export type SourcePlatform =
-  | "x"
-  | "pinterest"
-  | "pixiv"
-  | "discord"
-  | "manual"
-  | "generic";
+  "x" | "pinterest" | "pixiv" | "discord" | "manual" | "generic";
 
 export type ParsedSource = {
   platform: SourcePlatform;

@@ -74,6 +74,19 @@ async function render() {
         <p class="hint">Saved and previously captured tabs both qualify for the separate close action.</p>
       </section>
 
+      <section class="x-likes-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">X Likes</p>
+            <h2>Bring liked posts into Inbox</h2>
+          </div>
+        </div>
+        <button id="import-x-likes" type="button" class="secondary full-width" ${disabled}>
+          Import X Likes
+        </button>
+        <p class="hint">Open your profile’s Likes page first. Ourchival scrolls a bounded batch of up to 250 posts, preserves source and artist metadata, and stores the first original image when available.</p>
+      </section>
+
       <form id="url-import-form" class="import-panel">
         <div class="section-heading">
           <div>
@@ -111,13 +124,16 @@ async function render() {
 
       <details class="settings-panel" ${connected ? "" : "open"}>
         <summary>${connected ? "Clipper connection" : "Pair this Clipper"}</summary>
-        ${connected ? `
+        ${
+          connected
+            ? `
           <div class="connected-device">
             <p><strong>${escapeHtml(settings.deviceName || "Ourchival Clipper")}</strong></p>
             <p class="hint">Captures are authorized with a revocable device credential.</p>
             <button id="disconnect-device" type="button">Disconnect this browser</button>
           </div>
-        ` : `
+        `
+            : `
           <form id="pairing-form">
             <label for="endpoint">Convex site URL</label>
             <input
@@ -143,7 +159,8 @@ async function render() {
             <button type="submit">Pair Clipper</button>
             <p class="hint">Codes expire after ten minutes and work once.</p>
           </form>
-        `}
+        `
+        }
       </details>
 
       <details class="capture-details">
@@ -153,47 +170,75 @@ async function render() {
     </main>
   `;
 
-  document.querySelectorAll<HTMLButtonElement>("[data-tab-mode]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const mode = button.dataset.tabMode;
-      if (mode !== "current" && mode !== "selected" && mode !== "window") return;
-      transientMessage = "Starting tab capture…";
-      void sendRuntimeMessage({ type: "OURCHIVAL_CAPTURE_TABS", mode });
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-tab-mode]")
+    .forEach((button) => {
+      button.addEventListener("click", () => {
+        const mode = button.dataset.tabMode;
+        if (mode !== "current" && mode !== "selected" && mode !== "window")
+          return;
+        transientMessage = "Starting tab capture…";
+        void sendRuntimeMessage({ type: "OURCHIVAL_CAPTURE_TABS", mode });
+      });
     });
+
+  document.getElementById("import-x-likes")?.addEventListener("click", () => {
+    transientMessage = "Collecting liked posts from the open X timeline…";
+    void sendRuntimeMessage({ type: "OURCHIVAL_IMPORT_X_LIKES" });
   });
 
-  document.getElementById("url-import-form")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const form = event.currentTarget as HTMLFormElement;
-    const entries = parseUrlList(String(new FormData(form).get("url-list") ?? ""));
-    const feedback = document.getElementById("import-feedback");
-    if (entries.length === 0) {
-      if (feedback) feedback.textContent = "Paste at least one HTTP or HTTPS URL.";
-      return;
-    }
-    transientMessage = `Starting import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
-    void sendRuntimeMessage({ type: "OURCHIVAL_CAPTURE_URLS", source: "url_list", entries });
-  });
-
-  document.getElementById("bookmarks-file")?.addEventListener("change", async (event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    const feedback = document.getElementById("import-feedback");
-    if (!file) return;
-    try {
-      const entries = parseBookmarksHtml(await file.text());
+  document
+    .getElementById("url-import-form")
+    ?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const entries = parseUrlList(
+        String(new FormData(form).get("url-list") ?? ""),
+      );
+      const feedback = document.getElementById("import-feedback");
       if (entries.length === 0) {
-        if (feedback) feedback.textContent = "The file contained no HTTP or HTTPS bookmarks.";
+        if (feedback)
+          feedback.textContent = "Paste at least one HTTP or HTTPS URL.";
         return;
       }
-      transientMessage = `Starting bookmark import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
-      void sendRuntimeMessage({ type: "OURCHIVAL_CAPTURE_URLS", source: "bookmarks", entries });
-    } catch (error) {
-      if (feedback) {
-        feedback.textContent = error instanceof Error ? error.message : "Could not read that bookmarks file.";
+      transientMessage = `Starting import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
+      void sendRuntimeMessage({
+        type: "OURCHIVAL_CAPTURE_URLS",
+        source: "url_list",
+        entries,
+      });
+    });
+
+  document
+    .getElementById("bookmarks-file")
+    ?.addEventListener("change", async (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      const file = input.files?.[0];
+      const feedback = document.getElementById("import-feedback");
+      if (!file) return;
+      try {
+        const entries = parseBookmarksHtml(await file.text());
+        if (entries.length === 0) {
+          if (feedback)
+            feedback.textContent =
+              "The file contained no HTTP or HTTPS bookmarks.";
+          return;
+        }
+        transientMessage = `Starting bookmark import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
+        void sendRuntimeMessage({
+          type: "OURCHIVAL_CAPTURE_URLS",
+          source: "bookmarks",
+          entries,
+        });
+      } catch (error) {
+        if (feedback) {
+          feedback.textContent =
+            error instanceof Error
+              ? error.message
+              : "Could not read that bookmarks file.";
+        }
       }
-    }
-  });
+    });
 
   document.getElementById("close-saved-tabs")?.addEventListener("click", () => {
     if (!batch?.successfulTabIds.length) return;
@@ -228,57 +273,65 @@ async function render() {
     });
   });
 
-  document.getElementById("pairing-form")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget as HTMLFormElement;
-    const data = new FormData(form);
-    const captureEndpoint = String(data.get("endpoint") ?? "");
-    const pairingEndpoint = normalizePairingEndpoint(captureEndpoint);
-    const code = String(data.get("pairing-code") ?? "").trim();
-    const deviceName = String(data.get("device-name") ?? "").trim();
-    if (!pairingEndpoint || !code) {
-      transientMessage = "Enter the Convex site URL and pairing code.";
-      await render();
-      return;
-    }
-
-    transientMessage = "Pairing this browser…";
-    try {
-      const response = await fetch(pairingEndpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-          deviceName,
-          extensionVersion: chrome.runtime.getManifest().version,
-        }),
-      });
-      const body = (await response.json().catch(() => ({}))) as PairingResponse;
-      if (!response.ok || body.ok === false || !body.token) {
-        throw new Error(body.error || response.statusText);
+  document
+    .getElementById("pairing-form")
+    ?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const data = new FormData(form);
+      const captureEndpoint = String(data.get("endpoint") ?? "");
+      const pairingEndpoint = normalizePairingEndpoint(captureEndpoint);
+      const code = String(data.get("pairing-code") ?? "").trim();
+      const deviceName = String(data.get("device-name") ?? "").trim();
+      if (!pairingEndpoint || !code) {
+        transientMessage = "Enter the Convex site URL and pairing code.";
+        await render();
+        return;
       }
+
+      transientMessage = "Pairing this browser…";
+      try {
+        const response = await fetch(pairingEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code,
+            deviceName,
+            extensionVersion: chrome.runtime.getManifest().version,
+          }),
+        });
+        const body = (await response
+          .json()
+          .catch(() => ({}))) as PairingResponse;
+        if (!response.ok || body.ok === false || !body.token) {
+          throw new Error(body.error || response.statusText);
+        }
+        await saveSettings({
+          captureEndpoint: normalizeSiteRoot(captureEndpoint),
+          deviceToken: body.token,
+          deviceName: body.deviceName || deviceName || defaultDeviceName(),
+        });
+        await chrome.action.setBadgeText({ text: "" });
+        transientMessage = "Clipper paired.";
+      } catch (error) {
+        transientMessage =
+          error instanceof Error ? error.message : "Pairing failed.";
+      }
+      await render();
+    });
+
+  document
+    .getElementById("disconnect-device")
+    ?.addEventListener("click", async () => {
       await saveSettings({
-        captureEndpoint: normalizeSiteRoot(captureEndpoint),
-        deviceToken: body.token,
-        deviceName: body.deviceName || deviceName || defaultDeviceName(),
+        captureEndpoint: normalizeSiteRoot(settings.captureEndpoint),
+        deviceName: settings.deviceName,
       });
       await chrome.action.setBadgeText({ text: "" });
-      transientMessage = "Clipper paired.";
-    } catch (error) {
-      transientMessage = error instanceof Error ? error.message : "Pairing failed.";
-    }
-    await render();
-  });
-
-  document.getElementById("disconnect-device")?.addEventListener("click", async () => {
-    await saveSettings({
-      captureEndpoint: normalizeSiteRoot(settings.captureEndpoint),
-      deviceName: settings.deviceName,
+      transientMessage =
+        "This browser is disconnected. Revoke it in Ourchival as well if it was lost.";
+      await render();
     });
-    await chrome.action.setBadgeText({ text: "" });
-    transientMessage = "This browser is disconnected. Revoke it in Ourchival as well if it was lost.";
-    await render();
-  });
 }
 
 function renderBatch(batch: BatchCaptureState | undefined) {
@@ -303,7 +356,9 @@ function renderBatch(batch: BatchCaptureState | undefined) {
           (failure) =>
             `<li><span>${escapeHtml(failure.url)}</span><small>${escapeHtml(failure.message)}</small></li>`,
         )
-        .join("")}</ul>${batch.failures.length > visibleFailures.length ? `<p class="hint">Showing the first ${visibleFailures.length}; Retry includes all failures.</p>` : ""}</details>`
+        .join(
+          "",
+        )}</ul>${batch.failures.length > visibleFailures.length ? `<p class="hint">Showing the first ${visibleFailures.length}; Retry includes all failures.</p>` : ""}</details>`
     : "";
 
   return `
@@ -333,7 +388,8 @@ function renderBatch(batch: BatchCaptureState | undefined) {
 
 async function sendRuntimeMessage(message: unknown) {
   try {
-    const response = (await chrome.runtime.sendMessage(message)) as RuntimeResponse | undefined;
+    const response = (await chrome.runtime.sendMessage(message)) as
+      RuntimeResponse | undefined;
     if (response?.ok === false) {
       transientMessage = response.error || "The bulk action failed.";
       await render();
@@ -344,7 +400,8 @@ async function sendRuntimeMessage(message: unknown) {
       await render();
     }
   } catch (error) {
-    transientMessage = error instanceof Error ? error.message : "The bulk action failed.";
+    transientMessage =
+      error instanceof Error ? error.message : "The bulk action failed.";
     await render();
   }
 }
@@ -355,6 +412,7 @@ function batchSourceLabel(source: BatchCaptureSource) {
   if (source === "window") return "Entire window";
   if (source === "bookmarks") return "Bookmarks HTML";
   if (source === "x_post") return "X post images";
+  if (source === "x_likes") return "X Likes";
   if (source === "retry") return "Failed-item retry";
   return "Pasted links";
 }

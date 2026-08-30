@@ -35,15 +35,16 @@ A saved link should have:
 
 ## Capture behavior
 
-The extension should support three capture paths:
+The extension supports four capture paths:
 
 ```txt
 Right-click image → image reference
 Right-click link  → link reference
 Right-click page  → page/link reference
+X profile Likes   → bounded, sourced post/image batch
 ```
 
-For now, link saves are metadata-only. They do not create Drive files unless a preview/screenshot feature is added later.
+Link saves are metadata-only. X Likes imports preserve the canonical post, author/handle, text, timestamp, and provenance; when media is present, the first normalized original image enters the existing private Drive pipeline. Imports are tagged `X Likes` and deduplicated by the existing source, canonical URL, asset URL, and hash mechanisms.
 
 ## Data model
 
