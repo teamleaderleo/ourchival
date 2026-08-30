@@ -1,4 +1,8 @@
+import { getDriveConfig, getDriveOwnerIdentity } from "./drive";
+
 const textEncoder = new TextEncoder();
+const googleTokenInfoEndpoint = "https://oauth2.googleapis.com/tokeninfo";
+const googleCredentialCache = new Map<string, number>();
 
 export type AccessPrincipal =
   | { kind: "owner" }
@@ -24,21 +28,26 @@ export function bearerToken(request: Request) {
 }
 
 export async function isOwnerAccessKey(candidate: string | undefined) {
+  if (!candidate) return false;
+
   const configured = process.env.OURCHIVAL_OWNER_ACCESS_KEY?.trim();
-  if (!configured) {
+  if (configured && (await secretsEqual(candidate, configured))) return true;
+
+  if (await isGoogleOwnerCredential(candidate)) return true;
+
+  if (!configured && !getDriveConfig()) {
     throw new AccessError(
-      "OURCHIVAL_OWNER_ACCESS_KEY is missing from the Convex deployment.",
+      "Ourchival owner authentication is not configured.",
       503,
       "owner_access_unconfigured",
     );
   }
-  if (!candidate) return false;
-  return await secretsEqual(candidate, configured);
+  return false;
 }
 
 export async function requireOwnerAccess(candidate: string | undefined) {
   if (!(await isOwnerAccessKey(candidate))) {
-    throw new AccessError("The owner access key is invalid.", 401, "invalid_owner_access");
+    throw new AccessError("The owner credential is invalid or expired.", 401, "invalid_owner_access");
   }
   return { kind: "owner" } as const;
 }
@@ -82,6 +91,47 @@ export function requestCorsHeaders(request: Request) {
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
+}
+
+async function isGoogleOwnerCredential(candidate: string) {
+  if (candidate.split(".").length !== 3) return false;
+
+  const cachedUntil = googleCredentialCache.get(candidate);
+  if (cachedUntil && cachedUntil > Date.now()) return true;
+
+  const config = getDriveConfig();
+  if (!config) return false;
+
+  const response = await fetch(`${googleTokenInfoEndpoint}?id_token=${encodeURIComponent(candidate)}`);
+  const info = (await response.json().catch(() => undefined)) as
+    | {
+        aud?: string;
+        email?: string;
+        email_verified?: string | boolean;
+        exp?: string;
+        iss?: string;
+      }
+    | undefined;
+  if (!response.ok || !info) return false;
+
+  const issuerOk = info.iss === "accounts.google.com" || info.iss === "https://accounts.google.com";
+  const verified = info.email_verified === true || info.email_verified === "true";
+  const expiresAt = Number(info.exp ?? 0) * 1000;
+  if (!issuerOk || !verified || info.aud !== config.clientId || !info.email || expiresAt <= Date.now()) {
+    return false;
+  }
+
+  const driveOwner = await getDriveOwnerIdentity();
+  if (!driveOwner?.emailAddress) return false;
+  if (driveOwner.emailAddress.trim().toLowerCase() !== info.email.trim().toLowerCase()) return false;
+
+  googleCredentialCache.set(candidate, Math.min(expiresAt, Date.now() + 5 * 60 * 1000));
+  if (googleCredentialCache.size > 32) {
+    for (const [token, expiry] of googleCredentialCache) {
+      if (expiry <= Date.now()) googleCredentialCache.delete(token);
+    }
+  }
+  return true;
 }
 
 function allowedCorsOrigin(origin: string | null) {
