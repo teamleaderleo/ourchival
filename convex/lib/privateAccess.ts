@@ -4,7 +4,7 @@ const textEncoder = new TextEncoder();
 const googleTokenInfoEndpoint = "https://oauth2.googleapis.com/tokeninfo";
 const googleCredentialCache = new Map<string, number>();
 const ownerSessionPrefix = "ourc_owner_session";
-const ownerSessionLifetimeMs = 7 * 24 * 60 * 60 * 1000;
+const ownerSessionLifetimeMs = 365 * 24 * 60 * 60 * 1000;
 
 export type AccessPrincipal =
   { kind: "owner" } | { kind: "clipper"; deviceId: string; deviceName: string };
@@ -48,11 +48,24 @@ export async function isOwnerAccessKey(candidate: string | undefined) {
 }
 
 export async function exchangeOwnerCredential(candidate: string | undefined) {
-  if (await isOwnerAccessKey(candidate)) {
-    return { credential: candidate! };
+  if (!candidate) {
+    throw new AccessError(
+      "The owner credential is invalid or expired.",
+      401,
+      "invalid_owner_access",
+    );
   }
 
-  if (!candidate || !(await isGoogleOwnerCredential(candidate))) {
+  const configured = process.env.OURCHIVAL_OWNER_ACCESS_KEY?.trim();
+  if (
+    configured &&
+    ((await secretsEqual(candidate, configured)) ||
+      (await isOwnerSessionCredential(candidate, configured)))
+  ) {
+    return await createOwnerSessionCredential();
+  }
+
+  if (!(await isGoogleOwnerCredential(candidate))) {
     throw new AccessError(
       "The owner credential is invalid or expired.",
       401,

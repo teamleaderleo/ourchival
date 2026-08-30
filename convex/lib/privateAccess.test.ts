@@ -4,6 +4,7 @@ import {
   createOwnerSessionCredential,
   createDeviceToken,
   createPairingCode,
+  exchangeOwnerCredential,
   googleOwnerEmailMatches,
   hashSecret,
   isOwnerSessionCredential,
@@ -56,6 +57,7 @@ describe("private access helpers", () => {
     expect(session.credential).toMatch(
       /^ourc_owner_session_\d{13}_[a-f0-9]{48}_[a-f0-9]{64}$/,
     );
+    expect(session.expiresAt).toBe(now + 365 * 24 * 60 * 60 * 1000);
     expect(
       await isOwnerSessionCredential(
         session.credential,
@@ -88,5 +90,18 @@ describe("private access helpers", () => {
         1_800_000_000_000,
       ),
     ).toBe(false);
+  });
+
+  it("exchanges recovery and existing session credentials for fresh sessions", async () => {
+    vi.stubEnv("OURCHIVAL_OWNER_ACCESS_KEY", "test-only-recovery-secret");
+
+    const fromRecovery = await exchangeOwnerCredential(
+      "test-only-recovery-secret",
+    );
+    const renewed = await exchangeOwnerCredential(fromRecovery.credential);
+
+    expect(fromRecovery.credential).not.toBe("test-only-recovery-secret");
+    expect(renewed.credential).not.toBe(fromRecovery.credential);
+    expect(await isOwnerSessionCredential(renewed.credential)).toBe(true);
   });
 });
