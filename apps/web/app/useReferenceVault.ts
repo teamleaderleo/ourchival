@@ -47,9 +47,9 @@ type UndoMove = {
   previous: Pick<SavedReference, "triageState" | "archived" | "deleted">;
 };
 
-const pageSize = 48;
+const defaultPageSize = 48;
 
-export function useReferenceVault() {
+export function useReferenceVault(pageSize = defaultPageSize) {
   const siteUrl = useMemo(resolveConvexSiteUrl, []);
   const [references, setReferences] = useState<SavedReference[]>([]);
   const [counts, setCounts] = useState<VaultCounts>(emptyCounts);

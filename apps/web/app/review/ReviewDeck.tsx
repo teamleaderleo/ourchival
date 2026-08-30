@@ -19,7 +19,7 @@ type ImportProgress = {
 };
 
 export function ReviewDeck() {
-  const vault = useReferenceVault();
+  const vault = useReferenceVault(96);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [importMessage, setImportMessage] = useState("");

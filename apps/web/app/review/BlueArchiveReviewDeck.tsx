@@ -19,7 +19,7 @@ type ImportProgress = {
 };
 
 export function BlueArchiveReviewDeck() {
-  const vault = useReferenceVault();
+  const vault = useReferenceVault(96);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [importMessage, setImportMessage] = useState("");
@@ -148,7 +148,7 @@ export function BlueArchiveReviewDeck() {
       <header className={styles.header}>
         <div className={styles.headerCopy}>
           <strong>Blue Archive review</strong>
-          <span>No / Maybe / Yes · official, key-art and tasteful visual lane</span>
+          <span>No / Maybe / Yes · official, key-art and private visual lane</span>
         </div>
         <div className={styles.lanes}>
           <a href="/review">ZZZ</a>
