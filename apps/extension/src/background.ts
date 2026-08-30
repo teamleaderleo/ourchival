@@ -1,17 +1,25 @@
-import type { ParsedXSource, XDomSnapshot } from "@ourchival/parsers";
+import {
+  parseXSnapshot,
+  type ParsedXSource,
+  type XDomSnapshot,
+} from "@ourchival/parsers";
 import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
 import {
   getSettings,
+  getXLikesImportState,
   LAST_BATCH_KEY,
   normalizeCaptureEndpoint,
   saveBatchState,
   saveLastCapture,
   saveLastResult,
+  saveXLikesImportState,
   type BatchCaptureItem,
   type BatchCaptureSource,
   type BatchCaptureState,
   type CaptureResult,
+  type XLikesImportState,
+  type XLikesImportStopReason,
 } from "./storage";
 import { buildXLikePayloads, isXLikesUrl } from "./xLikes";
 
@@ -52,7 +60,23 @@ type ExtensionMessage =
       source?: BatchCaptureSource;
     }
   | { type: "OURCHIVAL_CLOSE_SAVED_TABS"; tabIds: number[] }
-  | { type: "OURCHIVAL_IMPORT_X_LIKES" };
+  | { type: "OURCHIVAL_IMPORT_X_LIKES" }
+  | { type: "OURCHIVAL_PAUSE_X_LIKES" }
+  | {
+      type: "OURCHIVAL_X_LIKES_CHUNK";
+      importId: string;
+      profileUrl: string;
+      snapshots: XDomSnapshot[];
+      lastSourceUrl?: string;
+    }
+  | {
+      type: "OURCHIVAL_X_LIKES_FINISHED";
+      importId: string;
+      profileUrl: string;
+      stopReason: XLikesImportStopReason;
+      lastSourceUrl?: string;
+      message?: string;
+    };
 
 type CaptureConnection = {
   endpoint: string;
@@ -132,7 +156,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: ExtensionMessage, _sender, sendResponse) => {
+  (message: ExtensionMessage, sender, sendResponse) => {
     if (message?.type === "OURCHIVAL_CAPTURE_TABS") {
       void captureTabs(message.mode)
         .then((state) => sendResponse({ ok: true, state }))
@@ -176,12 +200,51 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (message?.type === "OURCHIVAL_IMPORT_X_LIKES") {
-      void importXLikes()
+      void startXLikesImport()
         .then((state) => sendResponse({ ok: true, state }))
         .catch((error) =>
           sendResponse({
             ok: false,
             error: errorMessage(error, "X Likes import failed."),
+          }),
+        );
+      return true;
+    }
+
+    if (message?.type === "OURCHIVAL_PAUSE_X_LIKES") {
+      void pauseXLikesImport()
+        .then((state) => sendResponse({ ok: true, state }))
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Could not pause the X Likes import."),
+          }),
+        );
+      return true;
+    }
+
+    if (message?.type === "OURCHIVAL_X_LIKES_CHUNK") {
+      void captureXLikesChunk(message, sender)
+        .then((state) => sendResponse({ ok: true, state }))
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Could not save this X Likes chunk."),
+          }),
+        );
+      return true;
+    }
+
+    if (message?.type === "OURCHIVAL_X_LIKES_FINISHED") {
+      void finishXLikesImport(message, sender)
+        .then((state) => sendResponse({ ok: true, state }))
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: errorMessage(
+              error,
+              "Could not checkpoint the X Likes import.",
+            ),
           }),
         );
       return true;
@@ -228,7 +291,7 @@ async function captureTabs(mode: TabCaptureMode) {
   );
 }
 
-async function importXLikes() {
+async function startXLikesImport() {
   const [tab] = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true,
@@ -236,20 +299,218 @@ async function importXLikes() {
   if (typeof tab?.id !== "number" || !isXLikesUrl(tab.url)) {
     throw new Error("Open your X profile Likes page before importing.");
   }
+  const connection = await getCaptureConnection();
 
-  const collected = (await chrome.tabs.sendMessage(tab.id, {
-    type: "OURCHIVAL_COLLECT_X_LIKES",
-  })) as
-    { ok?: boolean; error?: string; snapshots?: XDomSnapshot[] } | undefined;
-  if (!collected?.ok) {
-    throw new Error(collected?.error || "Could not read the X Likes timeline.");
-  }
+  const profileUrl = canonicalLikesUrl(tab.url!);
+  const previous = await getXLikesImportState();
+  const resumable =
+    previous && previous.profileUrl === profileUrl && !previous.exhausted;
+  const now = new Date().toISOString();
+  const state: XLikesImportState = resumable
+    ? {
+        ...previous,
+        running: true,
+        updatedAt: now,
+        completedAt: undefined,
+        stopReason: undefined,
+        message: undefined,
+      }
+    : {
+        importId: createImportId(),
+        profileUrl,
+        running: true,
+        exhausted: false,
+        startedAt: now,
+        updatedAt: now,
+        chunks: 0,
+        discoveredPosts: 0,
+        captureAttempts: 0,
+        saved: 0,
+        duplicates: 0,
+        failed: 0,
+        skipped: 0,
+      };
+  await saveXLikesImportState(state);
+  await reportXLikesSession(state, "running", connection);
 
-  const payloads = buildXLikePayloads(collected.snapshots ?? []);
-  if (payloads.length === 0) {
-    throw new Error("No liked posts were found on the loaded timeline.");
+  const response = (await chrome.tabs.sendMessage(tab.id, {
+    type: "OURCHIVAL_START_X_LIKES",
+    importId: state.importId,
+    profileUrl,
+    ...(state.lastSourceUrl
+      ? { resumeAfterSourceUrl: state.lastSourceUrl }
+      : {}),
+  })) as { ok?: boolean; error?: string } | undefined;
+  if (!response?.ok) {
+    state.running = false;
+    state.stopReason = "error";
+    state.message =
+      response?.error || "Could not start the X Likes timeline reader.";
+    state.updatedAt = new Date().toISOString();
+    await saveXLikesImportState(state);
+    throw new Error(state.message);
   }
-  return await runPayloadBatch(payloads, "x_likes");
+  return state;
+}
+
+async function pauseXLikesImport() {
+  const state = await getXLikesImportState();
+  if (!state) throw new Error("No X Likes import is active.");
+  const tabs = await chrome.tabs.query({});
+  const tab = tabs.find(
+    (candidate) =>
+      typeof candidate.id === "number" &&
+      isXLikesUrl(candidate.url) &&
+      canonicalLikesUrl(candidate.url!) === state.profileUrl,
+  );
+  if (typeof tab?.id === "number") {
+    await chrome.tabs.sendMessage(tab.id, { type: "OURCHIVAL_STOP_X_LIKES" });
+  }
+  state.running = false;
+  state.stopReason = "paused";
+  state.updatedAt = new Date().toISOString();
+  await saveXLikesImportState(state);
+  await reportXLikesSession(state, "interrupted");
+  return state;
+}
+
+async function captureXLikesChunk(
+  message: Extract<ExtensionMessage, { type: "OURCHIVAL_X_LIKES_CHUNK" }>,
+  sender: chrome.runtime.MessageSender,
+) {
+  validateXLikesSender(sender, message.profileUrl);
+  const checkpoint = await requireXLikesCheckpoint(
+    message.importId,
+    message.profileUrl,
+  );
+  if (!Array.isArray(message.snapshots) || message.snapshots.length > 25) {
+    throw new Error("X Likes chunks must contain at most 25 rendered posts.");
+  }
+  const payloads = buildXLikePayloads(message.snapshots ?? []);
+  if (payloads.length === 0) return checkpoint;
+
+  const state = await runPayloadBatch(payloads, "x_likes", message.importId);
+  const parsedSources = message.snapshots
+    .map((snapshot) => parseXSnapshot(snapshot))
+    .filter((source) => source.postId);
+  const lastSource = parsedSources.at(-1);
+  const now = new Date().toISOString();
+  const next: XLikesImportState = {
+    ...checkpoint,
+    running: true,
+    updatedAt: now,
+    chunks: checkpoint.chunks + 1,
+    discoveredPosts: checkpoint.discoveredPosts + parsedSources.length,
+    captureAttempts: checkpoint.captureAttempts + state.total,
+    saved: checkpoint.saved + state.saved,
+    duplicates: checkpoint.duplicates + state.duplicates,
+    failed: checkpoint.failed + state.failed,
+    skipped: checkpoint.skipped + state.skipped,
+    lastSourceUrl:
+      message.lastSourceUrl ??
+      lastSource?.sourceUrl ??
+      checkpoint.lastSourceUrl,
+    lastPublishedAt: lastSource?.publishedAt ?? checkpoint.lastPublishedAt,
+    stopReason: undefined,
+    message: undefined,
+  };
+  await saveXLikesImportState(next);
+  await reportXLikesSession(next, "running");
+  return next;
+}
+
+async function finishXLikesImport(
+  message: Extract<ExtensionMessage, { type: "OURCHIVAL_X_LIKES_FINISHED" }>,
+  sender: chrome.runtime.MessageSender,
+) {
+  validateXLikesSender(sender, message.profileUrl);
+  const state = await requireXLikesCheckpoint(
+    message.importId,
+    message.profileUrl,
+  );
+  const now = new Date().toISOString();
+  const exhausted = message.stopReason === "timeline_end";
+  const next: XLikesImportState = {
+    ...state,
+    running: false,
+    exhausted,
+    updatedAt: now,
+    ...(exhausted ? { completedAt: now } : {}),
+    ...(message.lastSourceUrl ? { lastSourceUrl: message.lastSourceUrl } : {}),
+    stopReason: message.stopReason,
+    ...(message.message ? { message: message.message } : {}),
+  };
+  await saveXLikesImportState(next);
+  await reportXLikesSession(next, exhausted ? "completed" : "interrupted");
+  return next;
+}
+
+async function reportXLikesSession(
+  state: XLikesImportState,
+  status: "running" | "completed" | "interrupted",
+  providedConnection?: CaptureConnection,
+) {
+  const connection = providedConnection ?? (await getCaptureConnection());
+  const endpoint = new URL(connection.endpoint);
+  endpoint.pathname = endpoint.pathname.replace(
+    /\/capture\/?$/,
+    "/capture-session",
+  );
+  const handle = state.profileUrl.match(/x\.com\/([^/]+)\/likes$/i)?.[1];
+  const response = await fetch(endpoint.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${connection.deviceToken}`,
+    },
+    body: JSON.stringify({
+      sessionKey: state.importId,
+      source: "x_likes",
+      label: handle ? `X Likes · @${handle}` : "X Likes",
+      sourceUrl: state.profileUrl,
+      expectedCount: state.captureAttempts,
+      completedCount: state.captureAttempts,
+      savedCount: state.saved,
+      duplicateCount: state.duplicates,
+      skippedCount: state.skipped,
+      failedCount: state.failed,
+      status,
+      startedAt: state.startedAt,
+      ...(status === "completed" && state.completedAt
+        ? { completedAt: state.completedAt }
+        : {}),
+    }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+    throw new Error(body.error || "Could not report capture-session progress.");
+  }
+}
+
+async function requireXLikesCheckpoint(importId: string, profileUrl: string) {
+  const state = await getXLikesImportState();
+  if (
+    !state ||
+    state.importId !== importId ||
+    state.profileUrl !== profileUrl
+  ) {
+    throw new Error("This X Likes import is no longer active.");
+  }
+  return state;
+}
+
+function validateXLikesSender(
+  sender: chrome.runtime.MessageSender,
+  profileUrl: string,
+) {
+  if (!isXLikesUrl(sender.tab?.url)) {
+    throw new Error("X Likes chunks are accepted only from a Likes tab.");
+  }
+  if (canonicalLikesUrl(sender.tab!.url!) !== profileUrl) {
+    throw new Error("The X Likes chunk came from a different profile.");
+  }
 }
 
 async function queryTabs(mode: TabCaptureMode) {
@@ -269,6 +530,7 @@ async function queryTabs(mode: TabCaptureMode) {
 async function runPayloadBatch(
   payloads: CapturePayload[],
   source: BatchCaptureSource,
+  jobId?: string,
 ) {
   return await runBatch(
     source,
@@ -277,15 +539,20 @@ async function runPayloadBatch(
       title: payload.pageTitle,
       payload,
     })),
+    jobId,
   );
 }
 
-async function runBatch(source: BatchCaptureSource, items: BatchCaptureItem[]) {
+async function runBatch(
+  source: BatchCaptureSource,
+  items: BatchCaptureItem[],
+  jobId?: string,
+) {
   if (activeJobId) throw new Error("A bulk capture is already running.");
   const connection = await getCaptureConnection();
 
   const state: BatchCaptureState = {
-    jobId: createJobId(),
+    jobId: jobId ?? createJobId(),
     source,
     running: true,
     startedAt: new Date().toISOString(),
@@ -623,6 +890,15 @@ function duplicateMessage(
 
 function createJobId() {
   return `capture-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function createImportId() {
+  return `x-likes-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function canonicalLikesUrl(value: string) {
+  const url = new URL(value);
+  return `https://x.com${url.pathname.replace(/\/$/, "")}`;
 }
 
 function errorMessage(error: unknown, fallback: string) {

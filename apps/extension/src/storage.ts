@@ -62,6 +62,30 @@ export type BatchCaptureState = {
   failures: BatchCaptureFailure[];
 };
 
+export type XLikesImportStopReason =
+  "paused" | "timeline_end" | "round_limit" | "cursor_not_found" | "error";
+
+export type XLikesImportState = {
+  importId: string;
+  profileUrl: string;
+  running: boolean;
+  exhausted: boolean;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  chunks: number;
+  discoveredPosts: number;
+  captureAttempts: number;
+  saved: number;
+  duplicates: number;
+  failed: number;
+  skipped: number;
+  lastSourceUrl?: string;
+  lastPublishedAt?: string;
+  stopReason?: XLikesImportStopReason;
+  message?: string;
+};
+
 export type ExtensionSettings = {
   captureEndpoint?: string;
   deviceToken?: string;
@@ -72,6 +96,7 @@ export const SETTINGS_KEY = "ourchivalSettings";
 export const LAST_CAPTURE_KEY = "lastCapture";
 export const LAST_RESULT_KEY = "lastCaptureResult";
 export const LAST_BATCH_KEY = "lastBatchCapture";
+export const X_LIKES_IMPORT_KEY = "xLikesImport";
 
 export async function getSettings(): Promise<ExtensionSettings> {
   const values = await chrome.storage.local.get(SETTINGS_KEY);
@@ -94,12 +119,22 @@ export async function saveBatchState(state: BatchCaptureState) {
   await chrome.storage.local.set({ [LAST_BATCH_KEY]: state });
 }
 
+export async function saveXLikesImportState(state: XLikesImportState) {
+  await chrome.storage.local.set({ [X_LIKES_IMPORT_KEY]: state });
+}
+
+export async function getXLikesImportState() {
+  const values = await chrome.storage.local.get(X_LIKES_IMPORT_KEY);
+  return values[X_LIKES_IMPORT_KEY] as XLikesImportState | undefined;
+}
+
 export async function getPopupState() {
   return await chrome.storage.local.get([
     SETTINGS_KEY,
     LAST_CAPTURE_KEY,
     LAST_RESULT_KEY,
     LAST_BATCH_KEY,
+    X_LIKES_IMPORT_KEY,
   ]);
 }
 

@@ -10,15 +10,17 @@ Capture sessions keep references from one browser action together after the Clip
 - The private web vault lists recent sessions and their references.
 - Sessions can be marked unreviewed, reviewing, deferred, or completed.
 - Existing per-reference Inbox, Library, Later, Archive, and Trash behavior remains unchanged.
+- Paired Clippers can report bounded session progress directly, including saved, duplicate, skipped, and failed capture counts.
+- Large X Likes imports reuse one durable session identity across small browser chunks, so progress survives popup and service-worker restarts.
 
 Counts derived from stored references are exact for saved items. Duplicate, skipped, and failed counts stay at their recorded values when available.
 
 ## Next bounded capture work
 
-1. Let the Clipper report session start, progress, completion, duplicates, skipped items, and failures directly.
-2. Add clipboard image paste, drag-and-drop files, and a multiline URL dump.
-3. Add browser-side adapters for Pixiv, Pinterest, Danbooru, and authenticated X bookmark/like imports.
-4. Add session-level tagging, boards, projects, and triage actions.
+1. Add clipboard image paste, drag-and-drop files, and a multiline URL dump.
+2. Add browser-side adapters for Pixiv, Pinterest, Danbooru, and authenticated X bookmark imports.
+3. Add session-level tagging, boards, projects, and triage actions.
+4. Add a server-assisted recovery cursor if X exposes a stable owner-authorized pagination mechanism; the rendered-timeline importer currently fast-forwards to its last sourced post after a page reload.
 
 ## Processing architecture
 

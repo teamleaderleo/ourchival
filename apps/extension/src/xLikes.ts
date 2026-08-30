@@ -28,31 +28,37 @@ export function buildXLikePayloads(
     if (seen.has(source.sourceUrl)) continue;
     seen.add(source.sourceUrl);
 
-    const assetUrl = source.mediaUrls[0];
-    payloads.push({
-      kind: assetUrl ? "image" : "post",
-      sourceUrl: source.sourceUrl,
-      canonicalUrl: source.canonicalUrl ?? source.sourceUrl,
-      ...(assetUrl ? { assetUrl, previewImageUrl: assetUrl } : {}),
-      ...(source.title ? { pageTitle: source.title } : {}),
-      ...(source.authorName ? { authorName: source.authorName } : {}),
-      ...(source.authorHandle ? { authorHandle: source.authorHandle } : {}),
-      ...(source.authorUrl ? { authorUrl: source.authorUrl } : {}),
-      postId: source.postId,
-      ...(source.postText ? { postText: source.postText } : {}),
-      ...(source.publishedAt ? { publishedAt: source.publishedAt } : {}),
-      ...(assetUrl && source.altTexts?.[assetUrl]
-        ? { altText: source.altTexts[assetUrl] }
-        : {}),
-      rawMetadata: JSON.stringify({
-        provenance: "ourchival-clipper:x-likes",
-        sourceKind: "x_like",
-        mediaUrls: source.mediaUrls,
-        snapshot,
-      }),
-      tags: [xLikeTag],
-      capturedAt,
-    });
+    const mediaUrls =
+      source.mediaUrls.length > 0 ? source.mediaUrls : [undefined];
+    for (const [mediaIndex, assetUrl] of mediaUrls.entries()) {
+      payloads.push({
+        kind: assetUrl ? "image" : "post",
+        sourceUrl: source.sourceUrl,
+        canonicalUrl: source.canonicalUrl ?? source.sourceUrl,
+        ...(assetUrl ? { assetUrl, previewImageUrl: assetUrl } : {}),
+        ...(source.title ? { pageTitle: source.title } : {}),
+        ...(source.authorName ? { authorName: source.authorName } : {}),
+        ...(source.authorHandle ? { authorHandle: source.authorHandle } : {}),
+        ...(source.authorUrl ? { authorUrl: source.authorUrl } : {}),
+        postId: source.postId,
+        ...(source.postText ? { postText: source.postText } : {}),
+        ...(source.publishedAt ? { publishedAt: source.publishedAt } : {}),
+        ...(assetUrl && source.altTexts?.[assetUrl]
+          ? { altText: source.altTexts[assetUrl] }
+          : {}),
+        rawMetadata: JSON.stringify({
+          provenance: "ourchival-clipper:x-likes",
+          sourceKind: "x_like",
+          feedContext: "likes",
+          mediaUrls: source.mediaUrls,
+          mediaIndex: assetUrl ? mediaIndex : undefined,
+          mediaCount: source.mediaUrls.length,
+          snapshot,
+        }),
+        tags: [xLikeTag],
+        capturedAt,
+      });
+    }
   }
 
   return payloads;

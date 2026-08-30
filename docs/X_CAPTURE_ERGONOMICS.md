@@ -127,6 +127,8 @@ After single-post capture is excellent, explore user-invoked bulk helpers:
 
 Avoid autonomous account scraping or hidden background traversal. The user-controlled feed session is the source of truth for what should enter the private archive.
 
+The current X Likes importer follows that boundary: an owner starts it from the open Likes page, the page visibly advances, rendered posts are uploaded in small sequential chunks, and the owner can pause it. One compact local checkpoint and one durable Ourchival capture-session record retain aggregate progress; the extension never reads or exports X cookies or access tokens. Multi-image posts keep all fetchable original-sized media under the sourced post reference.
+
 ## Performance targets
 
 - injected Save control appears within one animation frame or one MutationObserver turn after a post action row becomes available

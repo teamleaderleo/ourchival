@@ -14,6 +14,8 @@ import {
   type BatchCaptureState,
   type CaptureResult,
   type ExtensionSettings,
+  type XLikesImportState,
+  X_LIKES_IMPORT_KEY,
 } from "./storage";
 
 type RuntimeResponse = {
@@ -41,10 +43,15 @@ async function render() {
   const capture = state[LAST_CAPTURE_KEY] as CapturePayload | undefined;
   const result = state[LAST_RESULT_KEY] as CaptureResult | undefined;
   const batch = state[LAST_BATCH_KEY] as BatchCaptureState | undefined;
+  const xLikesImport = state[X_LIKES_IMPORT_KEY] as
+    XLikesImportState | undefined;
   const normalizedEndpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
   const connected = Boolean(normalizedEndpoint && settings.deviceToken);
   const batchRunning = Boolean(batch?.running);
-  const disabled = !connected || batchRunning ? "disabled" : "";
+  const xLikesRunning = Boolean(xLikesImport?.running);
+  const disabled =
+    !connected || batchRunning || xLikesRunning ? "disabled" : "";
+  const xLikesDisabled = !connected || batchRunning ? "disabled" : "";
 
   root.innerHTML = `
     <main>
@@ -81,10 +88,16 @@ async function render() {
             <h2>Bring liked posts into Inbox</h2>
           </div>
         </div>
-        <button id="import-x-likes" type="button" class="secondary full-width" ${disabled}>
-          Import X Likes
+        <button id="import-x-likes" type="button" class="secondary full-width" ${xLikesDisabled}>
+          ${xLikesImport && !xLikesImport.exhausted ? "Continue X Likes import" : "Start X Likes import"}
         </button>
-        <p class="hint">Open your profile’s Likes page first. Ourchival scrolls a bounded batch of up to 250 posts, preserves source and artist metadata, and stores the first original image when available.</p>
+        ${
+          xLikesImport?.running
+            ? '<button id="pause-x-likes" type="button" class="secondary full-width">Pause after this chunk</button>'
+            : ""
+        }
+        ${renderXLikesProgress(xLikesImport)}
+        <p class="hint">Keep your profile’s Likes tab open. Ourchival visibly advances the timeline, checkpoints every small chunk, preserves source and artist provenance, and stores every fetchable original from multi-image posts.</p>
       </section>
 
       <form id="url-import-form" class="import-panel">
@@ -183,8 +196,13 @@ async function render() {
     });
 
   document.getElementById("import-x-likes")?.addEventListener("click", () => {
-    transientMessage = "Collecting liked posts from the open X timeline…";
+    transientMessage = "Starting the resumable X Likes import…";
     void sendRuntimeMessage({ type: "OURCHIVAL_IMPORT_X_LIKES" });
+  });
+
+  document.getElementById("pause-x-likes")?.addEventListener("click", () => {
+    transientMessage = "Pausing after the current Likes chunk…";
+    void sendRuntimeMessage({ type: "OURCHIVAL_PAUSE_X_LIKES" });
   });
 
   document
@@ -383,6 +401,34 @@ function renderBatch(batch: BatchCaptureState | undefined) {
       <div class="batch-actions">${closeButton}${retryButton}</div>
       ${failures}
     </section>
+  `;
+}
+
+function renderXLikesProgress(state: XLikesImportState | undefined) {
+  if (!state) return "";
+  const status = state.running
+    ? "Importing"
+    : state.exhausted
+      ? "Timeline reached"
+      : state.stopReason === "paused"
+        ? "Paused"
+        : "Ready to continue";
+  const mediaNote =
+    state.captureAttempts === state.discoveredPosts
+      ? ""
+      : ` · ${state.captureAttempts} media captures`;
+  const message = state.message
+    ? `<p class="hint">${escapeHtml(state.message)}</p>`
+    : "";
+  return `
+    <div class="batch-counts x-likes-progress">
+      <span><strong>${state.discoveredPosts}</strong> posts</span>
+      <span><strong>${state.saved}</strong> new</span>
+      <span><strong>${state.duplicates}</strong> existing</span>
+      <span><strong>${state.failed}</strong> failed</span>
+    </div>
+    <p class="hint"><strong>${status}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"}${mediaNote}</p>
+    ${message}
   `;
 }
 

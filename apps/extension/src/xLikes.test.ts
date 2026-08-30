@@ -68,4 +68,28 @@ describe("buildXLikePayloads", () => {
       tags: ["X Likes"],
     });
   });
+
+  it("keeps every original-sized asset from a multi-image post", () => {
+    const payloads = buildXLikePayloads([
+      {
+        pageUrl: "https://x.com/teamleaderleo/likes",
+        links: [{ href: "https://x.com/artist/status/789" }],
+        images: [
+          { src: "https://pbs.twimg.com/media/one?format=jpg&name=small" },
+          { src: "https://pbs.twimg.com/media/two?format=png&name=medium" },
+        ],
+      },
+    ]);
+
+    expect(payloads).toHaveLength(2);
+    expect(payloads.map((payload) => payload.assetUrl)).toEqual([
+      "https://pbs.twimg.com/media/one?format=jpg&name=orig",
+      "https://pbs.twimg.com/media/two?format=png&name=orig",
+    ]);
+    expect(JSON.parse(payloads[1]!.rawMetadata!)).toMatchObject({
+      feedContext: "likes",
+      mediaIndex: 1,
+      mediaCount: 2,
+    });
+  });
 });
