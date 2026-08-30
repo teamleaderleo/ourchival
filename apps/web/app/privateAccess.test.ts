@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isOwnerCredentialRejection,
   isTrustedSiteRequest,
+  ownerAuthRequestErrorMessage,
 } from "./privateAccess";
 
 describe("isTrustedSiteRequest", () => {
@@ -37,5 +38,19 @@ describe("isOwnerCredentialRejection", () => {
     expect(isOwnerCredentialRejection(429)).toBe(false);
     expect(isOwnerCredentialRejection(500)).toBe(false);
     expect(isOwnerCredentialRejection(503)).toBe(false);
+  });
+});
+
+describe("ownerAuthRequestErrorMessage", () => {
+  it("turns a bounded auth-check timeout into a recoverable saved-session state", () => {
+    const timeout = new Error("The operation timed out");
+    timeout.name = "TimeoutError";
+
+    expect(ownerAuthRequestErrorMessage(timeout, true)).toBe(
+      "Ourchival took too long to respond. Your saved session is still available.",
+    );
+    expect(ownerAuthRequestErrorMessage(timeout, false)).toBe(
+      "Ourchival took too long to respond. Try again.",
+    );
   });
 });

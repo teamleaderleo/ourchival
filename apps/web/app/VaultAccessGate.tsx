@@ -1,15 +1,18 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleOwnerSignIn } from "./GoogleOwnerSignIn";
 import {
   clearOwnerAccessKey,
   getOwnerAccessKey,
   isOwnerCredentialRejection,
   onOwnerAccessChange,
+  ownerAuthRequestErrorMessage,
   resolveConvexSiteUrl,
   saveOwnerAccessKey,
 } from "./privateAccess";
+
+const ownerAuthCheckTimeoutMs = 8_000;
 
 type ClipperDevice = {
   _id: string;
@@ -26,6 +29,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   const [checking, setChecking] = useState(true);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const [message, setMessage] = useState("");
+  const verificationSequence = useRef(0);
   const googleEnabled = Boolean(
     process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim(),
   );
@@ -48,6 +52,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function verify(key: string, quiet = false) {
+    const sequence = ++verificationSequence.current;
     const siteUrl = resolveConvexSiteUrl();
     if (!siteUrl) {
       setMessage(
@@ -63,12 +68,14 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch(`${siteUrl}/auth-check`, {
         headers: { Authorization: `Bearer ${key.trim()}` },
+        signal: AbortSignal.timeout(ownerAuthCheckTimeoutMs),
       });
       const body = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
         credential?: string;
       };
+      if (sequence !== verificationSequence.current) return false;
       if (!response.ok || body.ok === false) {
         if (!isOwnerCredentialRejection(response.status)) {
           setUnlocked(false);
@@ -92,18 +99,14 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
       setMessage("");
       return true;
     } catch (error) {
+      if (sequence !== verificationSequence.current) return false;
+      const hasSavedSession = Boolean(quiet && getOwnerAccessKey());
       setUnlocked(false);
-      setSessionUnavailable(Boolean(quiet && getOwnerAccessKey()));
-      setMessage(
-        quiet && getOwnerAccessKey()
-          ? "Ourchival is temporarily unreachable. Your saved session is still available."
-          : error instanceof Error
-            ? error.message
-            : "Ourchival could not be reached.",
-      );
+      setSessionUnavailable(hasSavedSession);
+      setMessage(ownerAuthRequestErrorMessage(error, hasSavedSession));
       return false;
     } finally {
-      setChecking(false);
+      if (sequence === verificationSequence.current) setChecking(false);
     }
   }
 

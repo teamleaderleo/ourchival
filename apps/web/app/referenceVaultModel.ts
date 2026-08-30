@@ -152,7 +152,7 @@ export function getSelectedReference(
   visibleReferences: SavedReference[],
   selectedId: string | null,
 ) {
-  if (!visibleReferences.length) return undefined;
+  if (!visibleReferences.length || !selectedId) return undefined;
   return visibleReferences.find((reference) => reference._id === selectedId) ?? visibleReferences[0];
 }
 

@@ -234,6 +234,10 @@ describe("link display helpers", () => {
 });
 
 describe("getSelectedReference", () => {
+  it("leaves the archive canvas unselected until the user chooses a reference", () => {
+    expect(getSelectedReference(references, null)).toBeUndefined();
+  });
+
   it("uses the explicit selected item when it is visible", () => {
     expect(getSelectedReference(references, "fabric-ref")?._id).toBe("fabric-ref");
   });
