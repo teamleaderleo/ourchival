@@ -1,12 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanDeviceName,
+  createOwnerSessionCredential,
   createDeviceToken,
   createPairingCode,
   googleOwnerEmailMatches,
   hashSecret,
+  isOwnerSessionCredential,
   normalizePairingCode,
 } from "./privateAccess";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("private access helpers", () => {
   it("hashes secrets deterministically without preserving the raw value", async () => {
@@ -34,7 +40,53 @@ describe("private access helpers", () => {
   });
 
   it("accepts only the Google account that owns the configured Drive", () => {
-    expect(googleOwnerEmailMatches("owner@example.com", " Owner@Example.com ")).toBe(true);
-    expect(googleOwnerEmailMatches("different@example.com", "owner@example.com")).toBe(false);
+    expect(
+      googleOwnerEmailMatches("owner@example.com", " Owner@Example.com "),
+    ).toBe(true);
+    expect(
+      googleOwnerEmailMatches("different@example.com", "owner@example.com"),
+    ).toBe(false);
+  });
+
+  it("mints locally verifiable, expiring owner sessions", async () => {
+    vi.stubEnv("OURCHIVAL_OWNER_ACCESS_KEY", "test-only-recovery-secret");
+    const now = 1_800_000_000_000;
+    const session = await createOwnerSessionCredential(now);
+
+    expect(session.credential).toMatch(
+      /^ourc_owner_session_\d{13}_[a-f0-9]{48}_[a-f0-9]{64}$/,
+    );
+    expect(
+      await isOwnerSessionCredential(
+        session.credential,
+        "test-only-recovery-secret",
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      await isOwnerSessionCredential(session.credential, "wrong-secret", now),
+    ).toBe(false);
+    expect(
+      await isOwnerSessionCredential(
+        session.credential,
+        "test-only-recovery-secret",
+        session.expiresAt,
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects tampered owner sessions", async () => {
+    vi.stubEnv("OURCHIVAL_OWNER_ACCESS_KEY", "test-only-recovery-secret");
+    const session = await createOwnerSessionCredential(1_800_000_000_000);
+    const tampered = `${session.credential.slice(0, -1)}${
+      session.credential.endsWith("0") ? "1" : "0"
+    }`;
+    expect(
+      await isOwnerSessionCredential(
+        tampered,
+        "test-only-recovery-secret",
+        1_800_000_000_000,
+      ),
+    ).toBe(false);
   });
 });

@@ -61,6 +61,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
       const body = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
+        credential?: string;
       };
       if (!response.ok || body.ok === false) {
         clearOwnerAccessKey();
@@ -68,8 +69,9 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
         setMessage(body.error ?? "That sign-in or recovery key was rejected.");
         return false;
       }
-      saveOwnerAccessKey(key);
-      setAccessKey(key);
+      const verifiedCredential = body.credential?.trim() || key;
+      saveOwnerAccessKey(verifiedCredential);
+      setAccessKey(verifiedCredential);
       setUnlocked(true);
       setMessage("");
       return true;

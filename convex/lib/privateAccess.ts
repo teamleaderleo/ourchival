@@ -3,6 +3,8 @@ import { getDriveConfig, getDriveOwnerIdentity } from "./drive";
 const textEncoder = new TextEncoder();
 const googleTokenInfoEndpoint = "https://oauth2.googleapis.com/tokeninfo";
 const googleCredentialCache = new Map<string, number>();
+const ownerSessionPrefix = "ourc_owner_session";
+const ownerSessionLifetimeMs = 7 * 24 * 60 * 60 * 1000;
 
 export type AccessPrincipal =
   { kind: "owner" } | { kind: "clipper"; deviceId: string; deviceName: string };
@@ -32,7 +34,8 @@ export async function isOwnerAccessKey(candidate: string | undefined) {
   const configured = process.env.OURCHIVAL_OWNER_ACCESS_KEY?.trim();
   if (configured && (await secretsEqual(candidate, configured))) return true;
 
-  if (await isGoogleOwnerCredential(candidate)) return true;
+  if (configured && (await isOwnerSessionCredential(candidate, configured)))
+    return true;
 
   if (!configured && !getDriveConfig()) {
     throw new AccessError(
@@ -42,6 +45,22 @@ export async function isOwnerAccessKey(candidate: string | undefined) {
     );
   }
   return false;
+}
+
+export async function exchangeOwnerCredential(candidate: string | undefined) {
+  if (await isOwnerAccessKey(candidate)) {
+    return { credential: candidate! };
+  }
+
+  if (!candidate || !(await isGoogleOwnerCredential(candidate))) {
+    throw new AccessError(
+      "The owner credential is invalid or expired.",
+      401,
+      "invalid_owner_access",
+    );
+  }
+
+  return await createOwnerSessionCredential();
 }
 
 export async function requireOwnerAccess(candidate: string | undefined) {
@@ -63,6 +82,39 @@ export async function hashSecret(value: string) {
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
+}
+
+export async function createOwnerSessionCredential(now = Date.now()) {
+  const signingSecret = process.env.OURCHIVAL_OWNER_ACCESS_KEY?.trim();
+  if (!signingSecret) {
+    throw new AccessError(
+      "Ourchival owner sessions require the recovery key configuration.",
+      503,
+      "owner_session_unconfigured",
+    );
+  }
+
+  const expiresAt = now + ownerSessionLifetimeMs;
+  const payload = `${ownerSessionPrefix}_${expiresAt}_${randomToken(24)}`;
+  const signature = await signOwnerSession(payload, signingSecret);
+  return { credential: `${payload}_${signature}`, expiresAt };
+}
+
+export async function isOwnerSessionCredential(
+  candidate: string,
+  signingSecret = process.env.OURCHIVAL_OWNER_ACCESS_KEY?.trim(),
+  now = Date.now(),
+) {
+  if (!signingSecret) return false;
+  const match = new RegExp(
+    `^(${ownerSessionPrefix}_(\\d{13})_[a-f0-9]{48})_([a-f0-9]{64})$`,
+  ).exec(candidate);
+  if (!match) return false;
+
+  const expiresAt = Number(match[2]);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) return false;
+  const expected = await signOwnerSession(match[1], signingSecret);
+  return await secretsEqual(match[3], expected);
 }
 
 export function createDeviceToken() {
@@ -212,4 +264,22 @@ async function secretsEqual(left: string, right: string) {
       (leftHash.charCodeAt(index) || 0) ^ (rightHash.charCodeAt(index) || 0);
   }
   return difference === 0;
+}
+
+async function signOwnerSession(payload: string, signingSecret: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    textEncoder.encode(signingSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    textEncoder.encode(payload),
+  );
+  return Array.from(new Uint8Array(signature), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }

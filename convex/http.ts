@@ -14,6 +14,7 @@ import {
   cleanDeviceName,
   createDeviceToken,
   createPairingCode,
+  exchangeOwnerCredential,
   hashSecret,
   isOwnerAccessKey,
   normalizePairingCode,
@@ -115,9 +116,17 @@ http.route({
   path: "/auth-check",
   method: "GET",
   handler: httpAction(async (_ctx, request) => {
-    const denied = await ownerDenied(request);
-    if (denied) return denied;
-    return jsonResponse(request, { ok: true, principal: "owner" });
+    try {
+      const owner = await exchangeOwnerCredential(bearerToken(request));
+      return jsonResponse(request, {
+        ok: true,
+        principal: "owner",
+        credential: owner.credential,
+        ...(owner.expiresAt ? { expiresAt: owner.expiresAt } : {}),
+      });
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
   }),
 });
 

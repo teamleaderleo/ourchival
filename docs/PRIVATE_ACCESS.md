@@ -32,7 +32,7 @@ The owner key belongs only in the Convex environment and the owner's browser. Do
 
 ## Unlock the web vault
 
-Open the web app and choose **Continue with Google**. The browser stores the short-lived Google credential locally until **Lock** is selected, and verifies it against `/auth-check` before rendering references. If Google sign-in is unavailable, expand **Use recovery key** and enter the owner key.
+Open the web app and choose **Continue with Google**. `/auth-check` verifies the short-lived Google credential, confirms the configured owner email and Drive owner match, and exchanges it for a signed seven-day Ourchival session. The browser stores only that scoped session until **Lock** is selected. If Google sign-in is unavailable, expand **Use recovery key** and enter the owner key.
 
 The owner key protects the HTTP archive, private Drive proxy, organization panels, saved searches, enrichment controls, related-reference browsing, visual similarity, capture-session records, and owner-side Clipper management.
 
