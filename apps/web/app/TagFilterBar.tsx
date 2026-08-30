@@ -38,8 +38,8 @@ export function TagFilterBar({
     <details className="vault-tools">
       <summary>
         <span>
-          <strong>Filter &amp; organize</strong>
-          <small>Tags, boards, projects, batches, and enrichment</small>
+          <strong>Tools</strong>
+          <small>Filters, batches, enrichment</small>
         </span>
         <span>
           {activeFilterCount ? `${activeFilterCount} active` : "Optional"}

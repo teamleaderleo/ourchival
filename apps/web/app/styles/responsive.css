@@ -56,6 +56,5 @@
   .vault-count { display: grid; justify-items: end; gap: 0; }
   .search-field input { padding-right: 58px; font-size: 0.8rem; }
   .review-strip span { display: none; }
-  .result-summary span:nth-child(2), .result-summary span:nth-child(3) { display: none; }
   .reference-grid, .reference-grid.link-grid { columns: 1; }
 }
