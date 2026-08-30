@@ -42,7 +42,10 @@ export function withOwnerAccess<T extends Record<string, unknown>>(args: T) {
   return { ...args, accessKey: requireOwnerAccessKey() };
 }
 
-export async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+export async function privateFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+) {
   const headers = mergedHeaders(input, init.headers);
   headers.set("Authorization", `Bearer ${requireOwnerAccessKey()}`);
   return await fetch(input, { ...init, headers });
@@ -65,7 +68,7 @@ function installPrivateFetchInterceptor() {
   window.fetch = async (input, init = {}) => {
     const siteUrl = resolveConvexSiteUrl();
     const accessKey = getOwnerAccessKey();
-    if (!siteUrl || !accessKey || !requestUrl(input).startsWith(siteUrl)) {
+    if (!siteUrl || !accessKey || !isTrustedSiteRequest(input, siteUrl)) {
       return await originalFetch(input, init);
     }
 
@@ -78,8 +81,24 @@ function installPrivateFetchInterceptor() {
   markedWindow[interceptorMarker] = true;
 }
 
+export function isTrustedSiteRequest(
+  input: RequestInfo | URL,
+  siteUrl: string,
+) {
+  try {
+    const base = typeof window === "undefined" ? siteUrl : window.location.href;
+    const request = new URL(requestUrl(input), base);
+    const site = new URL(siteUrl);
+    return request.origin === site.origin;
+  } catch {
+    return false;
+  }
+}
+
 function mergedHeaders(input: RequestInfo | URL, initHeaders?: HeadersInit) {
-  const headers = new Headers(input instanceof Request ? input.headers : undefined);
+  const headers = new Headers(
+    input instanceof Request ? input.headers : undefined,
+  );
   new Headers(initHeaders).forEach((value, key) => headers.set(key, value));
   return headers;
 }

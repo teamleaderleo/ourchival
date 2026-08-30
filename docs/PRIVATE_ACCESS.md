@@ -1,6 +1,16 @@
 # Private vault access
 
-Ourchival's first production access model is intentionally single-owner. The web vault uses one owner access key, while every paired browser extension receives a separate revocable device token.
+Ourchival is intentionally a single-owner vault. The normal web flow is **Continue with Google** using the same Google account that owns Ourchival's Drive storage. The owner recovery key remains available as a fallback, while every paired browser extension receives a separate revocable device token.
+
+## Configure Google owner sign-in
+
+Use the same Google OAuth web client for Google Identity Services and the Drive refresh token:
+
+1. Add `https://app.ourchival.com` as an authorized JavaScript origin in Google Cloud.
+2. Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` on the production web app. This identifier is public by design.
+3. Set the matching `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` only in the Convex environment.
+
+The backend verifies the Google ID token's issuer, audience, verified email, and expiry. It then asks Drive for the configured storage account and requires an exact email match. A different Google account is rejected even when its token is otherwise valid.
 
 ## Configure the owner key
 
@@ -22,7 +32,7 @@ The owner key belongs only in the Convex environment and the owner's browser. Do
 
 ## Unlock the web vault
 
-Open the web app and enter the owner key. The browser stores it in local storage until **Lock** is selected. The vault verifies the key against `/auth-check` before rendering references.
+Open the web app and choose **Continue with Google**. `/auth-check` verifies the short-lived Google credential, confirms the configured owner email and Drive owner match, and exchanges it for a signed Ourchival session. The session lasts for one year and renews on each successful vault open, so an actively used owner browser stays signed in until **Lock** is selected, browser storage is cleared, or the recovery key is rotated. The browser stores only that scoped session, not the Google credential or recovery key. If Google sign-in is unavailable, expand **Use recovery key** and enter the owner key.
 
 The owner key protects the HTTP archive, private Drive proxy, organization panels, saved searches, enrichment controls, related-reference browsing, visual similarity, capture-session records, and owner-side Clipper management.
 
@@ -55,7 +65,7 @@ Open **Clipper access** in the web vault and revoke the device. Its next capture
 
 ## Current release boundary
 
-This release establishes one private owner principal and separately revocable Clipper devices. Records do not yet carry multiple user identities because the current product is a personal vault. A future collaboration phase can replace the owner key with authenticated accounts and owner-scoped data without changing the pairing model's core separation between web access and capture devices.
+This release establishes one Google-backed private owner principal, a recovery key, and separately revocable Clipper devices. Records do not carry multiple user identities because the current product is a personal vault.
 
 ## Release verification
 
@@ -63,10 +73,12 @@ Before using a deployment:
 
 1. Run tests, workspace typechecking, extension build, and web build.
 2. Set both Convex environment variables above.
-3. Unlock the web app with a wrong key and confirm rejection.
-4. Unlock with the correct key and load references.
-5. Create a pairing code and pair the extension.
-6. Capture an image and confirm it appears in Inbox.
-7. Open a private Drive-backed original when Drive is configured.
-8. Revoke the device and confirm the next capture is rejected.
-9. Lock the vault and confirm archive requests stop succeeding from the web UI.
+3. Sign in with a different Google account and confirm rejection.
+4. Sign in with the Drive owner Google account and load references.
+5. Unlock with a wrong recovery key and confirm rejection.
+6. Unlock with the correct recovery key and load references.
+7. Create a pairing code and pair the extension.
+8. Capture an image and confirm it appears in Inbox.
+9. Open a private Drive-backed original when Drive is configured.
+10. Revoke the device and confirm the next capture is rejected.
+11. Lock the vault and confirm archive requests stop succeeding from the web UI.

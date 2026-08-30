@@ -1,29 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Ourchival Clipper",
-  "version": "0.0.1",
-  "description": "Save images, tabs, links, and source metadata to your private Ourchival vault.",
-  "permissions": [
-    "contextMenus",
-    "activeTab",
-    "storage",
-    "tabs"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "version": "0.1.0",
+  "description": "Save images, X Likes, tabs, links, and source metadata to your private Ourchival vault.",
+  "permissions": ["contextMenus", "activeTab", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ]
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
     }
   ],
   "action": {

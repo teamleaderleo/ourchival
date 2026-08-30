@@ -44,8 +44,8 @@ type SearchCaches = {
 const statsKey = "global";
 const linkKinds = new Set(["link", "article", "page"]);
 
-export async function listReferencePage(ctx: any, request: Request) {
-  const url = new URL(request.url);
+export async function listReferencePage(ctx: any, request: Request | string) {
+  const url = new URL(typeof request === "string" ? request : request.url);
   const options = parseReferenceListOptions(url);
   if (options.tagSlug) {
     const tag = await ctx.db
@@ -77,38 +77,24 @@ export async function listReferencePage(ctx: any, request: Request) {
     snapshot: any | null | undefined;
     searchMatches: SearchMatch[];
   }> = [];
-  let cursor = options.cursor;
-  let isDone = false;
-  let scanned = 0;
-  const scanBatchSize = Math.max(options.pageSize, 48);
-  const maxScanned = Math.max(options.pageSize * 8, 384);
+  const page = await ctx.db
+    .query("references")
+    .withIndex("by_captured_at")
+    .order("desc")
+    .paginate({ numItems: options.pageSize, cursor: options.cursor });
+  const candidates = page.page.filter((reference: any) =>
+    matchesReferenceFilters(reference, options),
+  );
 
-  while (!isDone && references.length < options.pageSize && scanned < maxScanned) {
-    const page = await ctx.db
-      .query("references")
-      .withIndex("by_captured_at")
-      .order("desc")
-      .paginate({ numItems: scanBatchSize, cursor });
-
-    cursor = page.continueCursor;
-    isDone = page.isDone;
-    scanned += page.page.length;
-
-    const candidates = page.page.filter((reference: any) =>
-      matchesReferenceFilters(reference, options),
+  if (!options.query) {
+    references.push(
+      ...candidates.map((reference: any) => ({
+        reference,
+        snapshot: undefined,
+        searchMatches: [],
+      })),
     );
-
-    if (!options.query) {
-      references.push(
-        ...candidates.map((reference: any) => ({
-          reference,
-          snapshot: undefined,
-          searchMatches: [],
-        })),
-      );
-      continue;
-    }
-
+  } else {
     const searchable = await Promise.all(
       candidates.map(async (reference: any) => {
         const [snapshot, context] = await Promise.all([
@@ -142,9 +128,9 @@ export async function listReferencePage(ctx: any, request: Request) {
 
   return {
     references: hydrated,
-    continueCursor: isDone ? null : cursor,
-    hasMore: !isDone,
-    scanned,
+    continueCursor: page.isDone ? null : page.continueCursor,
+    hasMore: !page.isDone,
+    scanned: page.page.length,
     counts: {
       inbox: counts.inbox,
       all: counts.library,
@@ -180,6 +166,12 @@ export async function applyReferenceStatsDelta(
 }
 
 export async function getReferenceCounts(ctx: any): Promise<ReferenceCounts> {
+  const stats = await getReferenceStatsDocument(ctx);
+  if (stats) return countsFromStats(stats);
+  return emptyCounts();
+}
+
+export async function ensureReferenceStats(ctx: any) {
   const stats = await getReferenceStatsDocument(ctx);
   if (stats) return countsFromStats(stats);
   return await rebuildReferenceStats(ctx);
@@ -309,6 +301,16 @@ function getCachedDocument(
 }
 
 async function rebuildReferenceStats(ctx: any): Promise<ReferenceCounts> {
+  const counts = await scanReferenceCounts(ctx);
+  const existing = await getReferenceStatsDocument(ctx);
+  const payload = { ...sanitizeCounts(counts), updatedAt: Date.now() };
+  if (existing) await ctx.db.patch(existing._id, payload);
+  else await ctx.db.insert("referenceStats", { key: statsKey, ...payload });
+
+  return counts;
+}
+
+async function scanReferenceCounts(ctx: any): Promise<ReferenceCounts> {
   const counts = emptyCounts();
   let cursor: string | null = null;
   let isDone = false;
@@ -326,11 +328,6 @@ async function rebuildReferenceStats(ctx: any): Promise<ReferenceCounts> {
       for (const key of referenceFacetKeys(reference)) counts[key] += 1;
     }
   }
-
-  const existing = await getReferenceStatsDocument(ctx);
-  const payload = { ...sanitizeCounts(counts), updatedAt: Date.now() };
-  if (existing) await ctx.db.patch(existing._id, payload);
-  else await ctx.db.insert("referenceStats", { key: statsKey, ...payload });
 
   return counts;
 }

@@ -26,7 +26,8 @@ export type BatchCaptureSource =
   | "url_list"
   | "bookmarks"
   | "retry"
-  | "x_post";
+  | "x_post"
+  | "x_likes";
 
 export type BatchCaptureItem = {
   url?: string;
@@ -115,7 +116,19 @@ export function normalizePairingEndpoint(value: string | undefined) {
 export function normalizeSiteRoot(value: string | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
-  return trimmed
+  const normalized = trimmed
     .replace(/\/(capture|clipper-exchange)\/?$/i, "")
     .replace(/\/$/, "");
+  try {
+    const url = new URL(normalized);
+    const localHttp =
+      url.protocol === "http:" &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+    if (url.protocol !== "https:" && !localHttp) return undefined;
+    if (url.username || url.password || url.search || url.hash)
+      return undefined;
+    return `${url.origin}${url.pathname === "/" ? "" : url.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return undefined;
+  }
 }

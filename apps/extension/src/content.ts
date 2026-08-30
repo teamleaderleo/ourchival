@@ -1,4 +1,8 @@
-import { parseXSnapshot, type ParsedXSource, type XDomSnapshot } from "@ourchival/parsers";
+import {
+  parseXSnapshot,
+  type ParsedXSource,
+  type XDomSnapshot,
+} from "@ourchival/parsers";
 import type { PageSnapshot } from "@ourchival/shared";
 
 type ContextCapture = {
@@ -137,32 +141,91 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "OURCHIVAL_GET_CONTEXT_CAPTURE") {
     sendResponse(lastContextCapture);
+    return;
+  }
+
+  if (message?.type === "OURCHIVAL_COLLECT_X_LIKES") {
+    void collectXLikeSnapshots()
+      .then((snapshots) => sendResponse({ ok: true, snapshots }))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not collect this Likes page.",
+        }),
+      );
+    return true;
   }
 });
+
+async function collectXLikeSnapshots() {
+  if (
+    !isXPage() ||
+    !/^\/[A-Za-z0-9_]{1,15}\/likes\/?$/i.test(location.pathname)
+  ) {
+    throw new Error("Open your X profile Likes page before importing.");
+  }
+
+  const startingScroll = window.scrollY;
+  const collected = new Map<string, XDomSnapshot>();
+  let idleRounds = 0;
+
+  try {
+    for (let round = 0; round < 60 && collected.size < 250; round += 1) {
+      const before = collected.size;
+      for (const article of document.querySelectorAll("article")) {
+        const snapshot = snapshotXArticle(article, undefined);
+        const parsed = parseXSnapshot(snapshot);
+        if (!parsed.postId || !/\/status\/\d+$/i.test(parsed.sourceUrl))
+          continue;
+        collected.set(parsed.sourceUrl, snapshot);
+        if (collected.size >= 250) break;
+      }
+
+      idleRounds = collected.size === before ? idleRounds + 1 : 0;
+      if (idleRounds >= 5 || collected.size >= 250) break;
+      window.scrollBy({
+        top: Math.max(520, Math.floor(window.innerHeight * 0.82)),
+      });
+      await wait(650);
+    }
+  } finally {
+    window.scrollTo({ top: startingScroll });
+  }
+
+  return Array.from(collected.values());
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 function snapshotXArticle(
   article: Element,
   clickedImage: HTMLImageElement | undefined,
 ): XDomSnapshot {
-  const links = Array.from(article.querySelectorAll<HTMLAnchorElement>("a[href]")).map(
-    (link) => ({
-      href: link.href,
-      text: link.innerText.trim() || undefined,
-    }),
-  );
-  const images = Array.from(article.querySelectorAll<HTMLImageElement>("img")).map(
-    (image) => ({
-      src: image.currentSrc || image.src,
-      alt: image.alt || undefined,
-    }),
-  );
+  const links = Array.from(
+    article.querySelectorAll<HTMLAnchorElement>("a[href]"),
+  ).map((link) => ({
+    href: link.href,
+    text: link.innerText.trim() || undefined,
+  }));
+  const images = Array.from(
+    article.querySelectorAll<HTMLImageElement>("img"),
+  ).map((image) => ({
+    src: image.currentSrc || image.src,
+    alt: image.alt || undefined,
+  }));
   const userNameText = article
     .querySelector<HTMLElement>('[data-testid="User-Name"]')
     ?.innerText.trim();
   const articleText = article
     .querySelector<HTMLElement>('[data-testid="tweetText"]')
     ?.innerText.trim();
-  const timestamp = article.querySelector<HTMLTimeElement>("time[datetime]")?.dateTime;
+  const timestamp =
+    article.querySelector<HTMLTimeElement>("time[datetime]")?.dateTime;
 
   return {
     pageUrl: location.href,
@@ -179,7 +242,10 @@ function snapshotXArticle(
 }
 
 function metaContent(selector: string) {
-  return document.querySelector<HTMLMetaElement>(selector)?.content.trim() || undefined;
+  return (
+    document.querySelector<HTMLMetaElement>(selector)?.content.trim() ||
+    undefined
+  );
 }
 
 function firstText(...values: Array<string | undefined>) {

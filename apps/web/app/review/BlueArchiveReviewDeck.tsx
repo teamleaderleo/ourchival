@@ -19,7 +19,7 @@ type ImportProgress = {
 };
 
 export function BlueArchiveReviewDeck() {
-  const vault = useReferenceVault();
+  const vault = useReferenceVault(96);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [importMessage, setImportMessage] = useState("");
@@ -91,14 +91,16 @@ export function BlueArchiveReviewDeck() {
       while (nextIndex < blueArchiveReviewCandidates.length) {
         const index = nextIndex++;
         const candidate = blueArchiveReviewCandidates[index]!;
+        const assetUrl = candidate.originalImageUrl ?? candidate.previewImageUrl;
         try {
           const response = await fetch(`${vault.siteUrl}/capture`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              kind: candidate.previewImageUrl ? "image" : "link",
+              kind: assetUrl ? "image" : "link",
               sourceUrl: candidate.sourceUrl,
-              previewImageUrl: candidate.previewImageUrl,
+              assetUrl,
+              previewImageUrl: candidate.previewImageUrl ?? assetUrl,
               pageTitle: `${reviewQuery} · ${candidate.character} · ${candidate.title}`,
               authorName: candidate.artist,
               rawMetadata: JSON.stringify({
@@ -107,6 +109,7 @@ export function BlueArchiveReviewDeck() {
                 sourceKind: candidate.sourceKind,
                 artist: candidate.artist,
                 previewImageUrl: candidate.previewImageUrl,
+                originalImageUrl: candidate.originalImageUrl,
               }),
               capturedAt: new Date().toISOString(),
             }),
@@ -145,7 +148,7 @@ export function BlueArchiveReviewDeck() {
       <header className={styles.header}>
         <div className={styles.headerCopy}>
           <strong>Blue Archive review</strong>
-          <span>No / Maybe / Yes · official, key-art and tasteful visual lane</span>
+          <span>No / Maybe / Yes · official, key-art and private visual lane</span>
         </div>
         <div className={styles.lanes}>
           <a href="/review">ZZZ</a>
