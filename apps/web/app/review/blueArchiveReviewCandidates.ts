@@ -56,9 +56,27 @@ export const blueArchiveReviewCandidates: BlueArchiveReviewCandidate[] = [
     sourceKind: "official",
   },
   {
+    character: "Event ensemble",
+    title: "Promise at Sunset digital goods",
+    sourceUrl: "https://forum.nexon.com/bluearchive/board_view?allBoard=1&board=1044&thread=2718767",
+    sourceKind: "official",
+  },
+  {
+    character: "Event ensemble",
+    title: "Sheside outside digital goods",
+    sourceUrl: "https://forum.nexon.com/bluearchive/board_view?board=1044&thread=2718732",
+    sourceKind: "official",
+  },
+  {
+    character: "Millennium",
+    title: "Code: BOX digital wallpapers",
+    sourceUrl: "https://forum.nexon.com/bluearchive-en/board_view?board=3218&thread=3022954",
+    sourceKind: "official",
+  },
+  {
     character: "Raid-boss themed",
     title: "2026 Heart-Raid digital goods",
-    sourceUrl: "https://forum.nexon.com/bluearchive/board_view?board=1039&stickyBoard=1&thread=3407408",
+    sourceUrl: "https://forum.nexon.com/bluearchive/board_view?board=1044&thread=3407407",
     sourceKind: "official",
   },
 ];
