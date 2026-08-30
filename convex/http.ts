@@ -243,6 +243,7 @@ http.route({
     if (denied) return denied;
     try {
       await ctx.runMutation(internal.httpDb.initializeReferenceStats, {});
+      await ctx.runMutation(internal.preferenceExport.ensureExportRequested, {});
       const page = await ctx.runQuery(internal.httpDb.listReferences, {
         url: request.url,
       });

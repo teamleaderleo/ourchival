@@ -89,6 +89,22 @@ export const requestRebuild = internalMutation({
   },
 });
 
+export const ensureExportRequested = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const existing = await exportState(ctx);
+    if (existing) return false;
+    await ctx.db.insert("preferenceExportState", {
+      key: exportStateKey,
+      generation: 0,
+      status: "queued",
+      requestedAt: Date.now(),
+    });
+    await ctx.scheduler.runAfter(0, internal.preferenceExport.rebuildSnapshot, {});
+    return true;
+  },
+});
+
 export const rebuildSnapshot = internalAction({
   args: {},
   handler: async (ctx) => {
