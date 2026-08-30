@@ -1,5 +1,6 @@
 const tokenEndpoint = "https://oauth2.googleapis.com/token";
 const driveFilesEndpoint = "https://www.googleapis.com/drive/v3/files";
+const driveAboutEndpoint = "https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress,permissionId)";
 const driveUploadEndpoint = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size,webViewLink,webContentLink,thumbnailLink,parents";
 
 type DriveConfig = {
@@ -26,6 +27,14 @@ export type DriveUploadResult = {
   file?: DriveFile;
 };
 
+export type DriveOwnerIdentity = {
+  displayName?: string;
+  emailAddress?: string;
+  permissionId?: string;
+};
+
+let cachedOwnerIdentity: { value: DriveOwnerIdentity; expiresAt: number } | undefined;
+
 export function getDriveConfig(): DriveConfig | undefined {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -39,6 +48,29 @@ export function getDriveConfig(): DriveConfig | undefined {
     refreshToken,
     parentFolderId: process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID,
   };
+}
+
+export async function getDriveOwnerIdentity(): Promise<DriveOwnerIdentity | undefined> {
+  if (cachedOwnerIdentity && cachedOwnerIdentity.expiresAt > Date.now()) {
+    return cachedOwnerIdentity.value;
+  }
+
+  const config = getDriveConfig();
+  if (!config) return undefined;
+  const accessToken = await getAccessToken(config);
+  const response = await fetch(driveAboutEndpoint, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body = (await response.json().catch(() => undefined)) as
+    | { user?: DriveOwnerIdentity; error?: unknown }
+    | undefined;
+  if (!response.ok || !body?.user) return undefined;
+
+  cachedOwnerIdentity = {
+    value: body.user,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  };
+  return body.user;
 }
 
 export async function uploadBlobToDrive(args: {
