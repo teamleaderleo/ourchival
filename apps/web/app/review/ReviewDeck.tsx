@@ -8,7 +8,8 @@ import { useReferenceVault } from "../useReferenceVault";
 import styles from "./ReviewDeck.module.css";
 import { zzzReviewCandidates } from "./zzzReviewCandidates";
 
-const reviewQuery = "ZZZReview";
+const reviewMarker = "ZZZReview";
+const reviewQuery = `${reviewMarker} type:image`;
 
 type ImportProgress = {
   done: number;
@@ -75,7 +76,11 @@ export function ReviewDeck() {
 
   async function importSeed() {
     if (!vault.siteUrl || importing) return;
-    const candidates = zzzReviewCandidates.filter((candidate) => candidate.sourceKind !== "watch");
+    const candidates = zzzReviewCandidates.filter(
+      (candidate) =>
+        candidate.sourceKind !== "watch" &&
+        Boolean(candidate.originalImageUrl ?? candidate.previewImageUrl),
+    );
     const progress: ImportProgress = {
       done: 0,
       total: candidates.length,
@@ -102,7 +107,7 @@ export function ReviewDeck() {
               sourceUrl: candidate.sourceUrl,
               assetUrl,
               previewImageUrl: candidate.previewImageUrl ?? assetUrl,
-              pageTitle: `${reviewQuery} · ${candidate.character} · ${candidate.title}`,
+              pageTitle: `${reviewMarker} · ${candidate.character} · ${candidate.title}`,
               authorName: candidate.artist,
               rawMetadata: JSON.stringify({
                 seed: "zzz-wallpaper-review-2026-08-30",
@@ -157,14 +162,14 @@ export function ReviewDeck() {
             className={vault.activeView === "inbox" ? styles.active : undefined}
             onClick={() => switchLane("inbox")}
           >
-            New {vault.inboxCount ? `(${vault.inboxCount})` : ""}
+            New
           </button>
           <button
             type="button"
             className={vault.activeView === "later" ? styles.active : undefined}
             onClick={() => switchLane("later")}
           >
-            Maybe {vault.laterCount ? `(${vault.laterCount})` : ""}
+            Maybe
           </button>
         </div>
       </header>

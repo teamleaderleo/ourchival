@@ -89,6 +89,24 @@ The archive is an image-first light table, not an administration dashboard.
   empty, and populated as distinct states. Network trouble must not masquerade
   as sign-out or an empty archive.
 
+## Show the work, not a proxy for it
+
+Visual decisions require the actual candidate in the decision surface.
+
+- Render the best stored or verified preview directly in cards and review
+  decks. Do not require a selection, Quick Look, or source-page click just to
+  see the work being judged.
+- Treat loading, unavailable, and failed previews as distinct states. A
+  placeholder is a fallback for a genuinely unavailable asset, never the
+  normal representation of a known image.
+- Do not present a favicon, social-network default image, login wall, QR code,
+  or generic Open Graph image as though it were the candidate artwork.
+- Keep the source link available for provenance, but do not make the source
+  site responsible for the primary review experience.
+- Verify representative previews visually after import. File presence and a
+  successful HTTP response do not prove that the returned pixels are the
+  intended work.
+
 ## Typography and chrome
 
 - Functional text is normally at least 12px; body copy and buttons are normally
