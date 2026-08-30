@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { GoogleOwnerSignIn } from "./GoogleOwnerSignIn";
 import {
   clearOwnerAccessKey,
   getOwnerAccessKey,
@@ -23,6 +24,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   const [unlocked, setUnlocked] = useState(false);
   const [checking, setChecking] = useState(true);
   const [message, setMessage] = useState("");
+  const googleEnabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim());
 
   useEffect(() => {
     const refresh = () => {
@@ -47,7 +49,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     }
 
     setChecking(true);
-    if (!quiet) setMessage("Unlocking…");
+    if (!quiet) setMessage("Signing in…");
     try {
       const response = await fetch(`${siteUrl}/auth-check`, {
         headers: { Authorization: `Bearer ${key.trim()}` },
@@ -59,10 +61,11 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
       if (!response.ok || body.ok === false) {
         clearOwnerAccessKey();
         setUnlocked(false);
-        setMessage(body.error ?? "That access key was rejected.");
+        setMessage(body.error ?? "That sign-in or recovery key was rejected.");
         return false;
       }
       saveOwnerAccessKey(key);
+      setAccessKey(key);
       setUnlocked(true);
       setMessage("");
       return true;
@@ -83,6 +86,11 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     await verify(accessKey);
   }
 
+  async function acceptGoogleCredential(credential: string) {
+    setAccessKey(credential);
+    await verify(credential);
+  }
+
   if (unlocked) {
     return <UnlockedVault accessKey={accessKey}>{children}</UnlockedVault>;
   }
@@ -94,26 +102,35 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
           O
         </div>
         <p className="eyebrow">Private archive</p>
-        <h1>Unlock Ourchival</h1>
+        <h1>Sign in to Ourchival</h1>
         <p>
-          Enter the owner access key configured for this vault. It stays on this browser
-          until you lock the app.
+          Continue with the Google account connected to this vault. A recovery key stays
+          available as a fallback.
         </p>
-        <form onSubmit={submit}>
-          <label>
-            Owner access key
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={accessKey}
-              onChange={(event) => setAccessKey(event.target.value)}
-              autoFocus
-            />
-          </label>
-          <button className="button primary" disabled={checking || !accessKey.trim()}>
-            {checking ? "Checking…" : "Unlock vault"}
-          </button>
-        </form>
+
+        <GoogleOwnerSignIn
+          onCredential={acceptGoogleCredential}
+          disabled={checking}
+        />
+
+        <details className="recovery-access" open={!googleEnabled}>
+          <summary>Use recovery key</summary>
+          <form onSubmit={submit}>
+            <label>
+              Owner recovery key
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={accessKey}
+                onChange={(event) => setAccessKey(event.target.value)}
+                autoFocus={!googleEnabled}
+              />
+            </label>
+            <button className="button primary" disabled={checking || !accessKey.trim()}>
+              {checking ? "Checking…" : "Unlock vault"}
+            </button>
+          </form>
+        </details>
         {message ? (
           <p className="access-message" role="alert">
             {message}
