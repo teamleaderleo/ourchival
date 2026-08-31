@@ -78,6 +78,37 @@ describe("resumable import parsers", () => {
     ]);
   });
 
+  it("decodes bookmark title and folder entities at every text boundary", async () => {
+    const html =
+      '<DL><DT><H3>Art &#x26; notes</H3><DL><DT><A HREF="https://example.test/a">Color &#38; value</A></DL></DL>';
+    const expected = [
+      {
+        ordinal: 0,
+        submittedUrl: "https://example.test/a",
+        submittedTitle: "Color & value",
+        sourceGroup: "Art & notes",
+      },
+    ];
+
+    for (let boundary = 1; boundary < html.length; boundary += 1) {
+      expect(
+        await collect(
+          "bookmarks",
+          html.slice(0, boundary),
+          html.slice(boundary),
+        ),
+      ).toEqual(expected);
+    }
+    expect(
+      await collect(
+        "bookmarks",
+        "<DL><DT><H3>Art &am",
+        'p; notes</H3><DL><DT><A HREF="https://example.test/a">Color &am',
+        "p; value</A></DL></DL>",
+      ),
+    ).toEqual(expected);
+  });
+
   it("regenerates the deterministic 50,000-link identity", async () => {
     const result = await digestImport(
       "onetab",
@@ -85,7 +116,7 @@ describe("resumable import parsers", () => {
     );
     expect(result.count).toBe(50_000);
     expect(result.digest).toBe(
-      "b401f24e4ac87642d9adba53d792a2f72325309b495ad2e450fdb530d5134a5d",
+      "e6f133f7b662864fcb70e7766fbe1af493510dc4d467f3261249774942a8580e",
     );
   }, 30_000);
 });

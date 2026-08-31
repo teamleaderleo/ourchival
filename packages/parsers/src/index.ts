@@ -6,12 +6,19 @@ export { digestImport, IMPORT_PARSER_VERSIONS, parseImport } from "./imports";
 export type { ImportRecord, ImportSourceKind } from "./imports";
 export {
   createFixtureCategories,
+  FIXTURE_FAILED_EVIDENCE_LIMIT,
+  FIXTURE_RESULT_ORACLE_VERSION,
   generateOneTabFixture,
   ONE_TAB_FIXTURE_COUNT,
   oneTabFixtureChunks,
   oneTabFixtureLine,
+  runOneTabFixtureOracle,
 } from "./importFixture";
-export type { OneTabFixtureCategories } from "./importFixture";
+export type {
+  FixtureOracleReceipt,
+  FixtureResultOracle,
+  OneTabFixtureCategories,
+} from "./importFixture";
 
 export function detectPlatform(url: string): SourcePlatform {
   const host = safeHost(url);

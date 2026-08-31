@@ -5,23 +5,35 @@ import {
   type ImportSourceKind,
 } from "@ourchival/parsers";
 import {
+  clearStreamImportState,
   getSettings,
   getStreamImportState,
   normalizeSiteRoot,
   saveStreamImportState,
   type StreamImportState,
 } from "./storage";
+import {
+  canChangeImportSource,
+  createImportIdentificationTicket,
+  importPageActions,
+  isCurrentImportIdentification,
+  transitionImportSource,
+} from "./importPageModel";
 
 const root = document.getElementById("root")!;
 let selectedFile: File | undefined;
 let selectedSource: ImportSourceKind = "onetab";
 let activeState: StreamImportState | undefined;
 let pauseRequested = false;
+let storageTransition = Promise.resolve();
+let identificationTask = Promise.resolve();
+let selectionGeneration = 0;
 
 void initialize();
 
 async function initialize() {
   activeState = await getStreamImportState();
+  if (activeState) selectedSource = activeState.source;
   render();
 }
 
@@ -30,14 +42,16 @@ function render() {
   root.innerHTML = `
     <header><p class="eyebrow">Ourchival importer</p><h1>Bring a link collection into Inbox</h1><p class="lede">Choose a OneTab export, browser bookmarks file, or newline URL list. Ourchival checkpoints every 50 records, so the same file can continue after a refresh.</p></header>
     <section>
-      <label>Source format<select id="source"><option value="onetab" ${selectedSource === "onetab" ? "selected" : ""}>OneTab text</option><option value="bookmarks" ${selectedSource === "bookmarks" ? "selected" : ""}>Browser bookmarks HTML</option><option value="url_list" ${selectedSource === "url_list" ? "selected" : ""}>URL list</option></select></label>
-      <label>${state && !selectedFile && state.status !== "completed" ? "Select the same file to continue" : "Choose export file"}<input id="file" type="file" accept=".txt,.html,.htm,text/plain,text/html" /></label>
+      <label>Source format<select id="source" ${canChangeImportSource(state) ? "" : "disabled"}><option value="onetab" ${selectedSource === "onetab" ? "selected" : ""}>OneTab text</option><option value="bookmarks" ${selectedSource === "bookmarks" ? "selected" : ""}>Browser bookmarks HTML</option><option value="url_list" ${selectedSource === "url_list" ? "selected" : ""}>URL list</option></select></label>
+      <label>${state && !selectedFile && state.status !== "completed" ? "Select the same file to continue" : "Choose export file"}<input id="file" type="file" accept=".txt,.html,.htm,text/plain,text/html" ${canChangeImportSource(state) ? "" : "disabled"} /></label>
       ${state ? renderState(state) : '<p class="hint">The file stays in this tab. Local storage keeps only the digest, checkpoint, aggregate counts, and a bounded failure list.</p>'}
       <div class="actions">
-        ${selectedFile && state?.status === "ready" ? '<button id="start">Start import</button>' : ""}
-        ${selectedFile && state?.status === "paused" ? '<button id="start">Continue import</button>' : ""}
-        ${state?.status === "running" ? '<button id="pause" class="secondary">Pause after this batch</button>' : ""}
-        ${state?.status === "completed" ? '<button id="another" class="secondary">Import another file</button>' : ""}
+        ${importPageActions(state, Boolean(selectedFile))
+          .map(
+            (action) =>
+              `<button id="${action.id}"${action.className ? ` class="${action.className}"` : ""}>${action.label}</button>`,
+          )
+          .join("")}
       </div>
     </section>`;
   bindEvents();
@@ -56,12 +70,31 @@ function renderState(state: StreamImportState) {
 
 function bindEvents() {
   document.getElementById("source")?.addEventListener("change", (event) => {
-    selectedSource = (event.currentTarget as HTMLSelectElement)
-      .value as ImportSourceKind;
+    if (!canChangeImportSource(activeState)) {
+      render();
+      return;
+    }
+    const transition = transitionImportSource<File>(
+      (event.currentTarget as HTMLSelectElement).value as ImportSourceKind,
+      selectionGeneration,
+    );
+    selectedSource = transition.selectedSource;
+    selectionGeneration = transition.generation;
+    selectedFile = transition.selectedFile;
+    activeState = transition.activeState;
+    render();
+    storageTransition = Promise.allSettled([
+      storageTransition,
+      identificationTask,
+    ]).then(() => clearStreamImportState());
   });
   document.getElementById("file")?.addEventListener("change", (event) => {
+    if (!canChangeImportSource(activeState)) return;
     const file = (event.currentTarget as HTMLInputElement).files?.[0];
-    if (file) void inspectFile(file);
+    if (file) {
+      identificationTask = inspectFile(file);
+      void identificationTask;
+    }
   });
   document.getElementById("start")?.addEventListener("click", () => {
     if (selectedFile && activeState) void runImport(selectedFile, activeState);
@@ -77,6 +110,12 @@ function bindEvents() {
 }
 
 async function inspectFile(file: File) {
+  selectionGeneration += 1;
+  const ticket = createImportIdentificationTicket(
+    selectionGeneration,
+    selectedSource,
+    file,
+  );
   selectedFile = file;
   activeState = undefined;
   root
@@ -85,15 +124,26 @@ async function inspectFile(file: File) {
       "beforeend",
       '<p class="hint">Reading and identifying the source…</p>',
     );
+  const isCurrent = () =>
+    isCurrentImportIdentification(
+      ticket,
+      selectionGeneration,
+      selectedSource,
+      selectedFile,
+    );
+  await storageTransition;
+  if (!isCurrent()) return;
   try {
     const identity = await digestImport(
-      selectedSource,
-      parseImport(selectedSource, fileChunks(file)),
+      ticket.source,
+      parseImport(ticket.source, fileChunks(file)),
     );
+    if (!isCurrent()) return;
     if (identity.count === 0)
       throw new Error("This file contains no HTTP or HTTPS links.");
-    const sessionKey = `${selectedSource}:${identity.parserVersion}:${identity.digest}`;
+    const sessionKey = `${ticket.source}:${identity.parserVersion}:${identity.digest}`;
     const previous = await getStreamImportState();
+    if (!isCurrent()) return;
     if (
       previous &&
       previous.sessionKey !== sessionKey &&
@@ -106,7 +156,7 @@ async function inspectFile(file: File) {
     activeState = {
       version: 1,
       sessionKey,
-      source: selectedSource,
+      source: ticket.source,
       parserVersion: identity.parserVersion,
       importDigest: identity.digest,
       filenameHint: file.name,
@@ -123,6 +173,7 @@ async function inspectFile(file: File) {
       failedOrdinals:
         previous?.sessionKey === sessionKey ? previous.failedOrdinals : [],
       status: "ready",
+      retryable: undefined,
       updatedAt: new Date().toISOString(),
       message:
         previous?.sessionKey === sessionKey
@@ -131,8 +182,10 @@ async function inspectFile(file: File) {
     };
     await saveStreamImportState(activeState);
   } catch (error) {
+    if (!isCurrent()) return;
     activeState = errorState(error);
   }
+  if (!isCurrent()) return;
   render();
 }
 
@@ -140,8 +193,8 @@ async function runImport(file: File, state: StreamImportState) {
   pauseRequested = false;
   state.status = "running";
   state.message = "Reconciling the durable checkpoint…";
-  await checkpoint(state);
   render();
+  await checkpoint(state);
   try {
     const preflight = await submitBatch(state, []);
     applyServerSession(state, preflight.session);
@@ -158,11 +211,14 @@ async function runImport(file: File, state: StreamImportState) {
     }
     if (!pauseRequested && batch.length) await sendAndCheckpoint(state, batch);
     state.status = pauseRequested ? "paused" : "completed";
+    state.retryable = undefined;
     state.message = pauseRequested
       ? "Progress is preserved. Continue while this file remains selected."
       : "Import complete. The session is ready for review in Ourchival.";
   } catch (error) {
     state.status = "error";
+    state.retryable =
+      error instanceof ImportRequestError ? error.retryable : false;
     state.message =
       error instanceof Error
         ? error.message
@@ -195,26 +251,50 @@ async function submitBatch(state: StreamImportState, records: ImportRecord[]) {
   const settings = await getSettings();
   const siteRoot = normalizeSiteRoot(settings.captureEndpoint);
   if (!siteRoot || !settings.deviceToken)
-    throw new Error("Connect this Clipper from the popup, then retry.");
-  const response = await fetch(`${siteRoot}/imports/batch`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.deviceToken}`,
-    },
-    body: JSON.stringify({
-      sessionKey: state.sessionKey,
-      source: state.source,
-      parserVersion: state.parserVersion,
-      importDigest: state.importDigest,
-      expectedCount: state.expectedCount,
-      records,
-    }),
-  });
-  const body = await response.json();
+    throw new ImportRequestError(
+      "Connect this Clipper from the popup, then select the source again.",
+      false,
+    );
+  let response: Response;
+  try {
+    response = await fetch(`${siteRoot}/imports/batch`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${settings.deviceToken}`,
+      },
+      body: JSON.stringify({
+        sessionKey: state.sessionKey,
+        source: state.source,
+        parserVersion: state.parserVersion,
+        importDigest: state.importDigest,
+        expectedCount: state.expectedCount,
+        records,
+      }),
+    });
+  } catch {
+    throw new ImportRequestError(
+      "Ourchival could not be reached. Progress is preserved.",
+      true,
+    );
+  }
+  let body: any;
+  try {
+    body = await response.json();
+  } catch {
+    throw new ImportRequestError(
+      `Import returned an unreadable response with status ${response.status}.`,
+      response.status === 408 ||
+        response.status === 429 ||
+        response.status >= 500,
+    );
+  }
   if (!response.ok || !body.ok)
-    throw new Error(
+    throw new ImportRequestError(
       body.error || `Import failed with status ${response.status}.`,
+      response.status === 408 ||
+        response.status === 429 ||
+        response.status >= 500,
     );
   return body;
 }
@@ -265,10 +345,20 @@ function errorState(error: unknown): StreamImportState {
     failedCount: 0,
     failedOrdinals: [],
     status: "error",
+    retryable: false,
     updatedAt: now,
     message:
       error instanceof Error ? error.message : "Could not read that file.",
   };
+}
+
+class ImportRequestError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+  }
 }
 
 function statusHeading(state: StreamImportState) {

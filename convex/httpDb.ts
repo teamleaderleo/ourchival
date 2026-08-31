@@ -200,6 +200,9 @@ export const submitImportBatch = internalMutation({
     now: v.number(),
   },
   handler: async (ctx, args) => {
+    if (args.records.length > 50) {
+      throw new Error("Import batches may contain at most 50 records.");
+    }
     const existingSession = await ctx.db
       .query("captureSessions")
       .withIndex("by_session_key", (q) => q.eq("sessionKey", args.sessionKey))
@@ -224,6 +227,7 @@ export const submitImportBatch = internalMutation({
     let skippedDelta = 0;
     let failedDelta = 0;
     const receipts = [];
+    let checkpointOrdinal = existingSession?.checkpointOrdinal ?? -1;
 
     for (const record of args.records) {
       const replay = await ctx.db
@@ -243,7 +247,16 @@ export const submitImportBatch = internalMutation({
           );
         }
         receipts.push(importReceipt(replay, true));
+        if (record.ordinal === checkpointOrdinal + 1) {
+          checkpointOrdinal = record.ordinal;
+        }
         continue;
+      }
+
+      if (record.ordinal !== checkpointOrdinal + 1) {
+        throw new Error(
+          `Import ordinal ${record.ordinal} is ahead of checkpoint ${checkpointOrdinal}.`,
+        );
       }
 
       const cleanSubmittedUrl = record.submittedUrl.trim();
@@ -277,6 +290,7 @@ export const submitImportBatch = internalMutation({
         const occurrence = await ctx.db.get(occurrenceId);
         skippedDelta += 1;
         receipts.push(importReceipt(occurrence!, false));
+        checkpointOrdinal = record.ordinal;
         continue;
       }
 
@@ -302,6 +316,7 @@ export const submitImportBatch = internalMutation({
         const occurrence = await ctx.db.get(occurrenceId);
         failedDelta += 1;
         receipts.push(importReceipt(occurrence!, false));
+        checkpointOrdinal = record.ordinal;
         continue;
       }
 
@@ -410,20 +425,7 @@ export const submitImportBatch = internalMutation({
       });
       const occurrence = await ctx.db.get(occurrenceId);
       receipts.push(importReceipt(occurrence!, false));
-    }
-
-    let checkpointOrdinal = existingSession?.checkpointOrdinal ?? -1;
-    while (true) {
-      const next = await ctx.db
-        .query("importOccurrences")
-        .withIndex("by_session_key_and_ordinal", (q) =>
-          q
-            .eq("sessionKey", args.sessionKey)
-            .eq("ordinal", checkpointOrdinal + 1),
-        )
-        .unique();
-      if (!next) break;
-      checkpointOrdinal += 1;
+      checkpointOrdinal = record.ordinal;
     }
 
     const counts = {

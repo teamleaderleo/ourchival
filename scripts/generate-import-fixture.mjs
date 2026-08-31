@@ -1,13 +1,15 @@
 import { once } from "node:events";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   createFixtureCategories,
   generateOneTabFixture,
+  FIXTURE_RESULT_ORACLE_VERSION,
   ONE_TAB_FIXTURE_COUNT,
   oneTabFixtureLine,
+  runOneTabFixtureOracle,
 } from "../packages/parsers/src/importFixture.ts";
 
 const source = "onetab";
@@ -15,6 +17,7 @@ const parserVersion = "onetab-1";
 const categories = createFixtureCategories();
 const fileHasher = createHash("sha256");
 const digestHasher = createHash("sha256");
+const resultHasher = createHash("sha256");
 const outputArgument = process.argv.indexOf("--write-corpus");
 const corpusPath =
   outputArgument >= 0
@@ -44,8 +47,31 @@ if (output) {
   await once(output, "finish");
 }
 
+resultHasher.update(
+  `ourchival-import-result\0${FIXTURE_RESULT_ORACLE_VERSION}\0`,
+);
+const resultOracle = runOneTabFixtureOracle(
+  ONE_TAB_FIXTURE_COUNT,
+  (receipt) => {
+    for (const field of [
+      String(receipt.ordinal),
+      receipt.outcome,
+      receipt.duplicateReason ?? "",
+      receipt.matchedOrdinal === undefined
+        ? ""
+        : String(receipt.matchedOrdinal),
+      receipt.errorClass ?? "",
+    ]) {
+      const bytes = Buffer.from(field);
+      resultHasher.update(`${bytes.length}:`);
+      resultHasher.update(bytes);
+      resultHasher.update(Buffer.from([0]));
+    }
+  },
+);
+
 const manifest = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   generator: "scripts/generate-import-fixture.mjs",
   source,
   parserVersion,
@@ -53,10 +79,28 @@ const manifest = {
   importDigest: digestHasher.digest("hex"),
   generatedFileSha256: fileHasher.digest("hex"),
   categories,
+  resultOracle: {
+    ...resultOracle,
+    resultDigest: resultHasher.digest("hex"),
+  },
   corpusPolicy:
     "Generated on demand; the 50,000-line derivative is intentionally excluded from git.",
   hosts: "Reserved .test domains; fixture performs no network requests.",
 };
+
+const verifyArgument = process.argv.indexOf("--verify-manifest");
+if (verifyArgument >= 0) {
+  const manifestPath = resolve(
+    process.argv[verifyArgument + 1] ??
+      "packages/parsers/fixtures/onetab-50000.manifest.json",
+  );
+  const expected = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (JSON.stringify(expected) !== JSON.stringify(manifest)) {
+    throw new Error(
+      `Generated input/result oracle does not match ${manifestPath}. Run with --write-manifest to refresh it.`,
+    );
+  }
+}
 
 const manifestArgument = process.argv.indexOf("--write-manifest");
 if (manifestArgument >= 0) {

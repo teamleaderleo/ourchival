@@ -87,23 +87,37 @@ async function* parseBookmarks(
   let text = "";
   let anchorUrl: string | undefined;
   let anchorText = "";
+  let anchorEntityTail = "";
   let folderText = "";
+  let folderEntityTail = "";
   let pendingFolder: string | undefined;
   const folders: string[] = [];
 
   const processToken = (token: string) => {
     if (!token.startsWith("<")) {
-      const decoded = decodeHtml(token);
-      if (anchorUrl !== undefined) anchorText += decoded;
-      if (folderText !== "") folderText += decoded;
+      if (anchorUrl !== undefined) {
+        const decoded = decodeHtmlTextChunk(anchorEntityTail, token);
+        anchorText += decoded.text;
+        anchorEntityTail = decoded.tail;
+      }
+      if (folderText !== "") {
+        const decoded = decodeHtmlTextChunk(folderEntityTail, token);
+        folderText += decoded.text;
+        folderEntityTail = decoded.tail;
+      }
       return undefined;
     }
     const name = token.match(/^<\/?\s*([a-z0-9]+)/i)?.[1]?.toLowerCase();
     const closing = /^<\//.test(token);
-    if (name === "h3" && !closing) folderText = " ";
+    if (name === "h3" && !closing) {
+      folderText = " ";
+      folderEntityTail = "";
+    }
     if (name === "h3" && closing) {
+      folderText += decodeHtml(folderEntityTail);
       pendingFolder = folderText.trim() || undefined;
       folderText = "";
+      folderEntityTail = "";
     }
     if (name === "dl" && !closing && pendingFolder) {
       folders.push(pendingFolder);
@@ -114,12 +128,16 @@ async function* parseBookmarks(
       const href = token.match(/\bhref\s*=\s*(["'])(.*?)\1/i)?.[2];
       anchorUrl = href === undefined ? undefined : decodeHtml(href).trim();
       anchorText = "";
+      anchorEntityTail = "";
     }
     if (name === "a" && closing && anchorUrl !== undefined) {
       const url = anchorUrl;
-      const title = anchorText.replace(/\s+/g, " ").trim();
+      const title = `${anchorText}${decodeHtml(anchorEntityTail)}`
+        .replace(/\s+/g, " ")
+        .trim();
       anchorUrl = undefined;
       anchorText = "";
+      anchorEntityTail = "";
       if (!url) return undefined;
       const record: ImportRecord = {
         ordinal,
@@ -159,6 +177,18 @@ async function* parseBookmarks(
   }
   buffer += decoder.decode();
   if (buffer) processToken(buffer);
+}
+
+function decodeHtmlTextChunk(tail: string, value: string) {
+  const combined = tail + value;
+  const partial = combined.match(/&(?:#(?:x[\da-f]*|\d*)|[a-z]*)$/i);
+  if (partial && partial[0].length <= 32) {
+    return {
+      text: decodeHtml(combined.slice(0, -partial[0].length)),
+      tail: partial[0],
+    };
+  }
+  return { text: decodeHtml(combined), tail: "" };
 }
 
 async function* decodedLines(chunks: AsyncIterable<Uint8Array | string>) {

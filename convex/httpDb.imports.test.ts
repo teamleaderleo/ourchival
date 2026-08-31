@@ -46,6 +46,17 @@ function reference(sourceUrl: string, canonicalUrl: string) {
 }
 
 describe("resumable import receipts", () => {
+  it("bounds work even for internal mutation callers", async () => {
+    const t = convexTest(schema, modules);
+    const records = Array.from({ length: 51 }, (_, ordinal) => ({
+      ordinal,
+      submittedUrl: `https://bounded.example.test/${ordinal}`,
+    }));
+    await expect(
+      t.mutation(internal.httpDb.submitImportBatch, batchArgs(records)),
+    ).rejects.toThrow("at most 50 records");
+  });
+
   it("rejects a conflicting expected count for a digest-bound session", async () => {
     const t = convexTest(schema, modules);
     const args = batchArgs(
@@ -174,5 +185,47 @@ describe("resumable import receipts", () => {
       status: "completed",
     });
     expect(result.batchReceipt.failedOrdinals).toEqual([0]);
+  });
+
+  it("rejects a late gap and advances only through admitted batches", async () => {
+    const t = convexTest(schema, modules);
+    const session = batchArgs([], 3);
+
+    await expect(
+      t.mutation(internal.httpDb.submitImportBatch, {
+        ...session,
+        records: [
+          { ordinal: 1, submittedUrl: "https://gap.example.test/one" },
+          { ordinal: 2, submittedUrl: "https://gap.example.test/two" },
+        ],
+      }),
+    ).rejects.toThrow("ahead of checkpoint -1");
+
+    const first = await t.mutation(internal.httpDb.submitImportBatch, {
+      ...session,
+      records: [{ ordinal: 0, submittedUrl: "https://gap.example.test/zero" }],
+    });
+    expect(first.session?.checkpointOrdinal).toBe(0);
+
+    const replayAndContinue = await t.mutation(
+      internal.httpDb.submitImportBatch,
+      {
+        ...session,
+        records: [
+          { ordinal: 0, submittedUrl: "https://gap.example.test/zero" },
+          { ordinal: 1, submittedUrl: "https://gap.example.test/one" },
+          { ordinal: 2, submittedUrl: "https://gap.example.test/two" },
+        ],
+      },
+    );
+    expect(replayAndContinue.session).toMatchObject({
+      checkpointOrdinal: 2,
+      completedCount: 3,
+      status: "completed",
+    });
+    expect(replayAndContinue.batchReceipt).toMatchObject({
+      saved: 2,
+      replayed: 1,
+    });
   });
 });

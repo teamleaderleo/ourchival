@@ -13,6 +13,7 @@
     "extension:dev": "pnpm --filter @ourchival/extension dev",
     "extension:build": "pnpm --filter @ourchival/extension build",
     "import:verify-memory": "node --expose-gc scripts/verify-import-memory.mjs",
+    "import:verify-results": "node scripts/generate-import-fixture.mjs --verify-manifest packages/parsers/fixtures/onetab-50000.manifest.json",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
     "google:drive-auth": "node scripts/google-drive-auth.mjs"

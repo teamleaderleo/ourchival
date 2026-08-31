@@ -5,7 +5,7 @@ import { getHeapStatistics } from "node:v8";
 const recordCount = 50_000;
 const batchLimit = 50;
 const simulatedCheckpoint = 19_999;
-const heapCeilingBytes = 24 * 1024 * 1024;
+const retainedHeapCeilingBytes = 24 * 1024 * 1024;
 
 if (typeof global.gc !== "function") {
   throw new Error(
@@ -14,11 +14,15 @@ if (typeof global.gc !== "function") {
 }
 
 global.gc();
-const baselineHeapBytes = getHeapStatistics().used_heap_size;
-let peakHeapBytes = baselineHeapBytes;
+const baselineRetainedHeapBytes = getHeapStatistics().used_heap_size;
+let peakRetainedHeapBytes = baselineRetainedHeapBytes;
 
-function sampleHeap() {
-  peakHeapBytes = Math.max(peakHeapBytes, getHeapStatistics().used_heap_size);
+function sampleRetainedHeap() {
+  global.gc();
+  peakRetainedHeapBytes = Math.max(
+    peakRetainedHeapBytes,
+    getHeapStatistics().used_heap_size,
+  );
 }
 
 async function identifySource() {
@@ -26,7 +30,7 @@ async function identifySource() {
     "onetab",
     parseImport("onetab", oneTabFixtureChunks(recordCount)),
   );
-  sampleHeap();
+  sampleRetainedHeap();
   return {
     ...identity,
     sessionKey: `onetab:${identity.parserVersion}:${identity.digest}`,
@@ -34,8 +38,7 @@ async function identifySource() {
 }
 
 const firstIdentity = await identifySource();
-global.gc();
-sampleHeap();
+sampleRetainedHeap();
 const reselectedIdentity = await identifySource();
 if (firstIdentity.sessionKey !== reselectedIdentity.sessionKey) {
   throw new Error("Reselection produced a different session identity.");
@@ -56,14 +59,12 @@ for await (const record of parseImport(
     batch = [];
   }
   if (record.ordinal % 500 === 0) {
-    global.gc();
-    sampleHeap();
+    sampleRetainedHeap();
   }
 }
 submittedRecords += batch.length;
 batch = [];
-global.gc();
-sampleHeap();
+sampleRetainedHeap();
 
 const compactCheckpoint = {
   version: 1,
@@ -83,7 +84,8 @@ const compactCheckpoint = {
   updatedAt: "2026-08-31T00:00:00.000Z",
 };
 const checkpointBytes = Buffer.byteLength(JSON.stringify(compactCheckpoint));
-const heapDeltaBytes = peakHeapBytes - baselineHeapBytes;
+const retainedHeapDeltaBytes =
+  peakRetainedHeapBytes - baselineRetainedHeapBytes;
 
 if (firstIdentity.count !== recordCount) {
   throw new Error(
@@ -99,9 +101,9 @@ if (submittedRecords !== recordCount - simulatedCheckpoint - 1) {
 if (checkpointBytes > 2_048) {
   throw new Error(`Checkpoint grew to ${checkpointBytes} bytes.`);
 }
-if (heapDeltaBytes > heapCeilingBytes) {
+if (retainedHeapDeltaBytes > retainedHeapCeilingBytes) {
   throw new Error(
-    `Heap delta ${heapDeltaBytes} exceeded ${heapCeilingBytes} bytes.`,
+    `Retained heap delta ${retainedHeapDeltaBytes} exceeded ${retainedHeapCeilingBytes} bytes.`,
   );
 }
 
@@ -115,12 +117,12 @@ console.log(
       submittedRecords,
       maxBatchRecords,
       checkpointBytes,
-      baselineHeapBytes,
-      peakHeapBytes,
-      heapDeltaBytes,
-      heapCeilingBytes,
+      baselineRetainedHeapBytes,
+      peakRetainedHeapBytes,
+      retainedHeapDeltaBytes,
+      retainedHeapCeilingBytes,
       scope:
-        "Node streaming parser/digest/batch/reselection harness; Chromium heap and service-worker suspension remain browser-verification work.",
+        "Node retained-heap samples after forced GC for the streaming parser/digest/batch/reselection harness; allocation peaks, Chromium heap, and service-worker suspension remain browser-verification work.",
     },
     null,
     2,

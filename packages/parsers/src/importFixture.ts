@@ -5,20 +5,12 @@ export const ONE_TAB_FIXTURE_COUNT = 50_000;
 export type OneTabFixtureCategories = {
   exactDuplicates: number;
   normalizedDuplicates: number;
-  canonicalCollisionCandidates: number;
-  slowMetadata: number;
-  blockedMetadata: number;
-  failedMetadata: number;
 };
 
 export function createFixtureCategories(): OneTabFixtureCategories {
   return {
     exactDuplicates: 0,
     normalizedDuplicates: 0,
-    canonicalCollisionCandidates: 0,
-    slowMetadata: 0,
-    blockedMetadata: 0,
-    failedMetadata: 0,
   };
 }
 
@@ -36,19 +28,7 @@ export function* generateOneTabFixture(
       submittedUrl = `${previousUrl}?utm_source=fixture#resume`;
       categories.normalizedDuplicates += 1;
     } else {
-      const outcome =
-        ordinal % 97 === 0
-          ? "slow"
-          : ordinal % 89 === 0
-            ? "blocked"
-            : ordinal % 83 === 0
-              ? "failed"
-              : "ok";
-      if (outcome === "slow") categories.slowMetadata += 1;
-      if (outcome === "blocked") categories.blockedMetadata += 1;
-      if (outcome === "failed") categories.failedMetadata += 1;
-      if (ordinal % 211 === 0) categories.canonicalCollisionCandidates += 1;
-      submittedUrl = `https://fixture-${ordinal % 37}.example.test/metadata/${outcome}/reference/${String(ordinal).padStart(5, "0")}`;
+      submittedUrl = `https://fixture-${ordinal % 37}.example.test/reference/${String(ordinal).padStart(5, "0")}`;
     }
     previousUrl = submittedUrl;
     yield {
@@ -57,6 +37,122 @@ export function* generateOneTabFixture(
       submittedTitle: `Fixture reference ${String(ordinal).padStart(5, "0")}`,
     };
   }
+}
+
+export const FIXTURE_RESULT_ORACLE_VERSION = "fixture-result-oracle-1";
+export const FIXTURE_FAILED_EVIDENCE_LIMIT = 16;
+
+export type FixtureOracleReceipt = {
+  ordinal: number;
+  outcome: "saved" | "duplicate" | "failed";
+  duplicateReason?: "source_url" | "normalized_url";
+  matchedOrdinal?: number;
+  errorClass?: "deterministic_fixture_failure";
+};
+
+export type FixtureResultOracle = {
+  version: typeof FIXTURE_RESULT_ORACLE_VERSION;
+  processedCount: number;
+  savedCount: number;
+  duplicateCount: number;
+  failedCount: number;
+  failedEvidence: Array<{
+    ordinal: number;
+    errorClass: "deterministic_fixture_failure";
+  }>;
+  failedEvidenceTruncated: boolean;
+};
+
+/**
+ * A deterministic, network-free verification adapter. It intentionally models
+ * only outcomes it actually produces: exact URL duplicates, normalized URL
+ * duplicates, and an explicit per-item failure schedule.
+ */
+export function runOneTabFixtureOracle(
+  count = ONE_TAB_FIXTURE_COUNT,
+  onReceipt?: (receipt: FixtureOracleReceipt) => void,
+): FixtureResultOracle {
+  const failedEvidence: FixtureResultOracle["failedEvidence"] = [];
+  let previousSubmittedUrl: string | undefined;
+  let previousNormalizedUrl: string | undefined;
+  let previousReferenceOrdinal: number | undefined;
+  let savedCount = 0;
+  let duplicateCount = 0;
+  let failedCount = 0;
+
+  for (const record of generateOneTabFixture(count)) {
+    let receipt: FixtureOracleReceipt;
+    if (record.ordinal % 997 === 0) {
+      failedCount += 1;
+      receipt = {
+        ordinal: record.ordinal,
+        outcome: "failed",
+        errorClass: "deterministic_fixture_failure",
+      };
+      if (failedEvidence.length < FIXTURE_FAILED_EVIDENCE_LIMIT) {
+        failedEvidence.push({
+          ordinal: record.ordinal,
+          errorClass: "deterministic_fixture_failure",
+        });
+      }
+    } else {
+      const normalizedUrl = normalizeFixtureUrl(record.submittedUrl);
+      if (
+        previousReferenceOrdinal !== undefined &&
+        record.submittedUrl === previousSubmittedUrl
+      ) {
+        duplicateCount += 1;
+        receipt = {
+          ordinal: record.ordinal,
+          outcome: "duplicate",
+          duplicateReason: "source_url",
+          matchedOrdinal: previousReferenceOrdinal,
+        };
+      } else if (
+        previousReferenceOrdinal !== undefined &&
+        normalizedUrl === previousNormalizedUrl
+      ) {
+        duplicateCount += 1;
+        receipt = {
+          ordinal: record.ordinal,
+          outcome: "duplicate",
+          duplicateReason: "normalized_url",
+          matchedOrdinal: previousReferenceOrdinal,
+        };
+      } else {
+        savedCount += 1;
+        receipt = { ordinal: record.ordinal, outcome: "saved" };
+      }
+      previousReferenceOrdinal = receipt.matchedOrdinal ?? record.ordinal;
+      previousSubmittedUrl = record.submittedUrl;
+      previousNormalizedUrl = normalizedUrl;
+    }
+    if (receipt.outcome === "failed") {
+      previousSubmittedUrl = undefined;
+      previousNormalizedUrl = undefined;
+      previousReferenceOrdinal = undefined;
+    }
+    onReceipt?.(receipt);
+  }
+
+  return {
+    version: FIXTURE_RESULT_ORACLE_VERSION,
+    processedCount: count,
+    savedCount,
+    duplicateCount,
+    failedCount,
+    failedEvidence,
+    failedEvidenceTruncated: failedCount > failedEvidence.length,
+  };
+}
+
+function normalizeFixtureUrl(value: string) {
+  const url = new URL(value);
+  url.hash = "";
+  for (const key of [...url.searchParams.keys()]) {
+    if (key.toLowerCase().startsWith("utm_")) url.searchParams.delete(key);
+  }
+  return url.toString();
 }
 
 export function oneTabFixtureLine(record: ImportRecord) {

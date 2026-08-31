@@ -114,6 +114,7 @@ export type StreamImportState = {
   failedCount: number;
   failedOrdinals: number[];
   status: "ready" | "running" | "paused" | "completed" | "error";
+  retryable?: boolean;
   updatedAt: string;
   message?: string;
 };
@@ -125,6 +126,10 @@ export async function saveStreamImportState(state: StreamImportState) {
 export async function getStreamImportState() {
   const values = await chrome.storage.local.get(STREAM_IMPORT_KEY);
   return values[STREAM_IMPORT_KEY] as StreamImportState | undefined;
+}
+
+export async function clearStreamImportState() {
+  await chrome.storage.local.remove(STREAM_IMPORT_KEY);
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {
