@@ -208,6 +208,7 @@ export const submitImportBatch = internalMutation({
     if (
       existingSession &&
       (existingSession.source !== args.source ||
+        existingSession.expectedCount !== args.expectedCount ||
         (existingSession.parserVersion &&
           existingSession.parserVersion !== args.parserVersion) ||
         (existingSession.importDigest &&
@@ -232,6 +233,15 @@ export const submitImportBatch = internalMutation({
         )
         .unique();
       if (replay) {
+        if (
+          replay.submittedUrl !== record.submittedUrl ||
+          replay.submittedTitle !== record.submittedTitle ||
+          replay.sourceGroup !== record.sourceGroup
+        ) {
+          throw new Error(
+            `Import ordinal ${record.ordinal} conflicts with its saved source record.`,
+          );
+        }
         receipts.push(importReceipt(replay, true));
         continue;
       }
@@ -270,6 +280,31 @@ export const submitImportBatch = internalMutation({
         continue;
       }
 
+      if (
+        record.submittedUrl.length > 4_096 ||
+        (record.submittedTitle?.length ?? 0) > 2_000 ||
+        (record.sourceGroup?.length ?? 0) > 2_000
+      ) {
+        const occurrenceId = await ctx.db.insert("importOccurrences", {
+          sessionKey: args.sessionKey,
+          ordinal: record.ordinal,
+          source: args.source,
+          parserVersion: args.parserVersion,
+          submittedUrl: record.submittedUrl,
+          ...(record.submittedTitle
+            ? { submittedTitle: record.submittedTitle }
+            : {}),
+          ...(record.sourceGroup ? { sourceGroup: record.sourceGroup } : {}),
+          outcome: "failed",
+          errorClass: "invalid_record",
+          createdAt: args.now,
+        });
+        const occurrence = await ctx.db.get(occurrenceId);
+        failedDelta += 1;
+        receipts.push(importReceipt(occurrence!, false));
+        continue;
+      }
+
       const normalizedUrl = normalizeSourceUrl(cleanSubmittedUrl);
       const exact = await ctx.db
         .query("references")
@@ -279,20 +314,38 @@ export const submitImportBatch = internalMutation({
         ? null
         : await ctx.db
             .query("references")
-            .withIndex("by_canonical_url", (q) =>
-              q.eq("canonicalUrl", normalizedUrl),
+            .withIndex("by_normalized_source_url", (q) =>
+              q.eq("normalizedSourceUrl", normalizedUrl),
             )
             .first();
+      const canonical =
+        exact || normalized
+          ? null
+          : await ctx.db
+              .query("references")
+              .withIndex("by_canonical_url", (q) =>
+                q.eq("canonicalUrl", normalizedUrl),
+              )
+              .first();
       const duplicate =
         exact && !exact.deleted
           ? { reference: exact, reason: "source_url" as const }
           : normalized && !normalized.deleted
             ? { reference: normalized, reason: "normalized_url" as const }
-            : null;
+            : canonical && !canonical.deleted
+              ? {
+                  reference: canonical,
+                  reason:
+                    normalizeSourceUrl(canonical.sourceUrl) === normalizedUrl
+                      ? ("normalized_url" as const)
+                      : ("canonical_url" as const),
+                }
+              : null;
 
       let referenceId;
       let outcome: "saved" | "duplicate";
-      let duplicateReason: "source_url" | "normalized_url" | undefined;
+      let duplicateReason:
+        "source_url" | "normalized_url" | "canonical_url" | undefined;
       if (duplicate) {
         referenceId = duplicate.reference._id;
         outcome = "duplicate";
@@ -305,6 +358,7 @@ export const submitImportBatch = internalMutation({
             ? { title: record.submittedTitle.slice(0, 500) }
             : {}),
           sourceUrl: cleanSubmittedUrl,
+          normalizedSourceUrl: normalizedUrl,
           canonicalUrl: normalizedUrl,
           platform: "generic",
           capturedAt: args.now,

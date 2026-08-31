@@ -594,12 +594,12 @@ http.route({
 
     const records = rawRecords.map((record) => ({
       ordinal: Number(record.ordinal),
-      submittedUrl: String(record.submittedUrl ?? "").slice(0, 8_192),
+      submittedUrl: String(record.submittedUrl ?? ""),
       ...(cleanString(record.submittedTitle)
-        ? { submittedTitle: cleanString(record.submittedTitle)!.slice(0, 500) }
+        ? { submittedTitle: cleanString(record.submittedTitle)! }
         : {}),
       ...(cleanString(record.sourceGroup)
-        ? { sourceGroup: cleanString(record.sourceGroup)!.slice(0, 500) }
+        ? { sourceGroup: cleanString(record.sourceGroup)! }
         : {}),
     }));
     const ordinals = records.map((record) => record.ordinal);
@@ -847,6 +847,7 @@ http.route({
       kind,
       ...(title ? { title } : {}),
       sourceUrl,
+      normalizedSourceUrl: normalizeSourceUrl(sourceUrl),
       canonicalUrl,
       platform,
       ...(authorName ? { authorName } : {}),

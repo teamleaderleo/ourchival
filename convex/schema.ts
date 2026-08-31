@@ -15,6 +15,7 @@ export default defineSchema({
     title: v.optional(v.string()),
     notes: v.optional(v.string()),
     sourceUrl: v.string(),
+    normalizedSourceUrl: v.optional(v.string()),
     canonicalUrl: v.optional(v.string()),
     platform: v.union(
       v.literal("x"),
@@ -43,6 +44,7 @@ export default defineSchema({
     deleted: v.boolean(),
   })
     .index("by_source_url", ["sourceUrl"])
+    .index("by_normalized_source_url", ["normalizedSourceUrl"])
     .index("by_canonical_url", ["canonicalUrl"])
     .index("by_capture_session", ["captureSessionId"])
     .index("by_triage_state", ["triageState"])

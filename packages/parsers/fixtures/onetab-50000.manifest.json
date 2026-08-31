@@ -1,11 +1,11 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generator": "scripts/generate-import-fixture.mjs",
   "source": "onetab",
   "parserVersion": "onetab-1",
   "recordCount": 50000,
   "importDigest": "b401f24e4ac87642d9adba53d792a2f72325309b495ad2e450fdb530d5134a5d",
-  "fileSha256": "9daba7d3ae934396dc9c725f25eed42f4f43373131b920190b6c7e4617784360",
+  "generatedFileSha256": "9daba7d3ae934396dc9c725f25eed42f4f43373131b920190b6c7e4617784360",
   "categories": {
     "exactDuplicates": 500,
     "normalizedDuplicates": 100,
@@ -14,5 +14,6 @@
     "blockedMetadata": 551,
     "failedMetadata": 582
   },
+  "corpusPolicy": "Generated on demand; the 50,000-line derivative is intentionally excluded from git.",
   "hosts": "Reserved .test domains; fixture performs no network requests."
 }

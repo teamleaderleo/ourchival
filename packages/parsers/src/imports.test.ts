@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { oneTabFixtureChunks } from "./importFixture";
 import { digestImport, parseImport, type ImportSourceKind } from "./imports";
 
 async function* chunks(...values: string[]) {
@@ -80,21 +79,13 @@ describe("resumable import parsers", () => {
   });
 
   it("regenerates the deterministic 50,000-link identity", async () => {
-    const fixture = resolve("packages/parsers/fixtures/onetab-50000.txt");
-    const manifest = JSON.parse(
-      readFileSync(
-        resolve("packages/parsers/fixtures/onetab-50000.manifest.json"),
-        "utf8",
-      ),
-    );
-    async function* fixtureChunk() {
-      yield readFileSync(fixture);
-    }
     const result = await digestImport(
       "onetab",
-      parseImport("onetab", fixtureChunk()),
+      parseImport("onetab", oneTabFixtureChunks()),
     );
     expect(result.count).toBe(50_000);
-    expect(result.digest).toBe(manifest.importDigest);
+    expect(result.digest).toBe(
+      "b401f24e4ac87642d9adba53d792a2f72325309b495ad2e450fdb530d5134a5d",
+    );
   }, 30_000);
 });

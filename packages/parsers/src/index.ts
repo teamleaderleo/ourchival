@@ -4,6 +4,14 @@ export { normalizeXMediaUrl, parseXSnapshot } from "./x";
 export type { ParsedXSource, XDomSnapshot } from "./x";
 export { digestImport, IMPORT_PARSER_VERSIONS, parseImport } from "./imports";
 export type { ImportRecord, ImportSourceKind } from "./imports";
+export {
+  createFixtureCategories,
+  generateOneTabFixture,
+  ONE_TAB_FIXTURE_COUNT,
+  oneTabFixtureChunks,
+  oneTabFixtureLine,
+} from "./importFixture";
+export type { OneTabFixtureCategories } from "./importFixture";
 
 export function detectPlatform(url: string): SourcePlatform {
   const host = safeHost(url);
