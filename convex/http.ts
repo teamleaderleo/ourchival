@@ -73,6 +73,20 @@ type CaptureSessionBody = {
   completedAt?: string;
 };
 
+type ImportBatchBody = {
+  sessionKey?: string;
+  source?: "onetab" | "bookmarks" | "url_list";
+  parserVersion?: string;
+  importDigest?: string;
+  expectedCount?: number;
+  records?: Array<{
+    ordinal?: number;
+    submittedUrl?: string;
+    submittedTitle?: string;
+    sourceGroup?: string;
+  }>;
+};
+
 type UpdateReferenceBody = {
   title?: string;
   notes?: string;
@@ -108,6 +122,7 @@ for (const path of [
   "/auth-check",
   "/capture",
   "/capture-session",
+  "/imports/batch",
   "/references",
   "/reference",
   "/reference-metadata",
@@ -515,6 +530,123 @@ http.route({
 });
 
 http.route({
+  path: "/imports/batch",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+
+    const body = (await readJson(request)) as ImportBatchBody | undefined;
+    if (!body) {
+      return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
+    }
+    const sessionKey = cleanString(body.sessionKey);
+    const parserVersion = cleanString(body.parserVersion);
+    const importDigest = cleanString(body.importDigest)?.toLowerCase();
+    const source =
+      body.source === "onetab" ||
+      body.source === "bookmarks" ||
+      body.source === "url_list"
+        ? body.source
+        : undefined;
+    const expectedCount = Number(body.expectedCount);
+    const rawRecords = Array.isArray(body.records) ? body.records : undefined;
+
+    if (
+      !sessionKey ||
+      !source ||
+      !parserVersion ||
+      !importDigest ||
+      !Number.isSafeInteger(expectedCount) ||
+      expectedCount < 0 ||
+      expectedCount > 1_000_000 ||
+      !rawRecords
+    ) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Invalid import session or record count" },
+        400,
+      );
+    }
+    const expectedSessionKey = `${source}:${parserVersion}:${importDigest}`;
+    if (
+      sessionKey !== expectedSessionKey ||
+      sessionKey.length > 200 ||
+      parserVersion.length > 40 ||
+      !/^[a-f0-9]{64}$/.test(importDigest)
+    ) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Import identity is invalid" },
+        400,
+      );
+    }
+    if (rawRecords.length > 50) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Import batches may contain at most 50 records" },
+        400,
+      );
+    }
+
+    const records = rawRecords.map((record) => ({
+      ordinal: Number(record.ordinal),
+      submittedUrl: String(record.submittedUrl ?? ""),
+      ...(cleanString(record.submittedTitle)
+        ? { submittedTitle: cleanString(record.submittedTitle)! }
+        : {}),
+      ...(cleanString(record.sourceGroup)
+        ? { sourceGroup: cleanString(record.sourceGroup)! }
+        : {}),
+    }));
+    const ordinals = records.map((record) => record.ordinal);
+    if (
+      records.some(
+        (record) =>
+          !Number.isSafeInteger(record.ordinal) ||
+          record.ordinal < 0 ||
+          record.ordinal >= expectedCount,
+      ) ||
+      new Set(ordinals).size !== ordinals.length ||
+      ordinals.some(
+        (ordinal, index) => index > 0 && ordinal !== ordinals[index - 1]! + 1,
+      )
+    ) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Import ordinals must be unique and contiguous" },
+        400,
+      );
+    }
+
+    try {
+      const result = await ctx.runMutation(internal.httpDb.submitImportBatch, {
+        sessionKey,
+        source,
+        parserVersion,
+        importDigest,
+        expectedCount,
+        records,
+        now: Date.now(),
+      });
+      return jsonResponse(request, { ok: true, ...result });
+    } catch (error) {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : "Import batch failed",
+        },
+        409,
+      );
+    }
+  }),
+});
+
+http.route({
   path: "/capture-session",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
@@ -715,6 +847,7 @@ http.route({
       kind,
       ...(title ? { title } : {}),
       sourceUrl,
+      normalizedSourceUrl: normalizeSourceUrl(sourceUrl),
       canonicalUrl,
       platform,
       ...(authorName ? { authorName } : {}),

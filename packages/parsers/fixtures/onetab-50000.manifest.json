@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 3,
+  "generator": "scripts/generate-import-fixture.mjs",
+  "source": "onetab",
+  "parserVersion": "onetab-1",
+  "recordCount": 50000,
+  "importDigest": "e6f133f7b662864fcb70e7766fbe1af493510dc4d467f3261249774942a8580e",
+  "generatedFileSha256": "0cb0ba65688c1faeb4b766782ddb0da5d048ef880bdbf9d35e1da65e546d4d6d",
+  "categories": {
+    "exactDuplicates": 500,
+    "normalizedDuplicates": 100
+  },
+  "resultOracle": {
+    "version": "fixture-result-oracle-1",
+    "processedCount": 50000,
+    "savedCount": 49350,
+    "duplicateCount": 599,
+    "failedCount": 51,
+    "failedEvidence": [
+      {
+        "ordinal": 0,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 997,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 1994,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 2991,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 3988,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 4985,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 5982,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 6979,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 7976,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 8973,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 9970,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 10967,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 11964,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 12961,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 13958,
+        "errorClass": "deterministic_fixture_failure"
+      },
+      {
+        "ordinal": 14955,
+        "errorClass": "deterministic_fixture_failure"
+      }
+    ],
+    "failedEvidenceTruncated": true,
+    "resultDigest": "e20df1ed46b8129d974d95d4fecf00a82f30de5db2e5ecd91520d196227bf9f9"
+  },
+  "corpusPolicy": "Generated on demand; the 50,000-line derivative is intentionally excluded from git.",
+  "hosts": "Reserved .test domains; fixture performs no network requests."
+}

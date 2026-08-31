@@ -12,6 +12,9 @@
     "typecheck": "pnpm -r typecheck && tsc -p convex/tsconfig.json",
     "extension:dev": "pnpm --filter @ourchival/extension dev",
     "extension:build": "pnpm --filter @ourchival/extension build",
+    "import:verify-browser": "node --expose-gc scripts/verify-import-browser.mjs",
+    "import:verify-memory": "node --expose-gc scripts/verify-import-memory.mjs",
+    "import:verify-results": "node scripts/generate-import-fixture.mjs --verify-manifest packages/parsers/fixtures/onetab-50000.manifest.json",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
     "google:drive-auth": "node scripts/google-drive-auth.mjs"
@@ -20,9 +23,12 @@
     "sharp": "0.34.1"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^22.10.2",
     "convex": "^1.17.4",
+    "convex-test": "^0.0.54",
     "eslint": "^9.17.0",
+    "playwright": "1.62.1",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "vitest": "^3.0.0"
