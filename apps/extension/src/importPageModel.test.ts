@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   canChangeImportSource,
   canRetryStreamImport,
+  canSelectImportFile,
   createImportIdentificationTicket,
   importPageActions,
   isCurrentImportIdentification,
+  importRequestFailureMessage,
+  recoverInterruptedImportState,
+  shouldPreservePendingImport,
   transitionImportSource,
 } from "./importPageModel";
 import type { StreamImportState } from "./storage";
@@ -26,6 +30,7 @@ function importState(
     skippedCount: 0,
     failedCount: 0,
     failedOrdinals: [],
+    failedEvidence: [],
     status: "error",
     retryable: true,
     updatedAt: "2026-08-31T00:00:00.000Z",
@@ -57,7 +62,7 @@ describe("stream import page transitions", () => {
     );
   });
 
-  it("clears the identified file and session when source format changes", () => {
+  it("clears a never-started identity when source format changes", () => {
     expect(transitionImportSource<object>("bookmarks", 4)).toEqual({
       selectedSource: "bookmarks",
       generation: 5,
@@ -88,6 +93,67 @@ describe("stream import page transitions", () => {
     expect(canChangeImportSource(importState({ status: "running" }))).toBe(
       false,
     );
-    expect(canChangeImportSource(importState())).toBe(true);
+  });
+
+  it("preserves resumable checkpoints while allowing same-file reselection", () => {
+    for (const status of ["ready", "paused", "error"] as const) {
+      expect(canChangeImportSource(importState({ status }))).toBe(false);
+      expect(canSelectImportFile(importState({ status }))).toBe(true);
+    }
+    expect(canChangeImportSource(importState({ status: "completed" }))).toBe(
+      true,
+    );
+    expect(
+      canChangeImportSource(
+        importState({ status: "ready", checkpointOrdinal: -1 }),
+      ),
+    ).toBe(true);
+    expect(
+      canChangeImportSource(
+        importState({ status: "error", checkpointOrdinal: -1 }),
+      ),
+    ).toBe(true);
+    expect(canSelectImportFile(importState({ status: "running" }))).toBe(false);
+    expect(shouldPreservePendingImport(importState(), "different")).toBe(true);
+    expect(
+      shouldPreservePendingImport(
+        importState({ checkpointOrdinal: -1 }),
+        "different",
+      ),
+    ).toBe(false);
+    expect(
+      shouldPreservePendingImport(
+        importState({ status: "completed" }),
+        "different",
+      ),
+    ).toBe(false);
+    expect(
+      shouldPreservePendingImport(importState(), importState().sessionKey),
+    ).toBe(false);
+  });
+
+  it("recovers a browser-interrupted running state as resumable", () => {
+    const recovered = recoverInterruptedImportState(
+      importState({ status: "running" }),
+    );
+    expect(recovered).toMatchObject({
+      status: "paused",
+      checkpointOrdinal: 99,
+      message:
+        "Import was interrupted. Select the same file to reconcile the durable checkpoint.",
+    });
+    expect(recoverInterruptedImportState(importState())).toEqual(importState());
+  });
+
+  it("makes retryable response failures explicit about recovery", () => {
+    expect(importRequestFailureMessage("Service unavailable.", true)).toBe(
+      "Service unavailable. Progress is preserved; retry from the saved checkpoint.",
+    );
+    expect(importRequestFailureMessage("Progress is preserved.", true)).toBe(
+      "Progress is preserved.",
+    );
+    expect(importRequestFailureMessage("Bad request.", false)).toBe(
+      "Bad request.",
+    );
   });
 });

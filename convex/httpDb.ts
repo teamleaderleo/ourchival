@@ -469,8 +469,25 @@ export const submitImportBatch = internalMutation({
         createdAt: args.now,
       });
     }
+    const failedEvidence = args.records.length
+      ? undefined
+      : await ctx.db
+          .query("importOccurrences")
+          .withIndex("by_session_key_and_outcome_and_ordinal", (q) =>
+            q.eq("sessionKey", args.sessionKey).eq("outcome", "failed"),
+          )
+          .order("asc")
+          .take(100);
     return {
       session: await ctx.db.get(sessionId!),
+      ...(failedEvidence
+        ? {
+            failedEvidence: failedEvidence.map((failure) => ({
+              ordinal: failure.ordinal,
+              errorClass: failure.errorClass ?? "internal",
+            })),
+          }
+        : {}),
       receipts,
       replayedCount: receipts.filter((receipt) => receipt.replayed).length,
       batchReceipt: {

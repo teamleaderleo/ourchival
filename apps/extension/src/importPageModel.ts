@@ -43,7 +43,48 @@ export function isCurrentImportIdentification<TFile>(
 }
 
 export function canChangeImportSource(state: StreamImportState | undefined) {
+  if (!state || state.status === "completed") return true;
+  return (
+    state.checkpointOrdinal < 0 &&
+    (state.status === "ready" || state.status === "error")
+  );
+}
+
+export function canSelectImportFile(state: StreamImportState | undefined) {
   return state?.status !== "running";
+}
+
+export function recoverInterruptedImportState(
+  state: StreamImportState | undefined,
+) {
+  if (!state || state.status !== "running") return state;
+  return {
+    ...state,
+    status: "paused" as const,
+    retryable: undefined,
+    message:
+      "Import was interrupted. Select the same file to reconcile the durable checkpoint.",
+  };
+}
+
+export function shouldPreservePendingImport(
+  state: StreamImportState | undefined,
+  nextSessionKey: string,
+) {
+  return Boolean(
+    state &&
+    state.sessionKey !== nextSessionKey &&
+    state.status !== "completed" &&
+    state.checkpointOrdinal >= 0,
+  );
+}
+
+export function importRequestFailureMessage(
+  message: string,
+  retryable: boolean,
+) {
+  if (!retryable || /progress is preserved/i.test(message)) return message;
+  return `${message} Progress is preserved; retry from the saved checkpoint.`;
 }
 
 export function canRetryStreamImport(

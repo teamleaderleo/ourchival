@@ -368,6 +368,11 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_session_key_and_ordinal", ["sessionKey", "ordinal"])
+    .index("by_session_key_and_outcome_and_ordinal", [
+      "sessionKey",
+      "outcome",
+      "ordinal",
+    ])
     .index("by_session_key", ["sessionKey"])
     .index("by_reference_id", ["referenceId"]),
 

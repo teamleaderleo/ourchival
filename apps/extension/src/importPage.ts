@@ -14,9 +14,13 @@ import {
 } from "./storage";
 import {
   canChangeImportSource,
+  canSelectImportFile,
   createImportIdentificationTicket,
   importPageActions,
   isCurrentImportIdentification,
+  importRequestFailureMessage,
+  recoverInterruptedImportState,
+  shouldPreservePendingImport,
   transitionImportSource,
 } from "./importPageModel";
 
@@ -32,7 +36,10 @@ let selectionGeneration = 0;
 void initialize();
 
 async function initialize() {
-  activeState = await getStreamImportState();
+  const storedState = await getStreamImportState();
+  activeState = recoverInterruptedImportState(storedState);
+  if (activeState && activeState !== storedState)
+    await saveStreamImportState(activeState);
   if (activeState) selectedSource = activeState.source;
   render();
 }
@@ -43,7 +50,7 @@ function render() {
     <header><p class="eyebrow">Ourchival importer</p><h1>Bring a link collection into Inbox</h1><p class="lede">Choose a OneTab export, browser bookmarks file, or newline URL list. Ourchival checkpoints every 50 records, so the same file can continue after a refresh.</p></header>
     <section>
       <label>Source format<select id="source" ${canChangeImportSource(state) ? "" : "disabled"}><option value="onetab" ${selectedSource === "onetab" ? "selected" : ""}>OneTab text</option><option value="bookmarks" ${selectedSource === "bookmarks" ? "selected" : ""}>Browser bookmarks HTML</option><option value="url_list" ${selectedSource === "url_list" ? "selected" : ""}>URL list</option></select></label>
-      <label>${state && !selectedFile && state.status !== "completed" ? "Select the same file to continue" : "Choose export file"}<input id="file" type="file" accept=".txt,.html,.htm,text/plain,text/html" ${canChangeImportSource(state) ? "" : "disabled"} /></label>
+      <label>${state && !selectedFile && state.status !== "completed" ? "Select the same file to continue" : "Choose export file"}<input id="file" type="file" accept=".txt,.html,.htm,text/plain,text/html" ${canSelectImportFile(state) ? "" : "disabled"} /></label>
       ${state ? renderState(state) : '<p class="hint">The file stays in this tab. Local storage keeps only the digest, checkpoint, aggregate counts, and a bounded failure list.</p>'}
       <div class="actions">
         ${importPageActions(state, Boolean(selectedFile))
@@ -62,10 +69,16 @@ function renderState(state: StreamImportState) {
   const progress = state.expectedCount
     ? Math.min(100, (completed / state.expectedCount) * 100)
     : 0;
+  const failedEvidence = state.failedEvidence?.length
+    ? state.failedEvidence
+    : state.failedOrdinals.map((ordinal) => ({
+        ordinal,
+        errorClass: "unknown",
+      }));
   return `<div><p><strong>${statusHeading(state)}</strong></p><p class="hint">${escapeHtml(state.message ?? `${completed.toLocaleString()} of ${state.expectedCount.toLocaleString()} acknowledged`)}</p></div>
     <progress max="100" value="${progress}"></progress>
     <div class="counts"><div><strong>${state.savedCount}</strong>saved</div><div><strong>${state.duplicateCount}</strong>existing</div><div><strong>${state.skippedCount}</strong>skipped</div><div><strong>${state.failedCount}</strong>failed</div></div>
-    ${state.failedOrdinals.length ? `<p class="hint">Failed ordinals: ${state.failedOrdinals.join(", ")}${state.failedCount > state.failedOrdinals.length ? " …" : ""}</p>` : ""}`;
+    ${failedEvidence.length ? `<p class="hint">Failed items: ${failedEvidence.map((failure) => `${failure.ordinal} (${escapeHtml(failure.errorClass)})`).join(", ")}${state.failedCount > failedEvidence.length ? " …" : ""}</p>` : ""}`;
 }
 
 function bindEvents() {
@@ -89,7 +102,7 @@ function bindEvents() {
     ]).then(() => clearStreamImportState());
   });
   document.getElementById("file")?.addEventListener("change", (event) => {
-    if (!canChangeImportSource(activeState)) return;
+    if (!canSelectImportFile(activeState)) return;
     const file = (event.currentTarget as HTMLInputElement).files?.[0];
     if (file) {
       identificationTask = inspectFile(file);
@@ -144,14 +157,15 @@ async function inspectFile(file: File) {
     const sessionKey = `${ticket.source}:${identity.parserVersion}:${identity.digest}`;
     const previous = await getStreamImportState();
     if (!isCurrent()) return;
-    if (
-      previous &&
-      previous.sessionKey !== sessionKey &&
-      previous.status !== "completed"
-    ) {
-      throw new Error(
-        `This differs from the pending ${previous.filenameHint} import. Choose that source to continue it.`,
-      );
+    if (previous && shouldPreservePendingImport(previous, sessionKey)) {
+      selectedFile = undefined;
+      activeState = {
+        ...previous,
+        status: previous.status === "running" ? "paused" : previous.status,
+        message: `This differs from the pending ${previous.filenameHint} import. Select that same file to continue it.`,
+      };
+      render();
+      return;
     }
     activeState = {
       version: 1,
@@ -172,6 +186,10 @@ async function inspectFile(file: File) {
         previous?.sessionKey === sessionKey ? previous.failedCount : 0,
       failedOrdinals:
         previous?.sessionKey === sessionKey ? previous.failedOrdinals : [],
+      failedEvidence:
+        previous?.sessionKey === sessionKey
+          ? (previous.failedEvidence ?? [])
+          : [],
       status: "ready",
       retryable: undefined,
       updatedAt: new Date().toISOString(),
@@ -197,7 +215,7 @@ async function runImport(file: File, state: StreamImportState) {
   await checkpoint(state);
   try {
     const preflight = await submitBatch(state, []);
-    applyServerSession(state, preflight.session);
+    applyServerSession(state, preflight.session, preflight.failedEvidence);
     await checkpoint(state);
     render();
     let batch: ImportRecord[] = [];
@@ -233,14 +251,13 @@ async function sendAndCheckpoint(
   records: ImportRecord[],
 ) {
   const response = await submitBatch(state, records);
-  applyServerSession(state, response.session);
+  applyServerSession(state, response.session, response.failedEvidence);
   for (const receipt of response.receipts ?? []) {
-    if (
-      receipt.outcome === "failed" &&
-      state.failedOrdinals.length < 100 &&
-      !state.failedOrdinals.includes(receipt.ordinal)
-    )
-      state.failedOrdinals.push(receipt.ordinal);
+    if (receipt.outcome === "failed")
+      rememberFailedEvidence(state, {
+        ordinal: receipt.ordinal,
+        errorClass: receipt.errorClass ?? "unknown",
+      });
   }
   state.message = `${state.checkpointOrdinal + 1} of ${state.expectedCount} acknowledged`;
   await checkpoint(state);
@@ -282,29 +299,67 @@ async function submitBatch(state: StreamImportState, records: ImportRecord[]) {
   try {
     body = await response.json();
   } catch {
-    throw new ImportRequestError(
-      `Import returned an unreadable response with status ${response.status}.`,
+    const retryable =
       response.status === 408 ||
-        response.status === 429 ||
-        response.status >= 500,
+      response.status === 429 ||
+      response.status >= 500;
+    throw new ImportRequestError(
+      importRequestFailureMessage(
+        `Import returned an unreadable response with status ${response.status}.`,
+        retryable,
+      ),
+      retryable,
     );
   }
-  if (!response.ok || !body.ok)
-    throw new ImportRequestError(
-      body.error || `Import failed with status ${response.status}.`,
+  if (!response.ok || !body.ok) {
+    const retryable =
       response.status === 408 ||
-        response.status === 429 ||
-        response.status >= 500,
+      response.status === 429 ||
+      response.status >= 500;
+    throw new ImportRequestError(
+      importRequestFailureMessage(
+        body.error || `Import failed with status ${response.status}.`,
+        retryable,
+      ),
+      retryable,
     );
+  }
   return body;
 }
 
-function applyServerSession(state: StreamImportState, session: any) {
+function applyServerSession(
+  state: StreamImportState,
+  session: any,
+  failedEvidence?: Array<{ ordinal: number; errorClass?: string }>,
+) {
   state.checkpointOrdinal = session.checkpointOrdinal ?? -1;
   state.savedCount = session.savedCount;
   state.duplicateCount = session.duplicateCount;
   state.skippedCount = session.skippedCount;
   state.failedCount = session.failedCount;
+  if (Array.isArray(failedEvidence)) {
+    state.failedEvidence = [];
+    state.failedOrdinals = [];
+    for (const failure of failedEvidence)
+      rememberFailedEvidence(state, {
+        ordinal: failure.ordinal,
+        errorClass: failure.errorClass ?? "unknown",
+      });
+  }
+}
+
+function rememberFailedEvidence(
+  state: StreamImportState,
+  failure: { ordinal: number; errorClass: string },
+) {
+  state.failedEvidence ??= [];
+  if (
+    state.failedEvidence.length >= 100 ||
+    state.failedEvidence.some((entry) => entry.ordinal === failure.ordinal)
+  )
+    return;
+  state.failedEvidence.push(failure);
+  state.failedOrdinals = state.failedEvidence.map((entry) => entry.ordinal);
 }
 
 async function checkpoint(state: StreamImportState) {
@@ -312,6 +367,7 @@ async function checkpoint(state: StreamImportState) {
   await saveStreamImportState({
     ...state,
     failedOrdinals: state.failedOrdinals.slice(0, 100),
+    failedEvidence: state.failedEvidence?.slice(0, 100),
   });
 }
 
@@ -344,6 +400,7 @@ function errorState(error: unknown): StreamImportState {
     skippedCount: 0,
     failedCount: 0,
     failedOrdinals: [],
+    failedEvidence: [],
     status: "error",
     retryable: false,
     updatedAt: now,

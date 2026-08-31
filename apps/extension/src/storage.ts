@@ -113,6 +113,7 @@ export type StreamImportState = {
   skippedCount: number;
   failedCount: number;
   failedOrdinals: number[];
+  failedEvidence?: Array<{ ordinal: number; errorClass: string }>;
   status: "ready" | "running" | "paused" | "completed" | "error";
   retryable?: boolean;
   updatedAt: string;

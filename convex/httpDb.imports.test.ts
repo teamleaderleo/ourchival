@@ -185,6 +185,41 @@ describe("resumable import receipts", () => {
       status: "completed",
     });
     expect(result.batchReceipt.failedOrdinals).toEqual([0]);
+
+    const resumed = await t.mutation(
+      internal.httpDb.submitImportBatch,
+      batchArgs([], 2),
+    );
+    expect(resumed.failedEvidence).toEqual([
+      { ordinal: 0, errorClass: "invalid_record" },
+    ]);
+  });
+
+  it("bounds server-reconciled failure evidence", async () => {
+    const t = convexTest(schema, modules);
+    const expectedCount = 101;
+    const records = Array.from({ length: expectedCount }, (_, ordinal) => ({
+      ordinal,
+      submittedUrl: `https://failed.example.test/${ordinal}`,
+      submittedTitle: "x".repeat(2_001),
+    }));
+    for (let offset = 0; offset < records.length; offset += 50) {
+      await t.mutation(
+        internal.httpDb.submitImportBatch,
+        batchArgs(records.slice(offset, offset + 50), expectedCount),
+      );
+    }
+    const resumed = await t.mutation(
+      internal.httpDb.submitImportBatch,
+      batchArgs([], expectedCount),
+    );
+    expect(resumed.session?.failedCount).toBe(101);
+    expect(resumed.failedEvidence).toHaveLength(100);
+    expect(resumed.failedEvidence?.[0]).toEqual({
+      ordinal: 0,
+      errorClass: "invalid_record",
+    });
+    expect(resumed.failedEvidence?.at(-1)?.ordinal).toBe(99);
   });
 
   it("rejects a late gap and advances only through admitted batches", async () => {
