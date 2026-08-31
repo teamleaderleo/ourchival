@@ -60,7 +60,7 @@ const dismissOne = makeFunctionReference<
 
 let client: ConvexHttpClient | undefined;
 
-export function useSuggestedTags(referenceId: string) {
+export function useSuggestedTags(referenceId: string, poll = false) {
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -75,31 +75,15 @@ export function useSuggestedTags(referenceId: string) {
   }, [referenceId]);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
+    void refresh().catch(() => setLoading(false));
+  }, [poll, refresh]);
 
-    async function load() {
-      try {
-        const next = await getClient().query(
-          listForReference,
-          withOwnerAccess({ referenceId }),
-        );
-        if (!cancelled) {
-          setSuggestions(next);
-          setLoading(false);
-        }
-      } catch {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
-    const timer = window.setInterval(() => void load(), 2200);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [referenceId]);
+  useEffect(() => {
+    if (!poll) return;
+    const timer = window.setInterval(() => void refresh().catch(() => undefined), 3000);
+    return () => window.clearInterval(timer);
+  }, [poll, refresh]);
 
   return { suggestions, loading, refresh };
 }

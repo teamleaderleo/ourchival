@@ -13,15 +13,15 @@ import {
 } from "./useSuggestedTags";
 
 export function ReferenceSuggestedTagsPanel({ referenceId }: { referenceId: string }) {
-  const { suggestions, loading, refresh } = useSuggestedTags(referenceId);
   const { jobs, refresh: refreshJobs } = useEnrichmentJobs(referenceId);
+  const latestJob = jobs.find((job) => job.type === "suggested_tags");
+  const active = latestJob?.status === "queued" || latestJob?.status === "running";
+  const { suggestions, loading, refresh } = useSuggestedTags(referenceId, active);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const pending = suggestions.filter((suggestion) => suggestion.status === "pending");
   const resolved = suggestions.filter((suggestion) => suggestion.status !== "pending");
-  const latestJob = jobs.find((job) => job.type === "suggested_tags");
-  const active = latestJob?.status === "queued" || latestJob?.status === "running";
   const suggestionValues = useMemo(
     () => Object.fromEntries(suggestions.map((suggestion) => [suggestion._id, suggestion.value])),
     [suggestions],
