@@ -112,8 +112,8 @@ export function useCaptureSessions(limit = 24) {
   }, [refresh]);
 
   useEffect(() => {
-    void sync();
-  }, [sync]);
+    void refresh();
+  }, [refresh]);
 
   return { sessions, loading, error, refresh, sync };
 }

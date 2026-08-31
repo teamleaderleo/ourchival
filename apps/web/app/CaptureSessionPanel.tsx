@@ -15,7 +15,7 @@ export function CaptureSessionPanel() {
   const [selectedKey, setSelectedKey] = useState<string | undefined>();
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const { sessions, loading, error, sync } = useCaptureSessions(30);
+  const { sessions, loading, error, refresh, sync } = useCaptureSessions(30);
   const selectedSession = useMemo(
     () => sessions.find((session) => session.sessionKey === selectedKey),
     [sessions, selectedKey],
@@ -32,7 +32,7 @@ export function CaptureSessionPanel() {
     try {
       await setCaptureSessionReviewState(selectedSession._id, reviewState);
       setMessage(reviewStateMessage(reviewState));
-      await sync();
+      await refresh();
     } catch (caught) {
       setMessage(
         caught instanceof Error ? caught.message : "Could not update the session.",
