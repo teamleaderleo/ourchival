@@ -97,6 +97,35 @@ export const LAST_CAPTURE_KEY = "lastCapture";
 export const LAST_RESULT_KEY = "lastCaptureResult";
 export const LAST_BATCH_KEY = "lastBatchCapture";
 export const X_LIKES_IMPORT_KEY = "xLikesImport";
+export const STREAM_IMPORT_KEY = "streamImportV1";
+
+export type StreamImportState = {
+  version: 1;
+  sessionKey: string;
+  source: "onetab" | "bookmarks" | "url_list";
+  parserVersion: string;
+  importDigest: string;
+  filenameHint: string;
+  expectedCount: number;
+  checkpointOrdinal: number;
+  savedCount: number;
+  duplicateCount: number;
+  skippedCount: number;
+  failedCount: number;
+  failedOrdinals: number[];
+  status: "ready" | "running" | "paused" | "completed" | "error";
+  updatedAt: string;
+  message?: string;
+};
+
+export async function saveStreamImportState(state: StreamImportState) {
+  await chrome.storage.local.set({ [STREAM_IMPORT_KEY]: state });
+}
+
+export async function getStreamImportState() {
+  const values = await chrome.storage.local.get(STREAM_IMPORT_KEY);
+  return values[STREAM_IMPORT_KEY] as StreamImportState | undefined;
+}
 
 export async function getSettings(): Promise<ExtensionSettings> {
   const values = await chrome.storage.local.get(SETTINGS_KEY);

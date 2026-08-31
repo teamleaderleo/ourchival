@@ -49,7 +49,13 @@ export default defineSchema({
     .index("by_captured_at", ["capturedAt"])
     .searchIndex("search_references", {
       searchField: "title",
-      filterFields: ["platform", "favorite", "triageState", "archived", "deleted"],
+      filterFields: [
+        "platform",
+        "favorite",
+        "triageState",
+        "archived",
+        "deleted",
+      ],
     }),
 
   referenceStats: defineTable({
@@ -138,11 +144,7 @@ export default defineSchema({
     perceptualHash: v.optional(v.string()),
     dominantColors: v.array(v.string()),
     derivativeStatus: v.optional(
-      v.union(
-        v.literal("processing"),
-        v.literal("ready"),
-        v.literal("failed"),
-      ),
+      v.union(v.literal("processing"), v.literal("ready"), v.literal("failed")),
     ),
   })
     .index("by_reference", ["referenceId"])
@@ -296,6 +298,8 @@ export default defineSchema({
   captureSessions: defineTable({
     sessionKey: v.string(),
     source: v.string(),
+    parserVersion: v.optional(v.string()),
+    importDigest: v.optional(v.string()),
     kind: v.union(v.literal("bundle"), v.literal("import")),
     label: v.optional(v.string()),
     sourceUrl: v.optional(v.string()),
@@ -305,6 +309,7 @@ export default defineSchema({
     duplicateCount: v.number(),
     skippedCount: v.number(),
     failedCount: v.number(),
+    checkpointOrdinal: v.optional(v.number()),
     status: v.union(
       v.literal("running"),
       v.literal("completed"),
@@ -323,6 +328,46 @@ export default defineSchema({
   })
     .index("by_session_key", ["sessionKey"])
     .index("by_updated_at", ["updatedAt"]),
+
+  importOccurrences: defineTable({
+    sessionKey: v.string(),
+    ordinal: v.number(),
+    source: v.union(
+      v.literal("onetab"),
+      v.literal("bookmarks"),
+      v.literal("url_list"),
+    ),
+    parserVersion: v.string(),
+    submittedUrl: v.string(),
+    submittedTitle: v.optional(v.string()),
+    sourceGroup: v.optional(v.string()),
+    outcome: v.union(
+      v.literal("saved"),
+      v.literal("duplicate"),
+      v.literal("skipped"),
+      v.literal("failed"),
+    ),
+    referenceId: v.optional(v.id("references")),
+    duplicateReason: v.optional(
+      v.union(
+        v.literal("source_url"),
+        v.literal("normalized_url"),
+        v.literal("canonical_url"),
+      ),
+    ),
+    errorClass: v.optional(
+      v.union(
+        v.literal("invalid_url"),
+        v.literal("invalid_record"),
+        v.literal("capacity"),
+        v.literal("internal"),
+      ),
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_session_key_and_ordinal", ["sessionKey", "ordinal"])
+    .index("by_session_key", ["sessionKey"])
+    .index("by_reference_id", ["referenceId"]),
 
   clipperPairingGrants: defineTable({
     codeHash: v.string(),

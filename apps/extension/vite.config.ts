@@ -17,6 +17,7 @@ export default defineConfig({
         background: "src/background.ts",
         content: "src/content.ts",
         popup: "src/popup.ts",
+        import: "src/importPage.ts",
       },
       output: {
         entryFileNames: "[name].js",

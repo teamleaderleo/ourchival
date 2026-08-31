@@ -1,5 +1,4 @@
 import type { CapturePayload } from "@ourchival/shared";
-import { parseBookmarksHtml, parseUrlList } from "./imports";
 import {
   getPopupState,
   LAST_BATCH_KEY,
@@ -117,30 +116,16 @@ async function render() {
             <p class="hint">Saved and previously captured tabs both qualify for the separate close action.</p>
           </section>
 
-          <form id="url-import-form" class="import-panel">
+          <section class="import-panel">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Paste import</p>
-                <h2>URLs or OneTab export</h2>
+                <p class="eyebrow">Large imports</p>
+                <h2>OneTab, bookmarks, or URL lists</h2>
               </div>
             </div>
-            <label for="url-list">One URL per line, with optional titles</label>
-            <textarea
-              id="url-list"
-              name="url-list"
-              rows="5"
-              placeholder="https://example.com/art | Gesture reference"
-              ${disabled}
-            ></textarea>
-            <div class="import-actions">
-              <button type="submit" class="primary" ${disabled}>Import pasted links</button>
-              <label class="file-button ${disabled ? "disabled" : ""}">
-                Import bookmarks HTML
-                <input id="bookmarks-file" type="file" accept=".html,.htm,text/html" ${disabled} />
-              </label>
-            </div>
-            <p id="import-feedback" class="hint">Duplicate lines and bookmark entries are removed before the job starts.</p>
-          </form>
+            <button id="open-link-importer" type="button" class="primary full-width" ${disabled}>Open link importer</button>
+            <p class="hint">The full-page importer streams large files in resumable batches and keeps every source occurrence.</p>
+          </section>
         </div>
       </details>
 
@@ -183,56 +168,9 @@ async function render() {
   });
 
   document
-    .getElementById("url-import-form")
-    ?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const form = event.currentTarget as HTMLFormElement;
-      const entries = parseUrlList(
-        String(new FormData(form).get("url-list") ?? ""),
-      );
-      const feedback = document.getElementById("import-feedback");
-      if (entries.length === 0) {
-        if (feedback)
-          feedback.textContent = "Paste at least one HTTP or HTTPS URL.";
-        return;
-      }
-      transientMessage = `Starting import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
-      void sendRuntimeMessage({
-        type: "OURCHIVAL_CAPTURE_URLS",
-        source: "url_list",
-        entries,
-      });
-    });
-
-  document
-    .getElementById("bookmarks-file")
-    ?.addEventListener("change", async (event) => {
-      const input = event.currentTarget as HTMLInputElement;
-      const file = input.files?.[0];
-      const feedback = document.getElementById("import-feedback");
-      if (!file) return;
-      try {
-        const entries = parseBookmarksHtml(await file.text());
-        if (entries.length === 0) {
-          if (feedback)
-            feedback.textContent =
-              "The file contained no HTTP or HTTPS bookmarks.";
-          return;
-        }
-        transientMessage = `Starting bookmark import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
-        void sendRuntimeMessage({
-          type: "OURCHIVAL_CAPTURE_URLS",
-          source: "bookmarks",
-          entries,
-        });
-      } catch (error) {
-        if (feedback) {
-          feedback.textContent =
-            error instanceof Error
-              ? error.message
-              : "Could not read that bookmarks file.";
-        }
-      }
+    .getElementById("open-link-importer")
+    ?.addEventListener("click", () => {
+      void chrome.tabs.create({ url: chrome.runtime.getURL("import.html") });
     });
 
   document.getElementById("close-saved-tabs")?.addEventListener("click", () => {

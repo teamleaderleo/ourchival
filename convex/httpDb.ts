@@ -176,6 +176,285 @@ export const upsertCaptureSession = internalMutation({
   },
 });
 
+const importSourceValidator = v.union(
+  v.literal("onetab"),
+  v.literal("bookmarks"),
+  v.literal("url_list"),
+);
+
+export const submitImportBatch = internalMutation({
+  args: {
+    sessionKey: v.string(),
+    source: importSourceValidator,
+    parserVersion: v.string(),
+    importDigest: v.string(),
+    expectedCount: v.number(),
+    records: v.array(
+      v.object({
+        ordinal: v.number(),
+        submittedUrl: v.string(),
+        submittedTitle: v.optional(v.string()),
+        sourceGroup: v.optional(v.string()),
+      }),
+    ),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existingSession = await ctx.db
+      .query("captureSessions")
+      .withIndex("by_session_key", (q) => q.eq("sessionKey", args.sessionKey))
+      .unique();
+
+    if (
+      existingSession &&
+      (existingSession.source !== args.source ||
+        (existingSession.parserVersion &&
+          existingSession.parserVersion !== args.parserVersion) ||
+        (existingSession.importDigest &&
+          existingSession.importDigest !== args.importDigest))
+    ) {
+      throw new Error(
+        "Import session identity does not match its saved receipt.",
+      );
+    }
+
+    let savedDelta = 0;
+    let duplicateDelta = 0;
+    let skippedDelta = 0;
+    let failedDelta = 0;
+    const receipts = [];
+
+    for (const record of args.records) {
+      const replay = await ctx.db
+        .query("importOccurrences")
+        .withIndex("by_session_key_and_ordinal", (q) =>
+          q.eq("sessionKey", args.sessionKey).eq("ordinal", record.ordinal),
+        )
+        .unique();
+      if (replay) {
+        receipts.push(importReceipt(replay, true));
+        continue;
+      }
+
+      const cleanSubmittedUrl = record.submittedUrl.trim();
+      let parsedUrl: URL | undefined;
+      try {
+        parsedUrl = new URL(cleanSubmittedUrl);
+      } catch {
+        parsedUrl = undefined;
+      }
+
+      if (
+        !Number.isSafeInteger(record.ordinal) ||
+        record.ordinal < 0 ||
+        !parsedUrl ||
+        (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:")
+      ) {
+        const occurrenceId = await ctx.db.insert("importOccurrences", {
+          sessionKey: args.sessionKey,
+          ordinal: record.ordinal,
+          source: args.source,
+          parserVersion: args.parserVersion,
+          submittedUrl: record.submittedUrl,
+          ...(record.submittedTitle
+            ? { submittedTitle: record.submittedTitle }
+            : {}),
+          ...(record.sourceGroup ? { sourceGroup: record.sourceGroup } : {}),
+          outcome: "skipped",
+          errorClass: "invalid_url",
+          createdAt: args.now,
+        });
+        const occurrence = await ctx.db.get(occurrenceId);
+        skippedDelta += 1;
+        receipts.push(importReceipt(occurrence!, false));
+        continue;
+      }
+
+      const normalizedUrl = normalizeSourceUrl(cleanSubmittedUrl);
+      const exact = await ctx.db
+        .query("references")
+        .withIndex("by_source_url", (q) => q.eq("sourceUrl", cleanSubmittedUrl))
+        .first();
+      const normalized = exact
+        ? null
+        : await ctx.db
+            .query("references")
+            .withIndex("by_canonical_url", (q) =>
+              q.eq("canonicalUrl", normalizedUrl),
+            )
+            .first();
+      const duplicate =
+        exact && !exact.deleted
+          ? { reference: exact, reason: "source_url" as const }
+          : normalized && !normalized.deleted
+            ? { reference: normalized, reason: "normalized_url" as const }
+            : null;
+
+      let referenceId;
+      let outcome: "saved" | "duplicate";
+      let duplicateReason: "source_url" | "normalized_url" | undefined;
+      if (duplicate) {
+        referenceId = duplicate.reference._id;
+        outcome = "duplicate";
+        duplicateReason = duplicate.reason;
+        duplicateDelta += 1;
+      } else {
+        referenceId = await ctx.db.insert("references", {
+          kind: "page",
+          ...(record.submittedTitle
+            ? { title: record.submittedTitle.slice(0, 500) }
+            : {}),
+          sourceUrl: cleanSubmittedUrl,
+          canonicalUrl: normalizedUrl,
+          platform: "generic",
+          capturedAt: args.now,
+          captureSessionId: args.sessionKey,
+          triageState: "inbox",
+          boardIds: [],
+          tagIds: [],
+          favorite: false,
+          archived: false,
+          deleted: false,
+        });
+        const reference = await ctx.db.get(referenceId);
+        await applyReferenceStatsDelta(ctx, null, reference);
+        await insertSourceSnapshot(ctx, {
+          referenceId,
+          ...(record.submittedTitle
+            ? { pageTitle: record.submittedTitle.slice(0, 500) }
+            : {}),
+          metadata: {
+            canonicalUrl: normalizedUrl,
+            metadataStatus: "missing",
+            metadataFetchedAt: args.now,
+          },
+          jsonMetadata: {
+            source: args.source,
+            parserVersion: args.parserVersion,
+            ordinal: record.ordinal,
+            ...(record.sourceGroup ? { sourceGroup: record.sourceGroup } : {}),
+          },
+        });
+        outcome = "saved";
+        savedDelta += 1;
+      }
+
+      const occurrenceId = await ctx.db.insert("importOccurrences", {
+        sessionKey: args.sessionKey,
+        ordinal: record.ordinal,
+        source: args.source,
+        parserVersion: args.parserVersion,
+        submittedUrl: record.submittedUrl,
+        ...(record.submittedTitle
+          ? { submittedTitle: record.submittedTitle }
+          : {}),
+        ...(record.sourceGroup ? { sourceGroup: record.sourceGroup } : {}),
+        outcome,
+        referenceId,
+        ...(duplicateReason ? { duplicateReason } : {}),
+        createdAt: args.now,
+      });
+      const occurrence = await ctx.db.get(occurrenceId);
+      receipts.push(importReceipt(occurrence!, false));
+    }
+
+    let checkpointOrdinal = existingSession?.checkpointOrdinal ?? -1;
+    while (true) {
+      const next = await ctx.db
+        .query("importOccurrences")
+        .withIndex("by_session_key_and_ordinal", (q) =>
+          q
+            .eq("sessionKey", args.sessionKey)
+            .eq("ordinal", checkpointOrdinal + 1),
+        )
+        .unique();
+      if (!next) break;
+      checkpointOrdinal += 1;
+    }
+
+    const counts = {
+      expectedCount: Math.max(
+        existingSession?.expectedCount ?? 0,
+        args.expectedCount,
+      ),
+      completedCount:
+        (existingSession?.completedCount ?? 0) +
+        savedDelta +
+        duplicateDelta +
+        skippedDelta +
+        failedDelta,
+      savedCount: (existingSession?.savedCount ?? 0) + savedDelta,
+      duplicateCount: (existingSession?.duplicateCount ?? 0) + duplicateDelta,
+      skippedCount: (existingSession?.skippedCount ?? 0) + skippedDelta,
+      failedCount: (existingSession?.failedCount ?? 0) + failedDelta,
+    };
+    const completed = checkpointOrdinal + 1 >= counts.expectedCount;
+    const sessionPatch = {
+      source: args.source,
+      parserVersion: args.parserVersion,
+      importDigest: args.importDigest,
+      kind: "import" as const,
+      label: `${args.source.replace("_", " ")} import`,
+      ...counts,
+      checkpointOrdinal,
+      status: completed ? ("completed" as const) : ("running" as const),
+      ...(completed ? { completedAt: args.now } : {}),
+      updatedAt: args.now,
+    };
+    let sessionId = existingSession?._id;
+    if (existingSession) {
+      await ctx.db.patch(existingSession._id, sessionPatch);
+    } else {
+      sessionId = await ctx.db.insert("captureSessions", {
+        sessionKey: args.sessionKey,
+        ...sessionPatch,
+        reviewState: "unreviewed",
+        startedAt: args.now,
+        createdAt: args.now,
+      });
+    }
+    return {
+      session: await ctx.db.get(sessionId!),
+      receipts,
+      replayedCount: receipts.filter((receipt) => receipt.replayed).length,
+      batchReceipt: {
+        saved: savedDelta,
+        duplicate: duplicateDelta,
+        skipped: skippedDelta,
+        failed: failedDelta,
+        replayed: receipts.filter((receipt) => receipt.replayed).length,
+        failedOrdinals: receipts
+          .filter((receipt) => receipt.outcome === "failed")
+          .map((receipt) => receipt.ordinal),
+      },
+    };
+  },
+});
+
+function importReceipt(
+  occurrence: {
+    ordinal: number;
+    outcome: "saved" | "duplicate" | "skipped" | "failed";
+    referenceId?: unknown;
+    duplicateReason?: "source_url" | "normalized_url" | "canonical_url";
+    errorClass?: "invalid_url" | "invalid_record" | "capacity" | "internal";
+  },
+  replayed: boolean,
+) {
+  return {
+    ordinal: occurrence.ordinal,
+    outcome: occurrence.outcome,
+    ...(occurrence.referenceId
+      ? { referenceId: String(occurrence.referenceId) }
+      : {}),
+    ...(occurrence.duplicateReason
+      ? { duplicateReason: occurrence.duplicateReason }
+      : {}),
+    ...(occurrence.errorClass ? { errorClass: occurrence.errorClass } : {}),
+    replayed,
+  };
+}
+
 export const getReferenceSource = internalQuery({
   args: { referenceId: v.string() },
   handler: async (ctx, args) => {
