@@ -95,31 +95,16 @@ export function useEnrichmentJobs(referenceId: string) {
   }, [referenceId]);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
+    void refresh().catch(() => setLoading(false));
+  }, [refresh]);
 
-    async function load() {
-      try {
-        const nextJobs = await getClient().query(
-          listForReference,
-          withOwnerAccess({ referenceId }),
-        );
-        if (!cancelled) {
-          setJobs(nextJobs);
-          setLoading(false);
-        }
-      } catch {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
-    const timer = window.setInterval(() => void load(), 1800);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [referenceId]);
+  const hasActiveJobs = jobs.some(isActiveJob);
+  useEffect(() => {
+    if (!hasActiveJobs) return;
+    const timer = window.setInterval(() => void refresh().catch(() => undefined), 3000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveJobs, refresh]);
 
   return { jobs, loading, refresh };
 }
@@ -139,31 +124,16 @@ export function useRecentEnrichmentJobs(limit = 30) {
   }, [limit]);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
+    void refresh().catch(() => setLoading(false));
+  }, [refresh]);
 
-    async function load() {
-      try {
-        const nextJobs = await getClient().query(
-          listRecent,
-          withOwnerAccess({ limit }),
-        );
-        if (!cancelled) {
-          setJobs(nextJobs);
-          setLoading(false);
-        }
-      } catch {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
-    const timer = window.setInterval(() => void load(), 2200);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [limit]);
+  const hasActiveJobs = jobs.some(isActiveJob);
+  useEffect(() => {
+    if (!hasActiveJobs) return;
+    const timer = window.setInterval(() => void refresh().catch(() => undefined), 3000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveJobs, refresh]);
 
   return { jobs, loading, refresh };
 }
@@ -196,4 +166,8 @@ function getClient() {
   if (!url) throw new Error("Add NEXT_PUBLIC_CONVEX_URL before running enrichment.");
   client = new ConvexHttpClient(url);
   return client;
+}
+
+function isActiveJob(job: Pick<EnrichmentJob, "status">) {
+  return job.status === "queued" || job.status === "running";
 }
