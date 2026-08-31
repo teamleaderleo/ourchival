@@ -75,6 +75,10 @@ For generated previews, thumbnails, hashes, and palettes, see [`docs/MEDIA_PIPEL
 
 For the links vault direction, see [`docs/LINKS_VAULT.md`](docs/LINKS_VAULT.md).
 
+For large OneTab/X Likes intake, storage-provider boundaries, and ChatGPT/Codex
+access, see
+[`docs/ARCHIVE_INTAKE_AND_AGENT_ACCESS.md`](docs/ARCHIVE_INTAKE_AND_AGENT_ACCESS.md).
+
 Copy `.env.example` to `.env.local` and fill in your Convex values.
 
 ## Scripts
