@@ -469,7 +469,7 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
           : state.audit.status === "gaps"
             ? "Receipt has gaps"
             : "Partial receipt"
-      }</strong> · ${state.audit.networkPosts} from X · ${state.audit.observedPosts} rendered · ${state.audit.vaultChecked ? state.audit.vaultPosts : "vault check unavailable"}${
+      }</strong> · ${state.audit.networkPosts} from X · ${state.audit.observedPosts} rendered · ${state.audit.vaultChecked ? `${state.audit.vaultPosts} archived` : "vault check unavailable"}${
         state.audit.networkMissingInDom || state.audit.domMissingInVault
           ? ` · ${state.audit.networkMissingInDom} render gaps · ${state.audit.domMissingInVault} archive gaps`
           : ""

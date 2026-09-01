@@ -401,7 +401,9 @@ async function startXLikesImport() {
     ...(state.lastSourceUrl
       ? { resumeAfterSourceUrl: state.lastSourceUrl }
       : {}),
-    resumeFromCurrentPosition: previous?.stopReason === "stalled",
+    resumeFromCurrentPosition: Boolean(
+      previous && previous.stopReason !== "known_boundary",
+    ),
     stopAtKnownBoundary: Boolean(previous?.exhausted),
   })) as { ok?: boolean; error?: string } | undefined;
   if (!response?.ok) {

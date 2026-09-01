@@ -353,8 +353,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       positionedXLikesImportId = importId;
       positionedXLikesCursor = undefined;
       observedXLikesSources.clear();
-      networkXLikesPostIds.clear();
-      networkXLikesPages = 0;
       unparseableXLikesArticles.clear();
     }
     activeXLikesImport = runXLikesImport({
@@ -542,7 +540,7 @@ async function runXLikesImport(args: {
       await wait(seekingCursor ? 350 : Math.min(1_600, 600 + idleRounds * 20));
     }
 
-    if (seekingCursor) {
+    if (seekingCursor && stopReason !== "paused") {
       stopReason = "cursor_not_found";
       finishMessage =
         "The saved Likes cursor was not found. Leave the Likes page at the last imported position and continue again.";
