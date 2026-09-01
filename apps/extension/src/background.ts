@@ -96,7 +96,8 @@ type CaptureConnection = {
 };
 
 let activeJobId: string | undefined;
-const captureConcurrency = 4;
+const defaultCaptureConcurrency = 6;
+const localCaptureConcurrency = 12;
 
 type BatchItemOutcome = {
   item: BatchCaptureItem;
@@ -390,6 +391,7 @@ async function startXLikesImport() {
     ...(state.lastSourceUrl
       ? { resumeAfterSourceUrl: state.lastSourceUrl }
       : {}),
+    resumeFromCurrentPosition: previous?.stopReason === "stalled",
     stopAtKnownBoundary: Boolean(previous?.exhausted),
   })) as { ok?: boolean; error?: string } | undefined;
   if (!response?.ok) {
@@ -482,9 +484,7 @@ async function finishXLikesImport(
     message.profileUrl,
   );
   const now = new Date().toISOString();
-  const exhausted =
-    message.stopReason === "timeline_end" ||
-    message.stopReason === "known_boundary";
+  const exhausted = message.stopReason === "known_boundary";
   const next: XLikesImportState = {
     ...state,
     running: false,
@@ -659,6 +659,7 @@ async function continueBatch(
 
   try {
     while (state.nextIndex < state.items.length) {
+      const captureConcurrency = captureConcurrencyFor(connection);
       const windowItems = state.items.slice(
         state.nextIndex,
         state.nextIndex + captureConcurrency,
@@ -666,11 +667,21 @@ async function continueBatch(
       const outcomes = await Promise.all(
         windowItems.map((item) => captureBatchItem(connection, state, item)),
       );
+      let latestSuccessful: BatchItemOutcome | undefined;
       for (const outcome of outcomes) {
-        await applyBatchItemOutcome(state, outcome);
+        applyBatchItemOutcome(state, outcome);
         advanceCheckpoint(state);
-        await saveBatchState({ ...state });
+        if (outcome.payload && outcome.result?.ok && !outcome.error) {
+          latestSuccessful = outcome;
+        }
       }
+      if (latestSuccessful?.payload && latestSuccessful.result) {
+        await Promise.all([
+          saveLastCapture(latestSuccessful.payload),
+          saveLastResult(toCaptureResult(latestSuccessful.result)),
+        ]);
+      }
+      await saveBatchState({ ...state });
     }
 
     state.running = false;
@@ -730,7 +741,7 @@ async function captureBatchItem(
   }
 }
 
-async function applyBatchItemOutcome(
+function applyBatchItemOutcome(
   state: BatchCaptureState,
   outcome: BatchItemOutcome,
 ) {
@@ -765,8 +776,17 @@ async function applyBatchItemOutcome(
   } else if (result.body.alreadySaved) state.duplicates += 1;
   else state.saved += 1;
   if (typeof item.tabId === "number") state.successfulTabIds.push(item.tabId);
-  await saveLastCapture(payload);
-  await saveLastResult(toCaptureResult(result));
+}
+
+function captureConcurrencyFor(connection: CaptureConnection) {
+  try {
+    const hostname = new URL(connection.endpoint).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1"
+      ? localCaptureConcurrency
+      : defaultCaptureConcurrency;
+  } catch {
+    return defaultCaptureConcurrency;
+  }
 }
 
 function advanceCheckpoint(state: BatchCaptureState) {

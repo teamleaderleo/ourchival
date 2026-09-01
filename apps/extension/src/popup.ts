@@ -424,7 +424,7 @@ function renderBatch(batch: BatchCaptureState | undefined) {
       <div class="section-heading compact">
         <div>
           <p class="eyebrow">${escapeHtml(batchSourceLabel(batch.source))}</p>
-          <h2>${batch.running ? "Importing into Inbox" : "Import complete"}</h2>
+          <h2>${batch.running ? "Importing into Inbox" : batch.source === "x_likes" ? "Last chunk saved" : "Import complete"}</h2>
         </div>
         <strong>${batch.completed}/${batch.total}</strong>
       </div>
@@ -452,11 +452,13 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
     ? "Importing"
     : state.stopReason === "known_boundary"
       ? "Caught up"
-      : state.exhausted
-        ? "Timeline reached"
-        : state.stopReason === "paused"
-          ? "Paused"
-          : "Ready to continue";
+      : state.stopReason === "stalled" || state.stopReason === "timeline_end"
+        ? "X paused loading"
+        : state.exhausted
+          ? "Timeline reached"
+          : state.stopReason === "paused"
+            ? "Paused"
+            : "Ready to continue";
   const message = state.message
     ? `<p class="hint">${escapeHtml(state.message)}</p>`
     : "";

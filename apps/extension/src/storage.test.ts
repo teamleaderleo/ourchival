@@ -66,4 +66,32 @@ describe("normalizeXLikesImportState", () => {
       duplicates: 0,
     });
   });
+
+  it("keeps legacy timeline-end checkpoints resumable", () => {
+    expect(
+      normalizeXLikesImportState({
+        importId: "likes-stalled",
+        profileUrl: "https://x.com/i/history/likes",
+        running: false,
+        exhausted: true,
+        startedAt: "2026-08-31T00:00:00.000Z",
+        updatedAt: "2026-08-31T01:00:00.000Z",
+        completedAt: "2026-08-31T01:00:00.000Z",
+        chunks: 324,
+        discoveredPosts: 3888,
+        captureAttempts: 4356,
+        saved: 3370,
+        attachedMedia: 157,
+        refreshedPosts: 763,
+        duplicates: 0,
+        failed: 0,
+        skipped: 0,
+        stopReason: "timeline_end",
+      }),
+    ).toMatchObject({
+      exhausted: false,
+      completedAt: undefined,
+      stopReason: "stalled",
+    });
+  });
 });

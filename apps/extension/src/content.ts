@@ -21,8 +21,8 @@ let positionedXLikesCursor: string | undefined;
 let positionedXLikesImportId: string | undefined;
 const observedXLikesSources = new Set<string>();
 
-const xLikesChunkSize = 12;
-const xLikesIdleRoundLimit = 30;
+const xLikesChunkSize = 24;
+const xLikesIdleRoundLimit = 80;
 const xLikesRoundLimit = 5_000;
 const xKnownBoundarySize = 24;
 const archiveBadgeSelector = "[data-ourchival-archive-badge]";
@@ -340,6 +340,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         typeof message.resumeAfterSourceUrl === "string"
           ? message.resumeAfterSourceUrl
           : undefined,
+      resumeFromCurrentPosition: message.resumeFromCurrentPosition === true,
     })
       .catch(() => {
         // runXLikesImport reports its own bounded error state to the worker.
@@ -363,6 +364,7 @@ async function runXLikesImport(args: {
   profileUrl: string;
   stopAtKnownBoundary?: boolean;
   resumeAfterSourceUrl?: string;
+  resumeFromCurrentPosition?: boolean;
 }) {
   const seen = new Set(observedXLikesSources);
   let pending: XDomSnapshot[] = [];
@@ -373,11 +375,13 @@ async function runXLikesImport(args: {
   let lastSourceUrl = args.resumeAfterSourceUrl;
   let seekingCursor = Boolean(
     args.resumeAfterSourceUrl &&
+    !args.resumeFromCurrentPosition &&
     positionedXLikesCursor !== args.resumeAfterSourceUrl,
   );
   let stopReason:
     | "paused"
     | "known_boundary"
+    | "stalled"
     | "timeline_end"
     | "round_limit"
     | "cursor_not_found"
@@ -480,11 +484,24 @@ async function runXLikesImport(args: {
         nearBottom &&
         !loading
       ) {
-        stopReason = "timeline_end";
+        stopReason = "stalled";
+        finishMessage =
+          "X stopped yielding new Likes after repeated recovery probes. Your checkpoint is safe; continue from this position to look for older posts.";
         break;
       }
-      if (idleRounds >= 4) {
-        window.scrollTo({ top: scrollHeight });
+      if (idleRounds >= 4 && idleRounds % 8 === 0) {
+        // X virtualizes its timeline and can stop responding when repeatedly
+        // assigned the exact same bottom position. Pulse upward, then cross the
+        // old boundary again so its intersection observers request more rows.
+        window.scrollBy({ top: -Math.max(360, window.innerHeight * 0.45) });
+        await wait(220);
+        window.scrollBy({ top: Math.max(900, window.innerHeight * 1.15) });
+      } else if (idleRounds >= 4 && idleRounds % 4 === 0) {
+        const lastArticle = articles.at(-1);
+        lastArticle?.scrollIntoView({ block: "end" });
+        window.scrollBy({ top: Math.max(480, window.innerHeight * 0.6) });
+      } else if (idleRounds >= 4) {
+        window.scrollTo({ top: document.documentElement.scrollHeight });
       } else {
         window.scrollBy({
           top: Math.max(
@@ -493,7 +510,7 @@ async function runXLikesImport(args: {
           ),
         });
       }
-      await wait(seekingCursor ? 350 : 600);
+      await wait(seekingCursor ? 350 : Math.min(1_600, 600 + idleRounds * 20));
     }
 
     if (seekingCursor) {

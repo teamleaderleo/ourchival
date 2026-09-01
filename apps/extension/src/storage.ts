@@ -68,6 +68,7 @@ export type BatchCaptureState = {
 export type XLikesImportStopReason =
   | "paused"
   | "known_boundary"
+  | "stalled"
   | "timeline_end"
   | "round_limit"
   | "cursor_not_found"
@@ -157,16 +158,38 @@ export async function getPopupState() {
 export function normalizeXLikesImportState(
   state: XLikesImportState | undefined,
 ) {
-  if (!state || typeof state.attachedMedia === "number") return state;
-  const extraMedia = Math.min(
-    state.duplicates,
-    Math.max(0, state.captureAttempts - state.discoveredPosts),
-  );
-  return {
-    ...state,
-    attachedMedia: extraMedia,
-    duplicates: Math.max(0, state.duplicates - extraMedia),
-  };
+  if (!state) return state;
+  const normalized =
+    typeof state.attachedMedia === "number"
+      ? state
+      : (() => {
+          const extraMedia = Math.min(
+            state.duplicates,
+            Math.max(0, state.captureAttempts - state.discoveredPosts),
+          );
+          return {
+            ...state,
+            attachedMedia: extraMedia,
+            duplicates: Math.max(0, state.duplicates - extraMedia),
+          };
+        })();
+
+  // Older builds treated a temporarily stable virtualized X timeline as a
+  // genuine end. Keep that checkpoint resumable: X can expose more rows after
+  // another scroll pulse or a manual nudge.
+  if (normalized.stopReason === "timeline_end") {
+    return {
+      ...normalized,
+      exhausted: false,
+      completedAt: undefined,
+      stopReason: "stalled" as const,
+      message:
+        normalized.message ??
+        "X paused loading more Likes. Your checkpoint is safe; continue to probe for older posts.",
+    };
+  }
+
+  return normalized;
 }
 
 export function normalizeCaptureEndpoint(value: string | undefined) {
