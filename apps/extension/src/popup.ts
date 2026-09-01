@@ -434,7 +434,9 @@ function renderBatch(batch: BatchCaptureState | undefined) {
       ${batch.currentLabel ? `<p class="current-item">${escapeHtml(batch.currentLabel)}</p>` : ""}
       <div class="batch-counts">
         <span><strong>${batch.saved}</strong> saved</span>
-        <span><strong>${batch.duplicates}</strong> existing</span>
+        ${batch.source === "x_likes" && (batch.attached ?? 0) > 0 ? `<span><strong>${batch.attached}</strong> extra images</span>` : ""}
+        ${batch.source === "x_likes" && (batch.refreshed ?? 0) > 0 ? `<span><strong>${batch.refreshed}</strong> refreshed</span>` : ""}
+        ${batch.duplicates > 0 ? `<span><strong>${batch.duplicates}</strong> existing</span>` : ""}
         <span><strong>${batch.skipped}</strong> skipped</span>
         <span><strong>${batch.failed}</strong> failed</span>
       </div>
@@ -448,15 +450,13 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
   if (!state) return "";
   const status = state.running
     ? "Importing"
-    : state.exhausted
-      ? "Timeline reached"
-      : state.stopReason === "paused"
-        ? "Paused"
-        : "Ready to continue";
-  const mediaNote =
-    state.captureAttempts === state.discoveredPosts
-      ? ""
-      : ` · ${state.captureAttempts} media captures`;
+    : state.stopReason === "known_boundary"
+      ? "Caught up"
+      : state.exhausted
+        ? "Timeline reached"
+        : state.stopReason === "paused"
+          ? "Paused"
+          : "Ready to continue";
   const message = state.message
     ? `<p class="hint">${escapeHtml(state.message)}</p>`
     : "";
@@ -464,10 +464,12 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
     <div class="batch-counts x-likes-progress">
       <span><strong>${state.discoveredPosts}</strong> posts</span>
       <span><strong>${state.saved}</strong> new</span>
-      <span><strong>${state.duplicates}</strong> existing</span>
-      <span><strong>${state.failed}</strong> failed</span>
+      ${(state.attachedMedia ?? 0) > 0 ? `<span><strong>${state.attachedMedia}</strong> extra images</span>` : ""}
+      ${(state.refreshedPosts ?? 0) > 0 ? `<span><strong>${state.refreshedPosts}</strong> refreshed</span>` : ""}
+      ${state.duplicates > 0 ? `<span><strong>${state.duplicates}</strong> existing posts</span>` : ""}
+      ${state.failed > 0 ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
     </div>
-    <p class="hint"><strong>${status}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"}${mediaNote}</p>
+    <p class="hint"><strong>${status}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"}</p>
     ${message}
   `;
 }

@@ -53,17 +53,25 @@ export type BatchCaptureState = {
   completed: number;
   nextIndex: number;
   saved: number;
+  attached?: number;
+  refreshed?: number;
   duplicates: number;
   failed: number;
   skipped: number;
   currentLabel?: string;
+  refreshedSourceUrls?: string[];
   items: BatchCaptureItem[];
   successfulTabIds: number[];
   failures: BatchCaptureFailure[];
 };
 
 export type XLikesImportStopReason =
-  "paused" | "timeline_end" | "round_limit" | "cursor_not_found" | "error";
+  | "paused"
+  | "known_boundary"
+  | "timeline_end"
+  | "round_limit"
+  | "cursor_not_found"
+  | "error";
 
 export type XLikesImportState = {
   importId: string;
@@ -77,6 +85,8 @@ export type XLikesImportState = {
   discoveredPosts: number;
   captureAttempts: number;
   saved: number;
+  attachedMedia?: number;
+  refreshedPosts?: number;
   duplicates: number;
   failed: number;
   skipped: number;
@@ -125,17 +135,38 @@ export async function saveXLikesImportState(state: XLikesImportState) {
 
 export async function getXLikesImportState() {
   const values = await chrome.storage.local.get(X_LIKES_IMPORT_KEY);
-  return values[X_LIKES_IMPORT_KEY] as XLikesImportState | undefined;
+  return normalizeXLikesImportState(
+    values[X_LIKES_IMPORT_KEY] as XLikesImportState | undefined,
+  );
 }
 
 export async function getPopupState() {
-  return await chrome.storage.local.get([
+  const values = await chrome.storage.local.get([
     SETTINGS_KEY,
     LAST_CAPTURE_KEY,
     LAST_RESULT_KEY,
     LAST_BATCH_KEY,
     X_LIKES_IMPORT_KEY,
   ]);
+  values[X_LIKES_IMPORT_KEY] = normalizeXLikesImportState(
+    values[X_LIKES_IMPORT_KEY] as XLikesImportState | undefined,
+  );
+  return values;
+}
+
+export function normalizeXLikesImportState(
+  state: XLikesImportState | undefined,
+) {
+  if (!state || typeof state.attachedMedia === "number") return state;
+  const extraMedia = Math.min(
+    state.duplicates,
+    Math.max(0, state.captureAttempts - state.discoveredPosts),
+  );
+  return {
+    ...state,
+    attachedMedia: extraMedia,
+    duplicates: Math.max(0, state.duplicates - extraMedia),
+  };
 }
 
 export function normalizeCaptureEndpoint(value: string | undefined) {

@@ -21,7 +21,11 @@ import {
   type XLikesImportState,
   type XLikesImportStopReason,
 } from "./storage";
-import { buildXLikePayloads, isXLikesUrl } from "./xLikes";
+import {
+  buildXLikePayloads,
+  classifyXLikeCapture,
+  isXLikesUrl,
+} from "./xLikes";
 
 type TabCaptureMode = "current" | "selected" | "window";
 type ImportSource = "url_list" | "bookmarks" | "retry";
@@ -47,6 +51,12 @@ type CaptureResponse = {
   existingReference?: CaptureResult["existingReference"];
 };
 
+type ReferenceStatusResponse = {
+  ok?: boolean;
+  error?: string;
+  indexedSourceUrls?: string[];
+};
+
 type ExtensionMessage =
   | { type: "OURCHIVAL_CAPTURE_TABS"; mode: TabCaptureMode }
   | {
@@ -62,6 +72,8 @@ type ExtensionMessage =
   | { type: "OURCHIVAL_CLOSE_SAVED_TABS"; tabIds: number[] }
   | { type: "OURCHIVAL_IMPORT_X_LIKES" }
   | { type: "OURCHIVAL_PAUSE_X_LIKES" }
+  | { type: "OURCHIVAL_REFERENCE_STATUS"; sourceUrls: string[] }
+  | { type: "OURCHIVAL_CAPTURE_X_LIKE"; snapshot: XDomSnapshot }
   | {
       type: "OURCHIVAL_X_LIKES_CHUNK";
       importId: string;
@@ -84,6 +96,16 @@ type CaptureConnection = {
 };
 
 let activeJobId: string | undefined;
+const captureConcurrency = 4;
+
+type BatchItemOutcome = {
+  item: BatchCaptureItem;
+  sourceUrl: string;
+  payload?: CapturePayload;
+  result?: Awaited<ReturnType<typeof capturePayload>>;
+  error?: unknown;
+  skipped?: boolean;
+};
 
 void chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 
@@ -223,6 +245,32 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
+    if (message?.type === "OURCHIVAL_REFERENCE_STATUS") {
+      void referenceStatus(message.sourceUrls)
+        .then((indexedSourceUrls) =>
+          sendResponse({ ok: true, indexedSourceUrls }),
+        )
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Could not check archive status."),
+          }),
+        );
+      return true;
+    }
+
+    if (message?.type === "OURCHIVAL_CAPTURE_X_LIKE") {
+      void captureLiveXLike(message.snapshot)
+        .then((sourceUrl) => sendResponse({ ok: true, sourceUrl }))
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Could not archive this liked post."),
+          }),
+        );
+      return true;
+    }
+
     if (message?.type === "OURCHIVAL_X_LIKES_CHUNK") {
       void captureXLikesChunk(message, sender)
         .then((state) => sendResponse({ ok: true, state }))
@@ -326,6 +374,8 @@ async function startXLikesImport() {
         discoveredPosts: 0,
         captureAttempts: 0,
         saved: 0,
+        attachedMedia: 0,
+        refreshedPosts: 0,
         duplicates: 0,
         failed: 0,
         skipped: 0,
@@ -340,6 +390,7 @@ async function startXLikesImport() {
     ...(state.lastSourceUrl
       ? { resumeAfterSourceUrl: state.lastSourceUrl }
       : {}),
+    stopAtKnownBoundary: Boolean(previous?.exhausted),
   })) as { ok?: boolean; error?: string } | undefined;
   if (!response?.ok) {
     state.running = false;
@@ -403,6 +454,8 @@ async function captureXLikesChunk(
     discoveredPosts: checkpoint.discoveredPosts + parsedSources.length,
     captureAttempts: checkpoint.captureAttempts + state.total,
     saved: checkpoint.saved + state.saved,
+    attachedMedia: (checkpoint.attachedMedia ?? 0) + (state.attached ?? 0),
+    refreshedPosts: (checkpoint.refreshedPosts ?? 0) + (state.refreshed ?? 0),
     duplicates: checkpoint.duplicates + state.duplicates,
     failed: checkpoint.failed + state.failed,
     skipped: checkpoint.skipped + state.skipped,
@@ -429,7 +482,9 @@ async function finishXLikesImport(
     message.profileUrl,
   );
   const now = new Date().toISOString();
-  const exhausted = message.stopReason === "timeline_end";
+  const exhausted =
+    message.stopReason === "timeline_end" ||
+    message.stopReason === "known_boundary";
   const next: XLikesImportState = {
     ...state,
     running: false,
@@ -470,8 +525,8 @@ async function reportXLikesSession(
       sourceUrl: state.profileUrl,
       expectedCount: state.captureAttempts,
       completedCount: state.captureAttempts,
-      savedCount: state.saved,
-      duplicateCount: state.duplicates,
+      savedCount: state.saved + (state.attachedMedia ?? 0),
+      duplicateCount: state.duplicates + (state.refreshedPosts ?? 0),
       skippedCount: state.skipped,
       failedCount: state.failed,
       status,
@@ -560,9 +615,12 @@ async function runBatch(
     completed: 0,
     nextIndex: 0,
     saved: 0,
+    attached: 0,
+    refreshed: 0,
     duplicates: 0,
     failed: 0,
     skipped: 0,
+    refreshedSourceUrls: [],
     items,
     successfulTabIds: [],
     failures: [],
@@ -593,64 +651,37 @@ async function continueBatch(
 
   activeJobId = state.jobId;
   state.running = true;
+  state.attached ??= 0;
+  state.refreshed ??= 0;
+  state.refreshedSourceUrls ??= [];
   await chrome.action.setBadgeText({ text: "…" });
   await chrome.action.setBadgeBackgroundColor({ color: "#6f5bb7" });
 
   try {
     while (state.nextIndex < state.items.length) {
-      const item = state.items[state.nextIndex]!;
-      const sourceUrl = item.payload?.sourceUrl ?? item.url;
-      state.currentLabel = item.title || sourceUrl || "Unsupported tab";
-
-      if (!isCapturableUrl(sourceUrl)) {
-        state.skipped += 1;
+      const windowItems = state.items.slice(
+        state.nextIndex,
+        state.nextIndex + captureConcurrency,
+      );
+      const outcomes = await Promise.all(
+        windowItems.map((item) => captureBatchItem(connection, state, item)),
+      );
+      for (const outcome of outcomes) {
+        await applyBatchItemOutcome(state, outcome);
         advanceCheckpoint(state);
         await saveBatchState({ ...state });
-        continue;
       }
-
-      const payload: CapturePayload = item.payload
-        ? { ...item.payload, captureSessionId: state.jobId }
-        : {
-            kind: "page",
-            sourceUrl,
-            ...(item.title ? { pageTitle: item.title } : {}),
-            captureSessionId: state.jobId,
-            capturedAt: new Date().toISOString(),
-          };
-
-      try {
-        const result = await capturePayload(connection, payload);
-        if (!result.ok) {
-          throw new Error(
-            result.error || `Capture failed with status ${result.status}`,
-          );
-        }
-        if (result.body.alreadySaved) state.duplicates += 1;
-        else state.saved += 1;
-        if (typeof item.tabId === "number")
-          state.successfulTabIds.push(item.tabId);
-        await saveLastCapture(payload);
-        await saveLastResult(toCaptureResult(result));
-      } catch (error) {
-        state.failed += 1;
-        state.failures.push({
-          url: sourceUrl,
-          ...(item.title ? { title: item.title } : {}),
-          ...(item.payload ? { payload: item.payload } : {}),
-          message: errorMessage(error, "Capture failed."),
-        });
-      }
-
-      advanceCheckpoint(state);
-      await saveBatchState({ ...state });
     }
 
     state.running = false;
     state.completedAt = new Date().toISOString();
     state.currentLabel = undefined;
     await saveBatchState({ ...state });
-    const successful = state.saved + state.duplicates;
+    const successful =
+      state.saved +
+      state.duplicates +
+      (state.attached ?? 0) +
+      (state.refreshed ?? 0);
     await chrome.action.setBadgeText({
       text:
         successful > 99
@@ -668,6 +699,74 @@ async function continueBatch(
   } finally {
     if (activeJobId === state.jobId) activeJobId = undefined;
   }
+}
+
+async function captureBatchItem(
+  connection: CaptureConnection,
+  state: BatchCaptureState,
+  item: BatchCaptureItem,
+): Promise<BatchItemOutcome> {
+  const sourceUrl = item.payload?.sourceUrl ?? item.url ?? "";
+  if (!isCapturableUrl(sourceUrl)) return { item, sourceUrl, skipped: true };
+  const payload: CapturePayload = item.payload
+    ? { ...item.payload, captureSessionId: state.jobId }
+    : {
+        kind: "page",
+        sourceUrl,
+        ...(item.title ? { pageTitle: item.title } : {}),
+        captureSessionId: state.jobId,
+        capturedAt: new Date().toISOString(),
+      };
+  try {
+    const result = await capturePayload(connection, payload);
+    if (!result.ok) {
+      throw new Error(
+        result.error || `Capture failed with status ${result.status}`,
+      );
+    }
+    return { item, sourceUrl, payload, result };
+  } catch (error) {
+    return { item, sourceUrl, payload, error };
+  }
+}
+
+async function applyBatchItemOutcome(
+  state: BatchCaptureState,
+  outcome: BatchItemOutcome,
+) {
+  const { item, sourceUrl, payload, result } = outcome;
+  state.currentLabel = item.title || sourceUrl || "Unsupported tab";
+  if (outcome.skipped) {
+    state.skipped += 1;
+    return;
+  }
+  if (!payload || !result || outcome.error) {
+    state.failed += 1;
+    state.failures.push({
+      url: sourceUrl,
+      ...(item.title ? { title: item.title } : {}),
+      ...(payload ? { payload } : {}),
+      message: errorMessage(outcome.error, "Capture failed."),
+    });
+    return;
+  }
+
+  if (state.source === "x_likes") {
+    const classification = classifyXLikeCapture(payload, result.body);
+    if (classification === "attached")
+      state.attached = (state.attached ?? 0) + 1;
+    else if (classification === "duplicate") {
+      state.refreshedSourceUrls ??= [];
+      if (!state.refreshedSourceUrls.includes(payload.sourceUrl)) {
+        state.refreshed = (state.refreshed ?? 0) + 1;
+        state.refreshedSourceUrls.push(payload.sourceUrl);
+      }
+    } else state.saved += 1;
+  } else if (result.body.alreadySaved) state.duplicates += 1;
+  else state.saved += 1;
+  if (typeof item.tabId === "number") state.successfulTabIds.push(item.tabId);
+  await saveLastCapture(payload);
+  await saveLastResult(toCaptureResult(result));
 }
 
 function advanceCheckpoint(state: BatchCaptureState) {
@@ -732,6 +831,53 @@ async function getCaptureConnection(): Promise<CaptureConnection> {
     );
   }
   return { endpoint, deviceToken };
+}
+
+async function referenceStatus(sourceUrls: string[]) {
+  const connection = await getCaptureConnection();
+  const endpoint = new URL(connection.endpoint);
+  endpoint.pathname = endpoint.pathname.replace(
+    /\/capture\/?$/,
+    "/reference-status",
+  );
+  const response = await fetch(endpoint.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${connection.deviceToken}`,
+    },
+    body: JSON.stringify({ sourceUrls: sourceUrls.slice(0, 80) }),
+  });
+  const body = (await response
+    .json()
+    .catch(() => ({}))) as ReferenceStatusResponse;
+  if (!response.ok || body.ok === false) {
+    throw new Error(body.error || response.statusText);
+  }
+  return body.indexedSourceUrls ?? [];
+}
+
+async function captureLiveXLike(snapshot: XDomSnapshot) {
+  const connection = await getCaptureConnection();
+  const payloads = buildXLikePayloads([snapshot]);
+  if (payloads.length === 0) throw new Error("This X post could not be read.");
+  const results = await Promise.all(
+    payloads.map(async (payload) => ({
+      payload,
+      result: await capturePayload(connection, payload),
+    })),
+  );
+  const failed = results.find(({ result }) => !result.ok);
+  if (failed) {
+    throw new Error(
+      failed.result.error ||
+        `Capture failed with status ${failed.result.status}`,
+    );
+  }
+  const latest = results.at(-1)!;
+  await saveLastCapture(latest.payload);
+  await saveLastResult(toCaptureResult(latest.result));
+  return payloads[0]!.sourceUrl;
 }
 
 async function capturePayload(

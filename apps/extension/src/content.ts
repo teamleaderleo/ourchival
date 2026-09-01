@@ -22,8 +22,97 @@ let positionedXLikesImportId: string | undefined;
 const observedXLikesSources = new Set<string>();
 
 const xLikesChunkSize = 12;
-const xLikesIdleRoundLimit = 12;
+const xLikesIdleRoundLimit = 30;
 const xLikesRoundLimit = 5_000;
+const xKnownBoundarySize = 24;
+const archiveBadgeSelector = "[data-ourchival-archive-badge]";
+const pendingLiveLikes = new Set<string>();
+let archiveBadgeTimer: number | undefined;
+
+if (isXPage()) {
+  const observer = new MutationObserver(() => scheduleArchiveBadgeRefresh());
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+  scheduleArchiveBadgeRefresh();
+}
+
+function scheduleArchiveBadgeRefresh() {
+  if (archiveBadgeTimer !== undefined) window.clearTimeout(archiveBadgeTimer);
+  archiveBadgeTimer = window.setTimeout(() => {
+    archiveBadgeTimer = undefined;
+    void refreshArchiveBadges();
+  }, 250);
+}
+
+async function refreshArchiveBadges() {
+  const articles = Array.from(
+    document.querySelectorAll<HTMLElement>("article"),
+  );
+  const articlesBySource = new Map<string, HTMLElement[]>();
+  for (const article of articles) {
+    const parsed = parseXSnapshot(snapshotXArticle(article, undefined));
+    if (!parsed.postId || !/\/status\/\d+$/i.test(parsed.sourceUrl)) continue;
+    if (article.dataset.ourchivalSourceUrl !== parsed.sourceUrl) {
+      article.querySelector(archiveBadgeSelector)?.remove();
+      article.dataset.ourchivalSourceUrl = parsed.sourceUrl;
+      delete article.dataset.ourchivalArchiveStatus;
+    }
+    if (article.dataset.ourchivalArchiveStatus) continue;
+    const matching = articlesBySource.get(parsed.sourceUrl) ?? [];
+    matching.push(article);
+    articlesBySource.set(parsed.sourceUrl, matching);
+  }
+  if (articlesBySource.size === 0) return;
+
+  const response = (await chrome.runtime
+    .sendMessage({
+      type: "OURCHIVAL_REFERENCE_STATUS",
+      sourceUrls: Array.from(articlesBySource.keys()).slice(0, 80),
+    })
+    .catch(() => undefined)) as
+    { ok?: boolean; indexedSourceUrls?: string[] } | undefined;
+  if (!response?.ok) return;
+  const indexed = new Set(response.indexedSourceUrls ?? []);
+  for (const [sourceUrl, matchingArticles] of articlesBySource) {
+    for (const article of matchingArticles) {
+      if (article.dataset.ourchivalSourceUrl !== sourceUrl) continue;
+      const isIndexed = indexed.has(sourceUrl);
+      article.dataset.ourchivalArchiveStatus = isIndexed
+        ? "indexed"
+        : "missing";
+      if (isIndexed) ensureArchiveBadge(article);
+    }
+  }
+}
+
+function ensureArchiveBadge(article: HTMLElement) {
+  if (article.querySelector(archiveBadgeSelector)) return;
+  const anchor = article.querySelector<HTMLElement>(
+    '[data-testid="User-Name"]',
+  );
+  if (!anchor) return;
+  const badge = document.createElement("span");
+  badge.dataset.ourchivalArchiveBadge = "true";
+  badge.textContent = "✦ Archived";
+  badge.title = "This post is saved in Ourchival";
+  badge.style.cssText = [
+    "display:inline-flex",
+    "align-items:center",
+    "margin-left:6px",
+    "padding:1px 6px",
+    "border:1px solid rgba(196,181,253,.62)",
+    "border-radius:999px",
+    "background:rgba(139,92,246,.16)",
+    "color:rgb(216,205,255)",
+    "font:600 11px/16px system-ui,sans-serif",
+    "letter-spacing:.01em",
+    "white-space:nowrap",
+    "pointer-events:none",
+  ].join(";");
+  anchor.append(badge);
+}
 
 function snapshotPage(): PageSnapshot {
   const images = Array.from(document.images).map((image) => ({
@@ -155,7 +244,17 @@ document.addEventListener(
             ? { clickedAssetUrl: parsedSource.clickedAssetUrl }
             : {}),
           parsedSource,
-          rawMetadata: JSON.stringify(snapshot),
+          rawMetadata: JSON.stringify({
+            provenance: "ourchival-clipper:x-context",
+            sourceKind: "x_post",
+            ...(parsedSource.textLanguage
+              ? { textLanguage: parsedSource.textLanguage }
+              : {}),
+            ...(parsedSource.engagement
+              ? { engagement: parsedSource.engagement }
+              : {}),
+            snapshot,
+          }),
         };
         return;
       }
@@ -169,6 +268,43 @@ document.addEventListener(
         ? { clickedAssetUrl: clickedImage.currentSrc || clickedImage.src }
         : {}),
     };
+  },
+  true,
+);
+
+document.addEventListener(
+  "click",
+  (event) => {
+    if (!isXPage() || !(event.target instanceof Element)) return;
+    const likeButton = event.target.closest<HTMLElement>(
+      '[data-testid="like"]',
+    );
+    const article = likeButton?.closest<HTMLElement>("article");
+    if (!likeButton || !article) return;
+    const snapshot = snapshotXArticle(article, undefined);
+    const parsed = parseXSnapshot(snapshot);
+    if (!parsed.postId || pendingLiveLikes.has(parsed.sourceUrl)) return;
+    pendingLiveLikes.add(parsed.sourceUrl);
+    window.setTimeout(() => {
+      void (async () => {
+        try {
+          if (!article.querySelector('[data-testid="unlike"]')) return;
+          const response = (await chrome.runtime.sendMessage({
+            type: "OURCHIVAL_CAPTURE_X_LIKE",
+            snapshot,
+          })) as { ok?: boolean; sourceUrl?: string } | undefined;
+          if (!response?.ok) return;
+          article.dataset.ourchivalSourceUrl = parsed.sourceUrl;
+          article.dataset.ourchivalArchiveStatus = "indexed";
+          ensureArchiveBadge(article);
+        } catch {
+          delete article.dataset.ourchivalArchiveStatus;
+          scheduleArchiveBadgeRefresh();
+        } finally {
+          pendingLiveLikes.delete(parsed.sourceUrl);
+        }
+      })();
+    }, 450);
   },
   true,
 );
@@ -199,6 +335,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     activeXLikesImport = runXLikesImport({
       importId,
       profileUrl: String(message.profileUrl ?? ""),
+      stopAtKnownBoundary: message.stopAtKnownBoundary === true,
       resumeAfterSourceUrl:
         typeof message.resumeAfterSourceUrl === "string"
           ? message.resumeAfterSourceUrl
@@ -224,25 +361,36 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function runXLikesImport(args: {
   importId: string;
   profileUrl: string;
+  stopAtKnownBoundary?: boolean;
   resumeAfterSourceUrl?: string;
 }) {
   const seen = new Set(observedXLikesSources);
   let pending: XDomSnapshot[] = [];
   let idleRounds = 0;
+  let consecutiveKnown = 0;
+  let lastBottomSourceUrl: string | undefined;
+  let lastScrollHeight = 0;
   let lastSourceUrl = args.resumeAfterSourceUrl;
   let seekingCursor = Boolean(
     args.resumeAfterSourceUrl &&
     positionedXLikesCursor !== args.resumeAfterSourceUrl,
   );
   let stopReason:
-    "paused" | "timeline_end" | "round_limit" | "cursor_not_found" | "error" =
-    "round_limit";
+    | "paused"
+    | "known_boundary"
+    | "timeline_end"
+    | "round_limit"
+    | "cursor_not_found"
+    | "error" = "round_limit";
   let finishMessage: string | undefined;
 
   try {
     if (
       !isXPage() ||
-      !/^\/[A-Za-z0-9_]{1,15}\/likes\/?$/i.test(location.pathname)
+      !(
+        /^\/[A-Za-z0-9_]{1,15}\/likes\/?$/i.test(location.pathname) ||
+        /^\/i\/history\/likes\/?$/i.test(location.pathname)
+      )
     ) {
       throw new Error("Open your X profile Likes page before importing.");
     }
@@ -265,13 +413,18 @@ async function runXLikesImport(args: {
         break;
       }
 
-      let discoveredThisRound = 0;
+      let visibleBottomSourceUrl: string | undefined;
+      const candidates: Array<{
+        snapshot: XDomSnapshot;
+        parsed: ParsedXSource;
+      }> = [];
       const articles = Array.from(document.querySelectorAll("article"));
       for (const article of articles) {
         const snapshot = snapshotXArticle(article, undefined);
         const parsed = parseXSnapshot(snapshot);
         if (!parsed.postId || !/\/status\/\d+$/i.test(parsed.sourceUrl))
           continue;
+        visibleBottomSourceUrl = parsed.sourceUrl;
 
         if (seekingCursor) {
           if (parsed.sourceUrl === args.resumeAfterSourceUrl) {
@@ -284,10 +437,20 @@ async function runXLikesImport(args: {
         if (seen.has(parsed.sourceUrl)) continue;
         seen.add(parsed.sourceUrl);
         observedXLikesSources.add(parsed.sourceUrl);
-        pending.push(snapshot);
-        discoveredThisRound += 1;
-        lastSourceUrl = parsed.sourceUrl;
+        candidates.push({ snapshot, parsed });
+      }
 
+      const indexed = await queryIndexedSourceUrls(
+        candidates.map(({ parsed }) => parsed.sourceUrl),
+      );
+      for (const { snapshot, parsed } of candidates) {
+        lastSourceUrl = parsed.sourceUrl;
+        if (indexed.has(parsed.sourceUrl)) {
+          consecutiveKnown += 1;
+          continue;
+        }
+        consecutiveKnown = 0;
+        pending.push(snapshot);
         if (pending.length >= xLikesChunkSize) {
           await sendXLikesChunk(args, pending, lastSourceUrl);
           positionedXLikesCursor = lastSourceUrl;
@@ -295,15 +458,42 @@ async function runXLikesImport(args: {
         }
       }
 
-      idleRounds = discoveredThisRound === 0 ? idleRounds + 1 : 0;
-      if (!seekingCursor && idleRounds >= xLikesIdleRoundLimit) {
+      if (args.stopAtKnownBoundary && consecutiveKnown >= xKnownBoundarySize) {
+        stopReason = "known_boundary";
+        finishMessage = "Caught up at posts already archived in Ourchival.";
+        break;
+      }
+
+      const scrollHeight = document.documentElement.scrollHeight;
+      const stableBottom =
+        visibleBottomSourceUrl === lastBottomSourceUrl &&
+        scrollHeight === lastScrollHeight;
+      idleRounds = candidates.length === 0 && stableBottom ? idleRounds + 1 : 0;
+      lastBottomSourceUrl = visibleBottomSourceUrl;
+      lastScrollHeight = scrollHeight;
+      const nearBottom =
+        window.scrollY + window.innerHeight >= scrollHeight - 240;
+      const loading = Boolean(document.querySelector('[role="progressbar"]'));
+      if (
+        !seekingCursor &&
+        idleRounds >= xLikesIdleRoundLimit &&
+        nearBottom &&
+        !loading
+      ) {
         stopReason = "timeline_end";
         break;
       }
-      window.scrollBy({
-        top: Math.max(520, Math.floor(window.innerHeight * 0.82)),
-      });
-      await wait(700);
+      if (idleRounds >= 4) {
+        window.scrollTo({ top: scrollHeight });
+      } else {
+        window.scrollBy({
+          top: Math.max(
+            620,
+            Math.floor(window.innerHeight * (seekingCursor ? 1.2 : 0.82)),
+          ),
+        });
+      }
+      await wait(seekingCursor ? 350 : 600);
     }
 
     if (seekingCursor) {
@@ -350,6 +540,20 @@ async function sendXLikesChunk(
   }
 }
 
+async function queryIndexedSourceUrls(sourceUrls: string[]) {
+  if (sourceUrls.length === 0) return new Set<string>();
+  const response = (await chrome.runtime
+    .sendMessage({
+      type: "OURCHIVAL_REFERENCE_STATUS",
+      sourceUrls: sourceUrls.slice(0, 80),
+    })
+    .catch(() => undefined)) as
+    { ok?: boolean; indexedSourceUrls?: string[] } | undefined;
+  return response?.ok
+    ? new Set(response.indexedSourceUrls ?? [])
+    : new Set<string>();
+}
+
 function wait(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
@@ -376,18 +580,38 @@ function snapshotXArticle(
   const articleText = article
     .querySelector<HTMLElement>('[data-testid="tweetText"]')
     ?.innerText.trim();
+  const textLanguage = article
+    .querySelector<HTMLElement>('[data-testid="tweetText"]')
+    ?.getAttribute("lang")
+    ?.trim();
   const timestamp =
     article.querySelector<HTMLTimeElement>("time[datetime]")?.dateTime;
+  const engagementLabels = Array.from(
+    article.querySelectorAll<HTMLElement>("[aria-label]"),
+  )
+    .map((element) => element.getAttribute("aria-label")?.trim())
+    .filter((label): label is string =>
+      Boolean(
+        label &&
+        /\d[\d,.]*\s*[KMB]?\s+(?:repl(?:y|ies)|reposts?|retweets?|quotes?|likes?|bookmarks?|views?)\b/i.test(
+          label,
+        ),
+      ),
+    )
+    .filter((label, index, labels) => labels.indexOf(label) === index)
+    .slice(0, 24);
 
   return {
     pageUrl: location.href,
     pageTitle: document.title,
     ...(articleText ? { articleText } : {}),
+    ...(textLanguage ? { textLanguage } : {}),
     ...(userNameText ? { userNameText } : {}),
     ...(clickedImage
       ? { clickedImageUrl: clickedImage.currentSrc || clickedImage.src }
       : {}),
     ...(timestamp ? { timestamp } : {}),
+    ...(engagementLabels.length > 0 ? { engagementLabels } : {}),
     links,
     images,
   };

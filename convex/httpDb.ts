@@ -8,7 +8,7 @@ import {
   sourceSnapshotPayload,
 } from "./lib/referenceCatalog";
 import { normalizeSourceUrl } from "./lib/urls";
-import { updateReferenceTags } from "./lib/tags";
+import { updateAssetTags, updateReferenceTags } from "./lib/tags";
 
 export const initializeReferenceStats = internalMutation({
   args: {},
@@ -18,6 +18,23 @@ export const initializeReferenceStats = internalMutation({
 export const listReferences = internalQuery({
   args: { url: v.string() },
   handler: async (ctx, args) => await listReferencePage(ctx, args.url),
+});
+
+export const referenceStatuses = internalQuery({
+  args: { sourceUrls: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const indexedSourceUrls: string[] = [];
+    for (const sourceUrl of args.sourceUrls) {
+      const matches = await ctx.db
+        .query("references")
+        .withIndex("by_source_url", (q) => q.eq("sourceUrl", sourceUrl))
+        .collect();
+      if (matches.some((reference) => !reference.deleted)) {
+        indexedSourceUrls.push(sourceUrl);
+      }
+    }
+    return indexedSourceUrls;
+  },
 });
 
 export const createPairingGrant = internalMutation({
@@ -269,6 +286,36 @@ export const updateReference = internalMutation({
   },
 });
 
+export const updateAssetMetadata = internalMutation({
+  args: {
+    assetId: v.string(),
+    patch: v.any(),
+    addTagNames: v.array(v.string()),
+    removeTagIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const assetId = ctx.db.normalizeId("assets", args.assetId);
+    if (!assetId) return null;
+    const asset = await ctx.db.get(assetId);
+    if (!asset) return null;
+    const patch = args.patch as Record<string, unknown>;
+    if (Object.keys(patch).length > 0) await ctx.db.patch(assetId, patch);
+    const tags =
+      args.addTagNames.length > 0 || args.removeTagIds.length > 0
+        ? await updateAssetTags(ctx, assetId, {
+            addNames: args.addTagNames,
+            removeIds: args.removeTagIds,
+          })
+        : await Promise.all(
+            (asset.tagIds ?? []).map((tagId: any) => ctx.db.get(tagId)),
+          );
+    return {
+      asset: { ...asset, ...patch },
+      tags: tags.filter(Boolean),
+    };
+  },
+});
+
 export const deleteReference = internalMutation({
   args: { referenceId: v.string(), deletedAt: v.number() },
   handler: async (ctx, args) => {
@@ -354,7 +401,7 @@ export const saveDuplicateCapture = internalMutation({
     };
 
     let assetId = null;
-    if (args.assetUrl && args.storedAsset) {
+    if (args.assetUrl) {
       const matchingAssets = await ctx.db
         .query("assets")
         .withIndex("by_reference", (q) => q.eq("referenceId", referenceId))
@@ -363,13 +410,29 @@ export const saveDuplicateCapture = internalMutation({
         (asset) => asset.originalUrl === args.assetUrl,
       );
       assetId = existingAsset?._id ?? null;
-      if (!assetId) {
+      if (!assetId && args.storedAsset) {
         assetId = await insertAsset(
           ctx,
           referenceId,
           args.assetUrl,
           args.storedAsset,
+          {
+            sourceIndex: details.assetIndex,
+            sourceCount: details.assetCount,
+            altText: details.altText,
+          },
         );
+      } else if (assetId) {
+        await ctx.db.patch(assetId, {
+          ...(typeof details.assetIndex === "number"
+            ? { sourceIndex: details.assetIndex }
+            : {}),
+          ...(typeof details.assetCount === "number"
+            ? { sourceCount: details.assetCount }
+            : {}),
+          ...(details.altText ? { altText: details.altText } : {}),
+          ...(existingAsset?.tagIds ? {} : { tagIds: [] }),
+        });
       }
       if (body.kind === "image" && isLinkKind(reference.kind)) {
         referencePatch.kind = "image";
@@ -428,6 +491,7 @@ export const createCapture = internalMutation({
     tagNames: v.array(v.string()),
     assetUrl: v.optional(v.string()),
     storedAsset: v.optional(v.any()),
+    assetDetails: v.optional(v.any()),
     snapshot: v.any(),
   },
   handler: async (ctx, args) => {
@@ -441,7 +505,13 @@ export const createCapture = internalMutation({
     await applyReferenceStatsDelta(ctx, null, insertedReference);
     const assetId =
       args.assetUrl && args.storedAsset
-        ? await insertAsset(ctx, referenceId, args.assetUrl, args.storedAsset)
+        ? await insertAsset(
+            ctx,
+            referenceId,
+            args.assetUrl,
+            args.storedAsset,
+            args.assetDetails as Record<string, any> | undefined,
+          )
         : null;
     await insertSourceSnapshot(ctx, {
       referenceId,
@@ -508,11 +578,24 @@ async function insertAsset(
   referenceId: any,
   assetUrl: string,
   storedAsset: Record<string, any>,
+  details?: {
+    sourceIndex?: number;
+    sourceCount?: number;
+    altText?: string;
+  },
 ) {
   return await ctx.db.insert("assets", {
     referenceId,
     storageProvider: storedAsset.storageProvider,
     originalUrl: assetUrl,
+    ...(typeof details?.sourceIndex === "number"
+      ? { sourceIndex: details.sourceIndex }
+      : {}),
+    ...(typeof details?.sourceCount === "number"
+      ? { sourceCount: details.sourceCount }
+      : {}),
+    ...(details?.altText ? { altText: details.altText } : {}),
+    tagIds: [],
     ...(storedAsset.storageId
       ? { originalStorageId: storedAsset.storageId }
       : {}),

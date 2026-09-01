@@ -2,9 +2,12 @@
 
 ## Decision
 
-Keep the live Ourchival catalog in Convex for now. Keep Google Drive as the
-portable home for originals. Do not move the whole archive merely to gain a
-different object store.
+Keep the live Ourchival catalog in Convex only as the current complete adapter.
+Do not let Convex own Ourchival login or remain the sole availability path.
+Keep Google Drive as the portable home for originals. Add the local-first vault
+from [LOCAL_FIRST_VAULT.md](./LOCAL_FIRST_VAULT.md), then move the web app and
+Clipper behind the provider-neutral archive contract before selecting another
+cloud catalog.
 
 Build two provider-neutral seams first:
 
@@ -14,13 +17,13 @@ Build two provider-neutral seams first:
 
 This separates three jobs that should not be forced into one storage product:
 
-| Job | Current owner | Direction |
-| --- | --- | --- |
-| Mutable catalog, review state, sessions | Convex | Keep until measured limits justify a catalog migration |
-| User-owned original media | Google Drive | Keep as the portable default |
-| Generated derivatives | Convex Storage | Keep; make the provider replaceable |
-| Raw import payloads and immutable snapshots | None | Add an object-store adapter when persistence is needed |
-| Agent filtering and retrieval | Preference JSON only | Add compact query tools plus portable catalog snapshots |
+| Job                                         | Current owner        | Direction                                               |
+| ------------------------------------------- | -------------------- | ------------------------------------------------------- |
+| Mutable catalog, review state, sessions     | Convex               | Keep until measured limits justify a catalog migration  |
+| User-owned original media                   | Google Drive         | Keep as the portable default                            |
+| Generated derivatives                       | Convex Storage       | Keep; make the provider replaceable                     |
+| Raw import payloads and immutable snapshots | None                 | Add an object-store adapter when persistence is needed  |
+| Agent filtering and retrieval               | Preference JSON only | Add compact query tools plus portable catalog snapshots |
 
 The archive source of truth remains Ourchival. Agent-facing files and search
 indexes are projections that can be rebuilt.
@@ -134,12 +137,12 @@ Provide both an interactive path and a bulk artifact path.
 
 An Ourchival MCP/ChatGPT app should start with four semantically dense tools:
 
-| Tool | Purpose |
-| --- | --- |
-| `find` | Search and filter references; returns projected rows and a cursor |
-| `get` | Fetch selected fields for exact reference IDs |
-| `imports` | List import sessions and aggregate receipts |
-| `export` | Materialize a filtered immutable snapshot and return its manifest |
+| Tool      | Purpose                                                           |
+| --------- | ----------------------------------------------------------------- |
+| `find`    | Search and filter references; returns projected rows and a cursor |
+| `get`     | Fetch selected fields for exact reference IDs                     |
+| `imports` | List import sessions and aggregate receipts                       |
+| `export`  | Materialize a filtered immutable snapshot and return its manifest |
 
 `find` defaults to 25 rows and caps at 100. Callers choose fields. Results omit
 empty fields and repeated prose. Filters cover triage state, import session,
