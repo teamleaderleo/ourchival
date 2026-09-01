@@ -4,6 +4,7 @@ import {
   type XDomSnapshot,
 } from "@ourchival/parsers";
 import type { PageSnapshot } from "@ourchival/shared";
+import { xTimelineAuditChannel } from "./xTimelineAudit";
 
 type ContextCapture = {
   pageTitle: string;
@@ -20,6 +21,9 @@ let stopXLikesImport = false;
 let positionedXLikesCursor: string | undefined;
 let positionedXLikesImportId: string | undefined;
 const observedXLikesSources = new Set<string>();
+const networkXLikesPostIds = new Set<string>();
+const unparseableXLikesArticles = new Set<string>();
+let networkXLikesPages = 0;
 
 const xLikesChunkSize = 24;
 const xLikesIdleRoundLimit = 80;
@@ -28,6 +32,24 @@ const xKnownBoundarySize = 24;
 const archiveBadgeSelector = "[data-ourchival-archive-badge]";
 const pendingLiveLikes = new Set<string>();
 let archiveBadgeTimer: number | undefined;
+
+window.addEventListener("message", (event) => {
+  if (
+    event.source !== window ||
+    event.origin !== location.origin ||
+    event.data?.channel !== xTimelineAuditChannel ||
+    event.data?.kind !== "timeline_page" ||
+    !Array.isArray(event.data.postIds)
+  ) {
+    return;
+  }
+  networkXLikesPages += 1;
+  for (const postId of event.data.postIds.slice(0, 200)) {
+    if (typeof postId === "string" && /^\d+$/.test(postId)) {
+      networkXLikesPostIds.add(postId);
+    }
+  }
+});
 
 if (isXPage()) {
   const observer = new MutationObserver(() => scheduleArchiveBadgeRefresh());
@@ -331,6 +353,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       positionedXLikesImportId = importId;
       positionedXLikesCursor = undefined;
       observedXLikesSources.clear();
+      networkXLikesPostIds.clear();
+      networkXLikesPages = 0;
+      unparseableXLikesArticles.clear();
     }
     activeXLikesImport = runXLikesImport({
       importId,
@@ -426,9 +451,14 @@ async function runXLikesImport(args: {
       for (const article of articles) {
         const snapshot = snapshotXArticle(article, undefined);
         const parsed = parseXSnapshot(snapshot);
-        if (!parsed.postId || !/\/status\/\d+$/i.test(parsed.sourceUrl))
+        if (!parsed.postId || !/\/status\/\d+$/i.test(parsed.sourceUrl)) {
+          if (article.querySelector('[data-testid="User-Name"]')) {
+            unparseableXLikesArticles.add(articleFingerprint(article));
+          }
           continue;
+        }
         visibleBottomSourceUrl = parsed.sourceUrl;
+        observedXLikesSources.add(parsed.sourceUrl);
 
         if (seekingCursor) {
           if (parsed.sourceUrl === args.resumeAfterSourceUrl) {
@@ -440,7 +470,6 @@ async function runXLikesImport(args: {
         if (parsed.sourceUrl === args.resumeAfterSourceUrl) continue;
         if (seen.has(parsed.sourceUrl)) continue;
         seen.add(parsed.sourceUrl);
-        observedXLikesSources.add(parsed.sourceUrl);
         candidates.push({ snapshot, parsed });
       }
 
@@ -534,8 +563,27 @@ async function runXLikesImport(args: {
       stopReason,
       ...(lastSourceUrl ? { lastSourceUrl } : {}),
       ...(finishMessage ? { message: finishMessage } : {}),
+      audit: {
+        networkPages: networkXLikesPages,
+        networkPostIds: Array.from(networkXLikesPostIds).slice(0, 20_000),
+        observedSourceUrls: Array.from(observedXLikesSources).slice(0, 20_000),
+        unparseableArticles: unparseableXLikesArticles.size,
+        truncated:
+          networkXLikesPostIds.size > 20_000 ||
+          observedXLikesSources.size > 20_000,
+      },
     });
   }
+}
+
+function articleFingerprint(article: Element) {
+  const value = `${article.textContent ?? ""}|${article.querySelector("a")?.getAttribute("href") ?? ""}`;
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 async function sendXLikesChunk(

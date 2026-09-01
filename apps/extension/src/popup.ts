@@ -462,6 +462,19 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
   const message = state.message
     ? `<p class="hint">${escapeHtml(state.message)}</p>`
     : "";
+  const audit = state.audit
+    ? `<p class="hint"><strong>${
+        state.audit.status === "verified"
+          ? "Receipt verified"
+          : state.audit.status === "gaps"
+            ? "Receipt has gaps"
+            : "Partial receipt"
+      }</strong> · ${state.audit.networkPosts} from X · ${state.audit.observedPosts} rendered · ${state.audit.vaultChecked ? state.audit.vaultPosts : "vault check unavailable"}${
+        state.audit.networkMissingInDom || state.audit.domMissingInVault
+          ? ` · ${state.audit.networkMissingInDom} render gaps · ${state.audit.domMissingInVault} archive gaps`
+          : ""
+      }${state.audit.unparseableArticles ? ` · ${state.audit.unparseableArticles} unparsed` : ""}</p>`
+    : "";
   return `
     <div class="batch-counts x-likes-progress">
       <span><strong>${state.discoveredPosts}</strong> posts</span>
@@ -472,6 +485,7 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
       ${state.failed > 0 ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
     </div>
     <p class="hint"><strong>${status}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"}</p>
+    ${audit}
     ${message}
   `;
 }

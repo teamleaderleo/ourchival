@@ -18,6 +18,7 @@ import {
   type BatchCaptureSource,
   type BatchCaptureState,
   type CaptureResult,
+  type XLikesAuditReceipt,
   type XLikesImportState,
   type XLikesImportStopReason,
 } from "./storage";
@@ -57,6 +58,14 @@ type ReferenceStatusResponse = {
   indexedSourceUrls?: string[];
 };
 
+type XLikesAuditInput = {
+  networkPages?: number;
+  networkPostIds?: string[];
+  observedSourceUrls?: string[];
+  unparseableArticles?: number;
+  truncated?: boolean;
+};
+
 type ExtensionMessage =
   | { type: "OURCHIVAL_CAPTURE_TABS"; mode: TabCaptureMode }
   | {
@@ -88,6 +97,7 @@ type ExtensionMessage =
       stopReason: XLikesImportStopReason;
       lastSourceUrl?: string;
       message?: string;
+      audit?: XLikesAuditInput;
     };
 
 type CaptureConnection = {
@@ -485,6 +495,7 @@ async function finishXLikesImport(
   );
   const now = new Date().toISOString();
   const exhausted = message.stopReason === "known_boundary";
+  const audit = await reconcileXLikesAudit(message.audit);
   const next: XLikesImportState = {
     ...state,
     running: false,
@@ -493,11 +504,106 @@ async function finishXLikesImport(
     ...(exhausted ? { completedAt: now } : {}),
     ...(message.lastSourceUrl ? { lastSourceUrl: message.lastSourceUrl } : {}),
     stopReason: message.stopReason,
+    audit,
     ...(message.message ? { message: message.message } : {}),
   };
   await saveXLikesImportState(next);
   await reportXLikesSession(next, exhausted ? "completed" : "interrupted");
   return next;
+}
+
+async function reconcileXLikesAudit(
+  input: XLikesAuditInput | undefined,
+): Promise<XLikesAuditReceipt> {
+  const networkIds = new Set(
+    (input?.networkPostIds ?? [])
+      .filter(
+        (value): value is string =>
+          typeof value === "string" && /^\d+$/.test(value),
+      )
+      .slice(0, 20_000),
+  );
+  const observedUrls = Array.from(
+    new Set(
+      (input?.observedSourceUrls ?? [])
+        .map(normalizeAuditedXSourceUrl)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ).slice(0, 20_000);
+  const observedIds = new Set(
+    observedUrls
+      .map((sourceUrl) => sourceUrl.match(/\/status\/(\d+)$/)?.[1])
+      .filter((value): value is string => Boolean(value)),
+  );
+  const networkGaps = Array.from(networkIds).filter(
+    (postId) => !observedIds.has(postId),
+  );
+
+  let indexed = new Set<string>();
+  let vaultChecked = true;
+  try {
+    indexed = await referenceStatusBatches(observedUrls);
+  } catch {
+    vaultChecked = false;
+  }
+  const vaultGaps = vaultChecked
+    ? observedUrls.filter((sourceUrl) => !indexed.has(sourceUrl))
+    : [];
+  const unparseableArticles = Math.max(
+    0,
+    Math.floor(input?.unparseableArticles ?? 0),
+  );
+  const hasGaps =
+    networkGaps.length > 0 || vaultGaps.length > 0 || unparseableArticles > 0;
+  const partial =
+    !vaultChecked ||
+    Boolean(input?.truncated) ||
+    (input?.networkPages ?? 0) === 0 ||
+    networkIds.size < observedIds.size;
+
+  return {
+    status: hasGaps ? "gaps" : partial ? "partial" : "verified",
+    networkPages: Math.max(0, Math.floor(input?.networkPages ?? 0)),
+    networkPosts: networkIds.size,
+    observedPosts: observedUrls.length,
+    vaultPosts: vaultChecked ? indexed.size : 0,
+    vaultChecked,
+    unparseableArticles,
+    networkMissingInDom: networkGaps.length,
+    domMissingInVault: vaultGaps.length,
+    networkGapSamples: networkGaps.slice(0, 25),
+    vaultGapSamples: vaultGaps.slice(0, 25),
+    reconciledAt: new Date().toISOString(),
+  };
+}
+
+async function referenceStatusBatches(sourceUrls: string[]) {
+  const indexed = new Set<string>();
+  const batches: string[][] = [];
+  for (let index = 0; index < sourceUrls.length; index += 80) {
+    batches.push(sourceUrls.slice(index, index + 80));
+  }
+  for (let index = 0; index < batches.length; index += 6) {
+    const results = await Promise.all(
+      batches.slice(index, index + 6).map(referenceStatus),
+    );
+    for (const sourceUrl of results.flat()) indexed.add(sourceUrl);
+  }
+  return indexed;
+}
+
+function normalizeAuditedXSourceUrl(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    const match = url.pathname.match(/^\/([^/]+)\/status\/(\d+)$/i);
+    if (!/(^|\.)x\.com$/i.test(url.hostname) || !match?.[1] || !match[2]) {
+      return undefined;
+    }
+    return `https://x.com/${encodeURIComponent(decodeURIComponent(match[1]))}/status/${match[2]}`;
+  } catch {
+    return undefined;
+  }
 }
 
 async function reportXLikesSession(

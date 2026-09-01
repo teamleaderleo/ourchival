@@ -35,6 +35,7 @@ export default defineConfig(({ mode }) => {
         input: {
           background: "src/background.ts",
           popup: "src/popup.ts",
+          "x-timeline-main": "src/xTimelineMain.ts",
         },
         output: {
           entryFileNames: "[name].js",

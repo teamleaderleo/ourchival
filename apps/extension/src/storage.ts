@@ -95,6 +95,22 @@ export type XLikesImportState = {
   lastPublishedAt?: string;
   stopReason?: XLikesImportStopReason;
   message?: string;
+  audit?: XLikesAuditReceipt;
+};
+
+export type XLikesAuditReceipt = {
+  status: "verified" | "gaps" | "partial";
+  networkPages: number;
+  networkPosts: number;
+  observedPosts: number;
+  vaultPosts: number;
+  vaultChecked: boolean;
+  unparseableArticles: number;
+  networkMissingInDom: number;
+  domMissingInVault: number;
+  networkGapSamples: string[];
+  vaultGapSamples: string[];
+  reconciledAt: string;
 };
 
 export type ExtensionSettings = {
