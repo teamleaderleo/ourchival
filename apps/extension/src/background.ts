@@ -9,6 +9,7 @@ import {
   detectSourceIntakeContext,
   reconcilePinterestQueue,
   sourceIntakePayload,
+  sourceIntakeItemKey,
   type SourceIntakeChunk,
 } from "./sourceIntake";
 import {
@@ -699,15 +700,19 @@ async function acceptSourceIntakeChunk(
 
   const seen = new Set(state.seenProviderIds);
   const fresh = chunk.items.filter((item) => {
+    const seenKey = item
+      ? sourceIntakeItemKey(state.provider, item)
+      : undefined;
     if (
       !item ||
       !/^\d+$/.test(item.providerId) ||
       !isCapturableUrl(item.sourceUrl) ||
-      seen.has(item.providerId)
+      !seenKey ||
+      seen.has(seenKey)
     ) {
       return false;
     }
-    seen.add(item.providerId);
+    seen.add(seenKey);
     return true;
   });
   const firstOrdinal = state.observed;

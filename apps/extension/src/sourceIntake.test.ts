@@ -3,6 +3,7 @@ import {
   detectSourceIntakeContext,
   reconcilePinterestQueue,
   selectSourceIntakeState,
+  sourceIntakeItemKey,
   sourceIntakePayload,
 } from "./sourceIntake";
 
@@ -85,6 +86,32 @@ describe("reconcilePinterestQueue", () => {
       pendingUrls: [discovered[1]],
       nextUrl: discovered[1],
     });
+  });
+});
+
+describe("sourceIntakeItemKey", () => {
+  it("deduplicates Pinterest within a board but keeps cross-board provenance", () => {
+    const item = {
+      providerId: "987",
+      sourceUrl: "https://ca.pinterest.com/pin/987/",
+    };
+    expect(
+      sourceIntakeItemKey("pinterest_board", {
+        ...item,
+        metadata: {
+          provenance: { containerKey: "teamleaderleo/anime-art" },
+        },
+      }),
+    ).toBe("teamleaderleo/anime-art:987");
+    expect(
+      sourceIntakeItemKey("pinterest_board", {
+        ...item,
+        metadata: {
+          provenance: { containerKey: "teamleaderleo/style" },
+        },
+      }),
+    ).toBe("teamleaderleo/style:987");
+    expect(sourceIntakeItemKey("pixiv_bookmarks", item)).toBe("987");
   });
 });
 
@@ -182,5 +209,41 @@ describe("sourceIntakePayload", () => {
     );
     expect(payload.previewImageUrl).toBeUndefined();
     expect(payload.tags).toContain("Sealed");
+  });
+
+  it("keeps Pinterest board membership as structured provenance", () => {
+    const payload = sourceIntakePayload(
+      {
+        providerId: "987",
+        sourceUrl: "https://ca.pinterest.com/pin/987/",
+        metadata: {
+          provenance: {
+            platform: "pinterest",
+            containerType: "board",
+            containerKey: "teamleaderleo/anime-art",
+            containerUrl: "https://ca.pinterest.com/teamleaderleo/anime-art/",
+            containerName: "Anime art",
+          },
+        },
+      },
+      {
+        provider: "pinterest_board",
+        importId: "source-import:pinterest",
+        ordinal: 18,
+        sensitiveDefault: false,
+      },
+    );
+    expect(JSON.parse(payload.rawMetadata ?? "{}")).toMatchObject({
+      providerId: "987",
+      ordinal: 18,
+      source: {
+        provenance: {
+          platform: "pinterest",
+          containerType: "board",
+          containerKey: "teamleaderleo/anime-art",
+          containerName: "Anime art",
+        },
+      },
+    });
   });
 });

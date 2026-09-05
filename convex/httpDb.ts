@@ -17,6 +17,7 @@ import { detectPlatform } from "./lib/platform";
 import { normalizeSourceUrl } from "./lib/urls";
 import { updateAssetTags, updateReferenceTags } from "./lib/tags";
 import { scheduleReferenceSearch } from "./lib/searchIndex";
+import { recordReferenceOrigin } from "./lib/referenceOrigin";
 
 export const initializeReferenceStats = internalMutation({
   args: {},
@@ -495,6 +496,15 @@ export const saveDuplicateCapture = internalMutation({
       });
     }
 
+    await recordReferenceOrigin(ctx, {
+      referenceId,
+      rawMetadata: details.rawMetadata,
+      ...(details.captureSessionId
+        ? { captureSessionId: details.captureSessionId }
+        : {}),
+      observedAt: Date.now(),
+    });
+
     await scheduleReferenceSearch(ctx, referenceId);
     return { reference: { ...reference, ...referencePatch }, assetId };
   },
@@ -534,6 +544,18 @@ async function createCaptureRecord(ctx: MutationCtx, args: any) {
   await insertSourceSnapshot(ctx, {
     referenceId,
     ...(args.snapshot as Record<string, any>),
+  });
+  const captureMetadata = (args.snapshot as Record<string, any>)?.jsonMetadata;
+  await recordReferenceOrigin(ctx, {
+    referenceId,
+    rawMetadata:
+      captureMetadata && typeof captureMetadata === "object"
+        ? captureMetadata.rawMetadata
+        : undefined,
+    ...(args.reference.captureSessionId
+      ? { captureSessionId: args.reference.captureSessionId }
+      : {}),
+    observedAt: args.reference.capturedAt ?? Date.now(),
   });
   return { referenceId, assetId };
 }

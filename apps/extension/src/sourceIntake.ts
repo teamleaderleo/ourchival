@@ -221,6 +221,16 @@ export function sourceIntakePayload(
   };
 }
 
+export function sourceIntakeItemKey(
+  provider: SourceIntakeProvider,
+  item: SourceIntakeItem,
+) {
+  if (provider !== "pinterest_board") return item.providerId;
+  const provenance = objectValue(item.metadata?.provenance);
+  const containerKey = stringValue(provenance?.containerKey);
+  return containerKey ? `${containerKey}:${item.providerId}` : item.providerId;
+}
+
 function positiveInteger(value: string | null) {
   if (!value || !/^\d+$/.test(value)) return undefined;
   const parsed = Number(value);
@@ -229,4 +239,14 @@ function positiveInteger(value: string | null) {
 
 function cleanMode(value: string | null) {
   return value && /^[a-z_]{1,24}$/i.test(value) ? value : "all";
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
