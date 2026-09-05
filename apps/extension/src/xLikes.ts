@@ -7,7 +7,20 @@ export type XLikeCaptureOutcome = {
   alreadySaved?: boolean;
   assetId?: string | null;
   duplicateReason?: "asset_url" | "canonical_url" | "source_url";
+  storageProvider?: "google_drive" | "convex" | "linked";
+  storageStatus?: string;
+  storedBytes?: number;
 };
+
+export function classifyAssetStorage(result: XLikeCaptureOutcome) {
+  const provider =
+    result.storageProvider ?? inferStorageProvider(result.storageStatus);
+  if (provider === "google_drive" || provider === "convex") {
+    return "stored" as const;
+  }
+  if (provider === "linked") return "linked" as const;
+  return undefined;
+}
 
 export function classifyXLikeCapture(
   payload: CapturePayload,
@@ -22,6 +35,22 @@ export function classifyXLikeCapture(
     return "attached" as const;
   }
   return "duplicate" as const;
+}
+
+function inferStorageProvider(status: string | undefined) {
+  const normalized = status?.toLowerCase();
+  if (!normalized || normalized === "already saved") return undefined;
+  if (normalized.includes("google drive")) return "google_drive" as const;
+  if (normalized.includes("convex storage")) return "convex" as const;
+  if (
+    normalized.includes("fetch failed") ||
+    normalized.includes("too large") ||
+    normalized.includes("linked") ||
+    normalized.includes("remote asset")
+  ) {
+    return "linked" as const;
+  }
+  return undefined;
 }
 
 export function isXLikesUrl(value: string | undefined) {

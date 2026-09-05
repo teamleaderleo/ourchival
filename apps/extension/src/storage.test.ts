@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeCaptureEndpoint,
+  observationLedgerReceipt,
   normalizePairingEndpoint,
   normalizeSiteRoot,
   normalizeXLikesImportState,
@@ -92,6 +93,32 @@ describe("normalizeXLikesImportState", () => {
       exhausted: false,
       completedAt: undefined,
       stopReason: "stalled",
+    });
+  });
+});
+
+describe("observationLedgerReceipt", () => {
+  it("preserves a legacy baseline while live observations advance", () => {
+    expect(
+      observationLedgerReceipt({
+        importId: "likes-1",
+        baselineDiscovered: 100,
+        baselineRendered: 98,
+        baselineArchived: 97,
+        discoveredIds: ["101", "102"],
+        renderedIds: ["101"],
+        archivedIds: ["101"],
+        failedIds: [],
+        sourceUrls: { "101": "https://x.com/artist/status/101" },
+        updatedAt: "2026-09-05T00:00:00.000Z",
+      }),
+    ).toMatchObject({
+      durable: true,
+      networkPosts: 102,
+      observedPosts: 99,
+      vaultPosts: 98,
+      networkMissingInDom: 3,
+      domMissingInVault: 1,
     });
   });
 });

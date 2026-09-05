@@ -1,7 +1,11 @@
 import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
-import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
+import {
+  fetchDriveFile,
+  uploadBlobToDrive,
+  uploadStreamToDrive,
+} from "./lib/drive";
 import {
   fetchPublicResponse,
   fetchLinkMetadata,
@@ -22,11 +26,13 @@ import {
   requireOwnerAccess,
   type AccessPrincipal,
 } from "./lib/privateAccess";
+import { readLinkBatch } from "./lib/linkIntake";
 import { normalizeSourceUrl } from "./lib/urls";
 
 const http = httpRouter();
-const maxRemoteAssetBytes = 25 * 1024 * 1024;
+const maxBufferedRemoteAssetBytes = 25 * 1024 * 1024;
 const remoteAssetTimeoutMs = 15_000;
+const remoteAssetStreamTimeoutMs = 8 * 60 * 1000;
 const pairingLifetimeMs = 10 * 60 * 1000;
 
 type CaptureBody = {
@@ -75,6 +81,23 @@ type CaptureSessionBody = {
   completedAt?: string;
 };
 
+type CaptureObservationBody = {
+  sessionKey?: string;
+  source?: string;
+  observations?: Array<{
+    providerId?: string;
+    sourceUrl?: string;
+    stage?: "discovered" | "rendered" | "archived" | "failed";
+    error?: string;
+    observedAt?: string;
+  }>;
+};
+
+type CaptureObservationGapsBody = {
+  sessionKey?: string;
+  limit?: number;
+};
+
 type UpdateReferenceBody = {
   title?: string;
   notes?: string;
@@ -115,12 +138,16 @@ type DuplicateCapture = {
   reference: any;
   assetId: any | null;
   reason: "asset_url" | "canonical_url" | "source_url";
+  storedAsset?: StoredRemoteAsset;
 };
 
 for (const path of [
   "/auth-check",
   "/capture",
   "/capture-session",
+  "/capture-observations",
+  "/capture-observation-gaps",
+  "/capture-links",
   "/references",
   "/reference-status",
   "/reference",
@@ -597,6 +624,138 @@ http.route({
 });
 
 http.route({
+  path: "/capture-links",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+    try {
+      const body = await readLinkBatch(request);
+      const receipt = await ctx.runMutation(internal.httpDb.importLinkBatch, {
+        batch: body,
+      });
+      return jsonResponse(request, receipt);
+    } catch {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error:
+            "Batch was not acknowledged. Check the input limits, then submit the same list to resume.",
+        },
+        400,
+      );
+    }
+  }),
+});
+
+http.route({
+  path: "/capture-observation-gaps",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+    const body = (await readJson(request)) as
+      CaptureObservationGapsBody | undefined;
+    const sessionKey = cleanString(body?.sessionKey);
+    if (!sessionKey || sessionKey.length > 160) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "sessionKey is required" },
+        400,
+      );
+    }
+    const gaps = await ctx.runQuery(internal.captureObservations.listGaps, {
+      sessionKey,
+      limit: Math.min(400, Math.max(1, Math.floor(body?.limit ?? 200))),
+    });
+    return jsonResponse(request, { ok: true, gaps });
+  }),
+});
+
+http.route({
+  path: "/capture-observations",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+
+    const body = (await readJson(request)) as
+      CaptureObservationBody | undefined;
+    const sessionKey = cleanString(body?.sessionKey);
+    const source = cleanString(body?.source);
+    if (!sessionKey || !source || !Array.isArray(body?.observations)) {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error: "sessionKey, source, and observations are required",
+        },
+        400,
+      );
+    }
+    if (
+      sessionKey.length > 160 ||
+      source.length > 64 ||
+      body.observations.length === 0 ||
+      body.observations.length > 200
+    ) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Invalid observation batch" },
+        400,
+      );
+    }
+
+    const observations = body.observations.flatMap((item) => {
+      const providerId = cleanString(item.providerId);
+      const sourceUrl = cleanUrl(item.sourceUrl);
+      const status =
+        item.stage === "discovered" ||
+        item.stage === "rendered" ||
+        item.stage === "archived" ||
+        item.stage === "failed"
+          ? item.stage
+          : undefined;
+      if (!providerId || providerId.length > 96 || !status) return [];
+      const error = cleanString(item.error);
+      return [
+        {
+          providerId,
+          ...(sourceUrl ? { sourceUrl } : {}),
+          status,
+          ...(error ? { error: error.slice(0, 320) } : {}),
+          observedAt: parseOptionalDate(item.observedAt) ?? Date.now(),
+        },
+      ];
+    });
+    if (observations.length !== body.observations.length) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Invalid observation" },
+        400,
+      );
+    }
+    const receipt = await ctx.runMutation(internal.captureObservations.record, {
+      sessionKey,
+      source,
+      observations,
+      updatedAt: Date.now(),
+    });
+    return jsonResponse(request, { ok: true, receipt });
+  }),
+});
+
+http.route({
   path: "/capture-session",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
@@ -878,6 +1037,12 @@ http.route({
         referenceId: created.referenceId,
         assetId: created.assetId,
         storageStatus,
+        ...(storedAsset
+          ? {
+              storageProvider: storedAsset.storageProvider,
+              storedBytes: storedAsset.fileSize,
+            }
+          : {}),
       },
       201,
     );
@@ -1009,6 +1174,7 @@ async function persistDuplicateCapture(
         reference: saved.reference,
         assetId: saved.assetId,
         reason: duplicate.reason,
+        ...(storedAsset ? { storedAsset } : {}),
       }
     : null;
 }
@@ -1078,7 +1244,13 @@ function duplicateResponse(request: Request, duplicate: DuplicateCapture) {
     duplicateReason: duplicate.reason,
     referenceId: duplicate.reference._id,
     assetId: duplicate.assetId,
-    storageStatus: "already saved",
+    storageStatus: duplicate.storedAsset?.status ?? "already saved",
+    ...(duplicate.storedAsset
+      ? {
+          storageProvider: duplicate.storedAsset.storageProvider,
+          storedBytes: duplicate.storedAsset.fileSize,
+        }
+      : {}),
     existingReference: {
       title: duplicate.reference.title,
       sourceUrl: duplicate.reference.sourceUrl,
@@ -1186,7 +1358,7 @@ async function fetchAndStoreRemoteAsset(
   args: { assetUrl: string; sourceUrl: string; title?: string },
 ): Promise<StoredRemoteAsset> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), remoteAssetTimeoutMs);
+  let timer = setTimeout(() => controller.abort(), remoteAssetTimeoutMs);
   try {
     const { response } = await fetchPublicResponse(args.assetUrl, {
       signal: controller.signal,
@@ -1204,9 +1376,6 @@ async function fetchAndStoreRemoteAsset(
 
     const mimeType = response.headers.get("Content-Type") ?? undefined;
     const contentLength = Number(response.headers.get("Content-Length") ?? 0);
-    if (contentLength > maxRemoteAssetBytes) {
-      return { status: "remote asset too large", storageProvider: "linked" };
-    }
     if (!mimeType?.toLowerCase().startsWith("image/")) {
       return {
         status: `remote asset is ${mimeType ?? "an unknown type"}`,
@@ -1214,9 +1383,49 @@ async function fetchAndStoreRemoteAsset(
       };
     }
 
-    const blob = await readBoundedBlob(response, mimeType, maxRemoteAssetBytes);
+    if (
+      contentLength > maxBufferedRemoteAssetBytes &&
+      response.body
+    ) {
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => controller.abort(),
+        remoteAssetStreamTimeoutMs,
+      );
+      const driveUpload = await uploadStreamToDrive({
+        stream: response.body,
+        size: contentLength,
+        sourceUrl: args.sourceUrl,
+        title: args.title,
+        mimeType,
+      });
+      if (driveUpload.ok && driveUpload.file?.id) {
+        return {
+          status: driveUpload.status,
+          storageProvider: "google_drive",
+          mimeType,
+          fileSize: contentLength,
+          driveFileId: driveUpload.file.id,
+          driveFolderId: driveUpload.file.parents?.[0],
+          driveWebViewLink: driveUpload.file.webViewLink,
+          driveWebContentLink: driveUpload.file.webContentLink,
+          driveThumbnailLink: driveUpload.file.thumbnailLink,
+          driveMimeType: driveUpload.file.mimeType,
+        };
+      }
+      return { status: driveUpload.status, storageProvider: "linked" };
+    }
+
+    const blob = await readBoundedBlob(
+      response,
+      mimeType,
+      maxBufferedRemoteAssetBytes,
+    );
     if (!blob) {
-      return { status: "remote asset too large", storageProvider: "linked" };
+      return {
+        status: "remote asset too large for buffered fallback",
+        storageProvider: "linked",
+      };
     }
 
     const driveUpload = await uploadBlobToDrive({

@@ -4,6 +4,12 @@ import {
   type XDomSnapshot,
 } from "@ourchival/parsers";
 import type { PageSnapshot } from "@ourchival/shared";
+import {
+  detectSourceIntakeContext,
+  type SourceIntakeChunk,
+  type SourceIntakeItem,
+  type SourceIntakeProvider,
+} from "./sourceIntake";
 import { xTimelineAuditChannel } from "./xTimelineAudit";
 
 type ContextCapture = {
@@ -24,6 +30,17 @@ const observedXLikesSources = new Set<string>();
 const networkXLikesPostIds = new Set<string>();
 const unparseableXLikesArticles = new Set<string>();
 let networkXLikesPages = 0;
+let activeXLikesIdentity: { importId: string; profileUrl: string } | undefined;
+const pendingXLikesObservations = new Map<
+  string,
+  {
+    providerId: string;
+    sourceUrl?: string;
+    stage: "discovered" | "rendered" | "archived";
+  }
+>();
+let xLikesObservationTimer: number | undefined;
+let xLikesObservationFlush = Promise.resolve();
 
 const xLikesChunkSize = 24;
 const xLikesIdleRoundLimit = 80;
@@ -32,6 +49,8 @@ const xKnownBoundarySize = 24;
 const archiveBadgeSelector = "[data-ourchival-archive-badge]";
 const pendingLiveLikes = new Set<string>();
 let archiveBadgeTimer: number | undefined;
+let activeSourceIntake: Promise<void> | undefined;
+let stopSourceIntake = false;
 
 window.addEventListener("message", (event) => {
   if (
@@ -47,9 +66,61 @@ window.addEventListener("message", (event) => {
   for (const postId of event.data.postIds.slice(0, 200)) {
     if (typeof postId === "string" && /^\d+$/.test(postId)) {
       networkXLikesPostIds.add(postId);
+      queueXLikesObservation({ providerId: postId, stage: "discovered" });
     }
   }
 });
+
+function queueXLikesObservation(observation: {
+  providerId: string;
+  sourceUrl?: string;
+  stage: "discovered" | "rendered" | "archived";
+}) {
+  if (!activeXLikesIdentity) return;
+  const existing = pendingXLikesObservations.get(observation.providerId);
+  const rank = { discovered: 0, rendered: 1, archived: 2 } as const;
+  if (!existing || rank[observation.stage] >= rank[existing.stage]) {
+    pendingXLikesObservations.set(observation.providerId, {
+      ...existing,
+      ...observation,
+      sourceUrl: observation.sourceUrl ?? existing?.sourceUrl,
+    });
+  }
+  if (xLikesObservationTimer !== undefined) return;
+  xLikesObservationTimer = window.setTimeout(() => {
+    xLikesObservationTimer = undefined;
+    void flushXLikesObservations();
+  }, 350);
+}
+
+async function flushXLikesObservations() {
+  xLikesObservationFlush = xLikesObservationFlush
+    .catch(() => undefined)
+    .then(async () => {
+      while (activeXLikesIdentity && pendingXLikesObservations.size > 0) {
+        const observations = Array.from(
+          pendingXLikesObservations.values(),
+        ).slice(0, 200);
+        for (const observation of observations) {
+          pendingXLikesObservations.delete(observation.providerId);
+        }
+        const response = (await chrome.runtime
+          .sendMessage({
+            type: "OURCHIVAL_X_LIKES_OBSERVED",
+            ...activeXLikesIdentity,
+            observations,
+          })
+          .catch(() => undefined)) as { ok?: boolean } | undefined;
+        if (!response?.ok) {
+          for (const observation of observations) {
+            queueXLikesObservation(observation);
+          }
+          break;
+        }
+      }
+    });
+  await xLikesObservationFlush;
+}
 
 if (isXPage()) {
   const observer = new MutationObserver(() => scheduleArchiveBadgeRefresh());
@@ -334,6 +405,33 @@ document.addEventListener(
 );
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "OURCHIVAL_START_SOURCE_INTAKE") {
+    if (activeSourceIntake) {
+      sendResponse({ ok: true, alreadyRunning: true });
+      return;
+    }
+    const provider = message.provider as SourceIntakeProvider;
+    if (provider !== "pixiv_bookmarks" && provider !== "pinterest_board") {
+      sendResponse({ ok: false, error: "Unsupported source intake." });
+      return;
+    }
+    stopSourceIntake = false;
+    activeSourceIntake = runSourceIntake(
+      String(message.importId ?? ""),
+      provider,
+    ).finally(() => {
+      activeSourceIntake = undefined;
+    });
+    sendResponse({ ok: true, started: true });
+    return;
+  }
+
+  if (message?.type === "OURCHIVAL_STOP_SOURCE_INTAKE") {
+    stopSourceIntake = true;
+    sendResponse({ ok: true });
+    return;
+  }
+
   if (message?.type === "OURCHIVAL_SNAPSHOT_PAGE") {
     sendResponse(snapshotPage());
     return;
@@ -385,6 +483,234 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
+async function runSourceIntake(
+  importId: string,
+  provider: SourceIntakeProvider,
+) {
+  if (!importId) return;
+  while (!stopSourceIntake) {
+    const chunk =
+      provider === "pixiv_bookmarks"
+        ? await scanPixivBookmarksPage()
+        : await scanPinterestBoardChunk();
+    const response = (await chrome.runtime.sendMessage({
+      type: "OURCHIVAL_SOURCE_INTAKE_CHUNK",
+      importId,
+      chunk,
+    })) as
+      | { ok?: boolean; continue?: boolean; nextUrl?: string; error?: string }
+      | undefined;
+    if (!response?.ok || !response.continue || stopSourceIntake) return;
+    if (response.nextUrl && response.nextUrl !== location.href) {
+      location.assign(response.nextUrl);
+      return;
+    }
+    if (provider === "pixiv_bookmarks") return;
+    await wait(200);
+  }
+}
+
+async function scanPixivBookmarksPage(): Promise<SourceIntakeChunk> {
+  const context = detectSourceIntakeContext(location.href);
+  if (context?.provider !== "pixiv_bookmarks") {
+    throw new Error("Open a Pixiv artwork-bookmarks page before importing.");
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (document.querySelector('a[href*="/artworks/"]')) break;
+    await wait(250);
+  }
+
+  const page = Number(context.cursor.replace("page:", "")) || 1;
+  const items = new Map<string, SourceIntakeItem>();
+  const scope = document.querySelector("main") ?? document.body;
+  for (const anchor of Array.from(
+    scope.querySelectorAll<HTMLAnchorElement>('a[href*="/artworks/"]'),
+  )) {
+    const url = absoluteHttpUrl(anchor.href);
+    const providerId = url?.match(/\/artworks\/(\d+)/)?.[1];
+    if (!url || !providerId || items.has(providerId)) continue;
+    const card = closestArtworkCard(anchor);
+    const sameWorkLinks = Array.from(
+      card.querySelectorAll<HTMLAnchorElement>(
+        `a[href*="/artworks/${providerId}"]`,
+      ),
+    );
+    const image = card.querySelector<HTMLImageElement>("img");
+    const title = firstText(
+      image?.alt,
+      ...sameWorkLinks.map((link) => link.textContent?.trim()),
+      anchor.getAttribute("aria-label") ?? undefined,
+    );
+    const author = card.querySelector<HTMLAnchorElement>('a[href*="/users/"]');
+    const pageCount = confidentPageCount(card);
+    const authorName = firstText(author?.textContent?.trim());
+    const authorUrl = absoluteHttpUrl(author?.href);
+    const previewImageUrl = absoluteHttpUrl(image?.currentSrc || image?.src);
+    items.set(providerId, {
+      providerId,
+      sourceUrl: `https://www.pixiv.net/en/artworks/${providerId}`,
+      ...(title ? { title } : {}),
+      ...(authorName ? { authorName } : {}),
+      ...(authorUrl ? { authorUrl } : {}),
+      ...(previewImageUrl ? { previewImageUrl } : {}),
+      ...(pageCount ? { pageCount } : {}),
+      sensitive: isExplicitArtworkCard(card) ? "explicit" : "general",
+      metadata: {
+        page,
+        rest: new URL(location.href).searchParams.get("rest") ?? "show",
+        mode: new URL(location.href).searchParams.get("mode") ?? "all",
+      },
+    });
+  }
+
+  const nextUrl = pixivNextPageUrl(context.sourceUrl, page + 1);
+  const hasNext = Array.from(
+    document.querySelectorAll<HTMLAnchorElement>("a[href]"),
+  ).some((anchor) => sameUrlIgnoringOrder(anchor.href, nextUrl));
+  const reportedCount = reportedPixivCount(document.body.innerText);
+  return {
+    provider: "pixiv_bookmarks",
+    sourceUrl: context.sourceUrl,
+    currentUrl: location.href,
+    cursor: context.cursor,
+    items: Array.from(items.values()),
+    ...(hasNext ? { nextUrl } : {}),
+    ...(reportedCount ? { reportedCount } : {}),
+    exhausted: !hasNext,
+  };
+}
+
+async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
+  const context = detectSourceIntakeContext(location.href);
+  if (context?.provider !== "pinterest_board") {
+    throw new Error("Open one Pinterest board before importing.");
+  }
+  const items = new Map<string, SourceIntakeItem>();
+  let stagnantBottomRounds = 0;
+  for (let round = 0; round < 10 && !stopSourceIntake; round += 1) {
+    const before = items.size;
+    for (const anchor of Array.from(
+      document.querySelectorAll<HTMLAnchorElement>('a[href*="/pin/"]'),
+    )) {
+      const providerId = anchor.href.match(/\/pin\/(\d+)/)?.[1];
+      if (!providerId || items.has(providerId)) continue;
+      const card = closestPinterestCard(anchor);
+      const image = card.querySelector<HTMLImageElement>("img");
+      const title = firstText(
+        anchor.getAttribute("aria-label")?.replace(/\s+pin page$/i, ""),
+        image?.alt,
+      );
+      const previewImageUrl = absoluteHttpUrl(image?.currentSrc || image?.src);
+      items.set(providerId, {
+        providerId,
+        sourceUrl: `${location.origin}/pin/${providerId}/`,
+        ...(title ? { title } : {}),
+        ...(previewImageUrl ? { previewImageUrl } : {}),
+        sensitive: "unknown",
+        metadata: { boardUrl: context.sourceUrl },
+      });
+    }
+    const atBottom =
+      window.scrollY + window.innerHeight >=
+      document.documentElement.scrollHeight - 4;
+    stagnantBottomRounds =
+      atBottom && items.size === before ? stagnantBottomRounds + 1 : 0;
+    if (stagnantBottomRounds >= 2) break;
+    window.scrollBy(0, Math.max(480, Math.floor(window.innerHeight * 0.8)));
+    await wait(500);
+  }
+  const exhausted =
+    window.scrollY + window.innerHeight >=
+      document.documentElement.scrollHeight - 4 && stagnantBottomRounds >= 2;
+  const countMatch = document.body.innerText.match(/([\d,]+)\s+Pins\b/i);
+  const reportedCount = countMatch?.[1]
+    ? Number(countMatch[1].replaceAll(",", ""))
+    : undefined;
+  return {
+    provider: "pinterest_board",
+    sourceUrl: context.sourceUrl,
+    currentUrl: location.href,
+    cursor: `scroll:${Math.round(window.scrollY)}`,
+    items: Array.from(items.values()),
+    ...(reportedCount ? { reportedCount } : {}),
+    exhausted,
+  };
+}
+
+function closestArtworkCard(anchor: HTMLAnchorElement) {
+  return (
+    anchor.closest<HTMLElement>("li") ??
+    anchor.closest<HTMLElement>('div[role="listitem"]') ??
+    anchor.parentElement?.parentElement?.parentElement ??
+    anchor.parentElement ??
+    anchor
+  );
+}
+
+function closestPinterestCard(anchor: HTMLAnchorElement) {
+  return (
+    anchor.closest<HTMLElement>('[data-grid-item="true"]') ??
+    anchor.closest<HTMLElement>('div[role="listitem"]') ??
+    anchor.parentElement?.parentElement?.parentElement ??
+    anchor.parentElement ??
+    anchor
+  );
+}
+
+function confidentPageCount(card: Element) {
+  const labelled = Array.from(
+    card.querySelectorAll<HTMLElement>("[aria-label], [title]"),
+  )
+    .map((element) =>
+      firstText(element.getAttribute("aria-label") ?? undefined, element.title),
+    )
+    .find((value) => /\b\d+\s+(pages?|images?)\b/i.test(value ?? ""));
+  const match = labelled?.match(/\b(\d+)\s+(?:pages?|images?)\b/i);
+  const count = match?.[1] ? Number(match[1]) : undefined;
+  return count && Number.isSafeInteger(count) && count > 1 ? count : undefined;
+}
+
+function isExplicitArtworkCard(card: Element) {
+  if (/\bR-18\b/i.test(card.textContent ?? "")) return true;
+  return Array.from(
+    card.querySelectorAll<HTMLElement>("[aria-label], [title], img[alt]"),
+  )
+    .map((element) =>
+      firstText(
+        element.getAttribute("aria-label") ?? undefined,
+        element.getAttribute("title") ?? undefined,
+        element.getAttribute("alt") ?? undefined,
+      ),
+    )
+    .some((value) => /\bR-18\b/i.test(value ?? ""));
+}
+
+function pixivNextPageUrl(sourceUrl: string, page: number) {
+  const next = new URL(sourceUrl);
+  next.searchParams.set("p", String(page));
+  return next.toString();
+}
+
+function sameUrlIgnoringOrder(left: string, right: string) {
+  try {
+    const a = new URL(left);
+    const b = new URL(right);
+    if (a.origin !== b.origin || a.pathname !== b.pathname) return false;
+    return (
+      Array.from(a.searchParams.entries()).sort().toString() ===
+      Array.from(b.searchParams.entries()).sort().toString()
+    );
+  } catch {
+    return false;
+  }
+}
+
+function reportedPixivCount(text: string) {
+  const match = text.match(/Illustrations and Manga\s+([\d,]+)/i);
+  const count = match?.[1] ? Number(match[1].replaceAll(",", "")) : undefined;
+  return count && Number.isSafeInteger(count) ? count : undefined;
+}
+
 async function runXLikesImport(args: {
   importId: string;
   profileUrl: string;
@@ -432,6 +758,10 @@ async function runXLikesImport(args: {
         "The X Likes import checkpoint does not match this page.",
       );
     }
+    activeXLikesIdentity = {
+      importId: args.importId,
+      profileUrl: args.profileUrl,
+    };
     if (!args.resumeAfterSourceUrl) {
       window.scrollTo({ top: 0 });
       await wait(400);
@@ -463,6 +793,11 @@ async function runXLikesImport(args: {
         }
         visibleBottomSourceUrl = parsed.sourceUrl;
         observedXLikesSources.add(parsed.sourceUrl);
+        queueXLikesObservation({
+          providerId: parsed.postId,
+          sourceUrl: parsed.sourceUrl,
+          stage: "rendered",
+        });
 
         if (seekingCursor) {
           if (parsed.sourceUrl === args.resumeAfterSourceUrl) {
@@ -480,6 +815,15 @@ async function runXLikesImport(args: {
       const indexed = await queryIndexedSourceUrls(
         candidates.map(({ parsed }) => parsed.sourceUrl),
       );
+      for (const { parsed } of candidates) {
+        if (indexed.has(parsed.sourceUrl)) {
+          queueXLikesObservation({
+            providerId: parsed.postId!,
+            sourceUrl: parsed.sourceUrl,
+            stage: "archived",
+          });
+        }
+      }
       const knownOnlyRound =
         candidates.length > 0 && indexed.size === candidates.length;
       for (const { article, snapshot, parsed } of candidates) {
@@ -575,6 +919,11 @@ async function runXLikesImport(args: {
     finishMessage =
       error instanceof Error ? error.message : "The X Likes import stopped.";
   } finally {
+    if (xLikesObservationTimer !== undefined) {
+      window.clearTimeout(xLikesObservationTimer);
+      xLikesObservationTimer = undefined;
+    }
+    await flushXLikesObservations();
     await chrome.runtime.sendMessage({
       type: "OURCHIVAL_X_LIKES_FINISHED",
       importId: args.importId,
@@ -592,6 +941,7 @@ async function runXLikesImport(args: {
           observedXLikesSources.size > 20_000,
       },
     });
+    activeXLikesIdentity = undefined;
   }
 }
 

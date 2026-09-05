@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalMutation, internalQuery } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+} from "./_generated/server";
 import { captureSessionCompletedAt } from "./lib/captureSessions";
 import {
   applyReferenceStatsDelta,
@@ -8,6 +12,8 @@ import {
   listReferencePage,
   sourceSnapshotPayload,
 } from "./lib/referenceCatalog";
+import { validateLinkBatch, linkBatchReceipt } from "./lib/linkIntake";
+import { detectPlatform } from "./lib/platform";
 import { normalizeSourceUrl } from "./lib/urls";
 import { updateAssetTags, updateReferenceTags } from "./lib/tags";
 
@@ -148,6 +154,11 @@ export const upsertCaptureSession = internalMutation({
       .query("captureSessions")
       .withIndex("by_session_key", (q) => q.eq("sessionKey", args.sessionKey))
       .unique();
+    if (args.sessionKey.startsWith("saved-links-v1:")) {
+      throw new Error(
+        "Saved-link progress is owned by the atomic intake endpoint.",
+      );
+    }
     const counts = {
       expectedCount: Math.max(existing?.expectedCount ?? 0, args.expectedCount),
       completedCount: Math.max(
@@ -495,36 +506,43 @@ export const createCapture = internalMutation({
     assetDetails: v.optional(v.any()),
     snapshot: v.any(),
   },
-  handler: async (ctx, args) => {
-    const referenceId = await ctx.db.insert("references", args.reference);
-    if (args.tagNames.length > 0) {
-      await updateReferenceTags(ctx, referenceId, {
-        addNames: args.tagNames,
-      });
-    }
-    const insertedReference = await ctx.db.get(referenceId);
-    await applyReferenceStatsDelta(ctx, null, insertedReference);
-    const assetId =
-      args.assetUrl && args.storedAsset
-        ? await insertAsset(
-            ctx,
-            referenceId,
-            args.assetUrl,
-            args.storedAsset,
-            args.assetDetails as Record<string, any> | undefined,
-          )
-        : null;
-    await insertSourceSnapshot(ctx, {
-      referenceId,
-      ...(args.snapshot as Record<string, any>),
-    });
-    return { referenceId, assetId };
-  },
+  handler: createCaptureRecord,
 });
+
+async function createCaptureRecord(ctx: MutationCtx, args: any) {
+  const referenceId = await ctx.db.insert("references", args.reference);
+  if (args.tagNames.length > 0) {
+    await updateReferenceTags(ctx, referenceId, {
+      addNames: args.tagNames,
+    });
+  }
+  const insertedReference = await ctx.db.get(referenceId);
+  await applyReferenceStatsDelta(ctx, null, insertedReference);
+  const assetId =
+    args.assetUrl && args.storedAsset
+      ? await insertAsset(
+          ctx,
+          referenceId,
+          args.assetUrl,
+          args.storedAsset,
+          args.assetDetails as Record<string, any> | undefined,
+        )
+      : null;
+  await insertSourceSnapshot(ctx, {
+    referenceId,
+    ...(args.snapshot as Record<string, any>),
+  });
+  return { referenceId, assetId };
+}
 
 async function findDuplicate(
   ctx: any,
-  args: { sourceUrl: string; canonicalUrl: string; assetUrl?: string },
+  args: {
+    sourceUrl: string;
+    canonicalUrl: string;
+    assetUrl?: string;
+    includeDeleted?: boolean;
+  },
 ) {
   if (args.assetUrl) {
     const matchingAssets = await ctx.db
@@ -535,20 +553,22 @@ async function findDuplicate(
       .collect();
     for (const asset of matchingAssets) {
       const reference = await ctx.db.get(asset.referenceId);
-      if (reference && !reference.deleted) {
+      if (reference && (args.includeDeleted || !reference.deleted)) {
         return { reference, assetId: asset._id, reason: "asset_url" as const };
       }
     }
   }
 
-  const canonicalMatches = await ctx.db
+  const canonicalQuery = ctx.db
     .query("references")
     .withIndex("by_canonical_url", (q: any) =>
       q.eq("canonicalUrl", args.canonicalUrl),
-    )
-    .collect();
+    );
+  const canonicalMatches = args.includeDeleted
+    ? await canonicalQuery.take(1)
+    : await canonicalQuery.collect();
   const canonicalReference = canonicalMatches.find(
-    (reference: any) => !reference.deleted,
+    (reference: any) => args.includeDeleted || !reference.deleted,
   );
   if (canonicalReference) {
     return {
@@ -558,12 +578,14 @@ async function findDuplicate(
     };
   }
 
-  const sourceMatches = await ctx.db
+  const sourceQuery = ctx.db
     .query("references")
-    .withIndex("by_source_url", (q: any) => q.eq("sourceUrl", args.sourceUrl))
-    .collect();
+    .withIndex("by_source_url", (q: any) => q.eq("sourceUrl", args.sourceUrl));
+  const sourceMatches = args.includeDeleted
+    ? await sourceQuery.take(1)
+    : await sourceQuery.collect();
   const sourceReference = sourceMatches.find(
-    (reference: any) => !reference.deleted,
+    (reference: any) => args.includeDeleted || !reference.deleted,
   );
   return sourceReference
     ? {
@@ -697,3 +719,118 @@ function safeJsonValue(value: string) {
     return value;
   }
 }
+
+// References, occurrence snapshots, and the cursor commit together. No side queue.
+export const importLinkBatch = internalMutation({
+  args: { batch: v.any() },
+  handler: async (ctx, { batch }) => {
+    const input = validateLinkBatch(batch);
+    const now = Date.now();
+    let session = await ctx.db
+      .query("captureSessions")
+      .withIndex("by_session_key", (q) => q.eq("sessionKey", input.sessionKey))
+      .unique();
+    if (
+      session &&
+      (session.source !== input.source || session.expectedCount !== input.total)
+    ) {
+      throw new Error("Import identity does not match this manifest.");
+    }
+    const cursor = session?.completedCount ?? 0;
+    if (input.offset > cursor)
+      throw new Error("Import has a gap; resume from its receipt.");
+    if (input.offset < cursor) {
+      if (input.offset + input.entries.length > cursor)
+        throw new Error("Overlapping import batch.");
+      return linkBatchReceipt(session!, true);
+    }
+    if (!session) {
+      const id = await ctx.db.insert("captureSessions", {
+        sessionKey: input.sessionKey,
+        source: input.source,
+        kind: "import",
+        label:
+          input.source === "bookmarks"
+            ? "Saved bookmarks"
+            : "Saved links / OneTab",
+        expectedCount: input.total,
+        completedCount: 0,
+        savedCount: 0,
+        duplicateCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        status: "running",
+        reviewState: "unreviewed",
+        startedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+      session = (await ctx.db.get(id))!;
+    }
+    let saved = 0,
+      duplicates = 0;
+    for (const [index, entry] of input.entries.entries()) {
+      const canonicalUrl = normalizeSourceUrl(entry.url);
+      const duplicate = await findDuplicate(ctx, {
+        sourceUrl: entry.url,
+        canonicalUrl,
+        includeDeleted: true,
+      });
+      const snapshot = {
+        pageTitle: entry.title,
+        jsonMetadata: {
+          intakeVersion: 1,
+          sessionKey: input.sessionKey,
+          source: input.source,
+          ordinal: input.offset + index,
+          originalUrl: entry.url,
+          originalTitle: entry.title ?? null,
+          capturedAt: now,
+        },
+      };
+      if (duplicate) {
+        // Preserve user state and original session ownership; retain every occurrence.
+        await insertSourceSnapshot(ctx, {
+          referenceId: duplicate.reference._id,
+          ...snapshot,
+        });
+        duplicates++;
+      } else {
+        await createCaptureRecord(ctx, {
+          reference: {
+            kind: "link",
+            sourceUrl: entry.url,
+            canonicalUrl,
+            ...(entry.title ? { title: entry.title } : {}),
+            platform: detectPlatform(entry.url),
+            capturedAt: now,
+            captureSessionId: input.sessionKey,
+            triageState: "inbox",
+            boardIds: [],
+            tagIds: [],
+            favorite: false,
+            archived: false,
+            deleted: false,
+          },
+          tagNames: [],
+          snapshot,
+        });
+        saved++;
+      }
+    }
+    const completedCount = cursor + input.entries.length;
+    const patch = {
+      completedCount,
+      savedCount: session.savedCount + saved,
+      duplicateCount: session.duplicateCount + duplicates,
+      status:
+        completedCount === input.total
+          ? ("completed" as const)
+          : ("running" as const),
+      ...(completedCount === input.total ? { completedAt: now } : {}),
+      updatedAt: now,
+    };
+    await ctx.db.patch(session._id, patch);
+    return linkBatchReceipt({ ...session, ...patch }, false);
+  },
+});

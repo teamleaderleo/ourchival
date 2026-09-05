@@ -48,17 +48,15 @@ media bytes attached to only some records.
 
 ## Current gaps
 
-### Generic bulk imports retain the entire job in extension storage
+### Saved-link intake slice
 
-`BatchCaptureState` currently stores every input item and every failure in
-`chrome.storage.local`. The popup parses a complete pasted list or bookmarks
-file and sends the full array to the service worker. This is acceptable for a
-small window of tabs, but it is not a sound tens-of-thousands-of-links path.
-
-The X Likes importer already demonstrates the better contract: one stable
-session identity, small source-native chunks, aggregate counters, a compact
-cursor, and durable server-side session receipts. OneTab and bookmark imports
-should use the same shape.
+[Saved-link intake](SAVED_LINK_INTAKE.md) defines the three archive horizons,
+record boundaries, adapter plans, implementation limits and production sync
+boundary. Pasted/OneTab and bookmark imports now reuse capture sessions through
+atomic batches of at most 50 occurrences and bounded receipts. Re-submitting
+the same manifest resumes from the server cursor; the popup retains input only
+in memory. Generic tab capture still uses `BatchCaptureState` in extension
+storage. The X Likes runtime is unchanged.
 
 ### Search is not archive-wide
 
