@@ -655,7 +655,7 @@ async function findDuplicate(
 }
 
 export function existingAssetReceipt(asset: Record<string, any>) {
-  const storageProvider = asset.driveFileId
+  const storageProvider: "google_drive" | "convex" | "linked" = asset.driveFileId
     ? "google_drive"
     : asset.originalStorageId
       ? "convex"
