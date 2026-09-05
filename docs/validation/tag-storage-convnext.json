@@ -1,0 +1,17 @@
+{
+  "model": "convnext",
+  "images": 48,
+  "assertions": 5747,
+  "unique_terms": 1759,
+  "readable_tag_arrays_utf8_bytes": 437247,
+  "shared_dictionary_utf8_bytes": 97194,
+  "otg_v1_payload_bytes_including_headers": 69348,
+  "compact_total_bytes": 166542,
+  "saved_bytes": 270705,
+  "saved_percent": 61.91,
+  "compact_json_transport_bytes": 190346,
+  "lossless_round_trip": true,
+  "scope": "Tag payloads and shared dictionary only; excludes database record overhead, IDs, indexes, model recipes, OCR and captions. Not physical disk usage or billed Convex storage.",
+  "input_sha256": "1fdbdd821abed5da30fc8a3e03b0cc7fad02e2058e4c6edd381ef8418e95a7b9",
+  "measurement_version": 1
+}
