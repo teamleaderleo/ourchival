@@ -37,8 +37,34 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    const refresh = () => {
-      const stored = getOwnerAccessKey();
+    let current = 0;
+    const refresh = async () => {
+      const attempt = ++current;
+      let stored = getOwnerAccessKey();
+      if (!stored) {
+        setChecking(true);
+        try {
+          const response = await fetch("/api/local-session", { cache: "no-store" });
+          if (attempt !== current) return;
+          if (response.ok) {
+            const body = await response.json() as { credential?: string };
+            if (attempt !== current) return;
+            stored = body.credential ?? "";
+          } else if (response.status === 503) {
+            setMessage("The local archive is not ready. Try opening it again.");
+            setSessionUnavailable(true);
+            setChecking(false);
+            return;
+          }
+        } catch {
+          if (attempt !== current) return;
+          setMessage("The archive is temporarily unreachable. Try opening it again.");
+          setSessionUnavailable(true);
+          setChecking(false);
+          return;
+        }
+      }
+      if (attempt !== current) return;
       setAccessKey(stored);
       if (stored) {
         setSessionUnavailable(false);
@@ -49,8 +75,9 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
         setChecking(false);
       }
     };
-    refresh();
-    return onOwnerAccessChange(refresh);
+    void refresh();
+    const unsubscribe = onOwnerAccessChange(() => void refresh());
+    return () => { current++; unsubscribe(); };
   }, []);
 
   async function verify(key: string, quiet = false) {
@@ -139,13 +166,13 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (sessionUnavailable && accessKey) {
+  if (sessionUnavailable) {
     return (
       <AccessStatusCard
         title="Vault temporarily unavailable"
         message={message}
         primaryLabel="Try again"
-        onPrimary={() => void verify(accessKey, true)}
+        onPrimary={() => accessKey ? void verify(accessKey, true) : window.location.reload()}
         secondaryLabel="Sign in again"
         onSecondary={forgetSavedSession}
       />
