@@ -667,6 +667,25 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
   if (context?.provider !== "pinterest_board") {
     throw new Error("Open one Pinterest board before importing.");
   }
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (document.querySelector('a[href*="/pin/"]')) break;
+    await wait(250);
+  }
+  const countMatch = document.body.innerText.match(/([\d,]+)\s+Pins\b/i);
+  const reportedCount = countMatch?.[1]
+    ? Number(countMatch[1].replaceAll(",", ""))
+    : undefined;
+  if (!document.querySelector('a[href*="/pin/"]')) {
+    return {
+      provider: "pinterest_board",
+      sourceUrl: context.sourceUrl,
+      currentUrl: location.href,
+      cursor: "scroll:waiting",
+      items: [],
+      ...(reportedCount ? { reportedCount } : {}),
+      exhausted: false,
+    };
+  }
   const items = new Map<string, SourceIntakeItem>();
   let stagnantBottomRounds = 0;
   for (let round = 0; round < 10 && !stopSourceIntake; round += 1) {
@@ -704,10 +723,6 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
   const exhausted =
     window.scrollY + window.innerHeight >=
       document.documentElement.scrollHeight - 4 && stagnantBottomRounds >= 2;
-  const countMatch = document.body.innerText.match(/([\d,]+)\s+Pins\b/i);
-  const reportedCount = countMatch?.[1]
-    ? Number(countMatch[1].replaceAll(",", ""))
-    : undefined;
   return {
     provider: "pinterest_board",
     sourceUrl: context.sourceUrl,
