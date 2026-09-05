@@ -236,7 +236,7 @@ export const process = internalAction({
   args: {
     jobId: v.id("enrichmentJobs"),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ inserted: number; summary: string } | { status: string; summary: string } | null> => {
     const context = await ctx.runQuery(internal.suggestedTags.getContext, args);
     if (!context || context.job.status !== "queued") return null;
     const claimed = await ctx.runMutation(internal.enrichmentJobs.claim, args);

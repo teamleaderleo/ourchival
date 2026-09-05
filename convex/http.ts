@@ -353,6 +353,7 @@ http.route({
       let cursor = requestUrl.searchParams.get("cursor") || null;
       let hasMore = true;
       let scanned = 0;
+      let searchMode: string | undefined;
       let counts;
 
       while (hasMore && references.length < pageSize && scanned < maxScanned) {
@@ -371,6 +372,7 @@ http.route({
         cursor = batch.continueCursor;
         hasMore = batch.hasMore;
         scanned += batch.scanned;
+        searchMode = batch.searchMode;
         counts = batch.counts;
         if (batch.scanned === 0) break;
       }
@@ -381,6 +383,7 @@ http.route({
         continueCursor: hasMore ? cursor : null,
         hasMore,
         scanned,
+        searchMode,
         counts,
       });
     } catch (error) {
@@ -1266,7 +1269,7 @@ async function readBoundedBlob(
 ) {
   if (!response.body) return new Blob([], { type: mimeType });
   const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
+  const chunks: ArrayBuffer[] = [];
   let total = 0;
 
   try {
@@ -1278,7 +1281,7 @@ async function readBoundedBlob(
         await reader.cancel();
         return undefined;
       }
-      chunks.push(value);
+      chunks.push(new Uint8Array(value).buffer);
     }
     return new Blob(chunks, { type: mimeType });
   } finally {

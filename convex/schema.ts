@@ -1,7 +1,9 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { searchTables } from "./lib/searchSchema";
 
 export default defineSchema({
+  ...searchTables,
   references: defineTable({
     kind: v.union(
       v.literal("image"),

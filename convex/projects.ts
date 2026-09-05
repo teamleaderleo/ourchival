@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireOwnerAccess } from "./lib/privateAccess";
+import { scheduleReferenceSearch, startSearchRebuild } from "./lib/searchIndex";
 
 const projectStatus = v.union(
   v.literal("active"),
@@ -82,6 +83,7 @@ export const update = mutation({
       status: args.status,
       updatedAt: Date.now(),
     });
+    await startSearchRebuild(ctx);
     return await ctx.db.get(args.projectId);
   },
 });
@@ -102,6 +104,7 @@ export const remove = mutation({
       .collect();
     for (const use of uses) await ctx.db.delete(use._id);
     await ctx.db.delete(args.projectId);
+    await startSearchRebuild(ctx);
     return { removed: true, usesRemoved: uses.length };
   },
 });
@@ -233,6 +236,7 @@ async function upsertProjectReference(
 
   if (existing) {
     await ctx.db.patch(existing._id, patch);
+    await scheduleReferenceSearch(ctx, args.referenceId);
     return await ctx.db.get(existing._id);
   }
 
@@ -249,6 +253,7 @@ async function upsertProjectReference(
     createdAt: now,
     updatedAt: now,
   });
+  await scheduleReferenceSearch(ctx, args.referenceId);
   return await ctx.db.get(useId);
 }
 
@@ -260,6 +265,7 @@ async function removeProjectReference(ctx: any, projectId: any, referenceId: any
   const use = uses.find((candidate: any) => candidate.projectId === projectId);
   if (!use) return false;
   await ctx.db.delete(use._id);
+  await scheduleReferenceSearch(ctx, referenceId);
   return true;
 }
 

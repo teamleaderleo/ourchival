@@ -24,8 +24,10 @@
     "sharp": "0.34.1"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^22.10.2",
-    "convex": "^1.17.4",
+    "convex": "^1.45.0",
+    "convex-test": "^0.0.56",
     "eslint": "^9.17.0",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",

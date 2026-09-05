@@ -1,6 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { requireOwnerAccess } from "./lib/privateAccess";
+import { scheduleReferenceSearch, startSearchRebuild } from "./lib/searchIndex";
 
 export const list = query({
   args: { accessKey: v.string() },
@@ -66,6 +67,7 @@ export const update = mutation({
         : { description: undefined }),
       updatedAt: Date.now(),
     });
+    await startSearchRebuild(ctx);
     return await ctx.db.get(args.boardId);
   },
 });
@@ -102,6 +104,7 @@ export const remove = mutation({
     }
 
     await ctx.db.delete(args.boardId);
+    await startSearchRebuild(ctx);
     return { removed: true, referencesUpdated };
   },
 });
@@ -124,6 +127,7 @@ export const updateReference = mutation({
       args.removeBoardIds,
     );
     await ctx.db.patch(reference._id, { boardIds: nextBoardIds });
+    await scheduleReferenceSearch(ctx, reference._id);
     return nextBoardIds;
   },
 });
@@ -158,6 +162,7 @@ export const updateReferences = mutation({
         continue;
       }
       await ctx.db.patch(referenceId, { boardIds: nextBoardIds });
+      await scheduleReferenceSearch(ctx, referenceId);
       updated += 1;
     }
     return { updated };
@@ -178,25 +183,13 @@ function updateBoardIds(
   );
 }
 
-async function countBoardReferences(ctx: any) {
+async function countBoardReferences(ctx: QueryCtx) {
   const counts = new Map<string, number>();
-  let cursor: string | null = null;
-  let isDone = false;
-
-  while (!isDone) {
-    const page = await ctx.db
-      .query("references")
-      .withIndex("by_captured_at")
-      .paginate({ numItems: 256, cursor });
-    cursor = page.continueCursor;
-    isDone = page.isDone;
-
-    for (const reference of page.page) {
-      if (reference.deleted) continue;
-      for (const boardId of reference.boardIds) {
-        const key = String(boardId);
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-      }
+  for await (const reference of ctx.db.query("references").withIndex("by_captured_at")) {
+    if (reference.deleted) continue;
+    for (const boardId of reference.boardIds) {
+      const key = String(boardId);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
 

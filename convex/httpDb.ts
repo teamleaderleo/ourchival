@@ -10,6 +10,7 @@ import {
 } from "./lib/referenceCatalog";
 import { normalizeSourceUrl } from "./lib/urls";
 import { updateAssetTags, updateReferenceTags } from "./lib/tags";
+import { scheduleReferenceSearch } from "./lib/searchIndex";
 
 export const initializeReferenceStats = internalMutation({
   args: {},
@@ -301,6 +302,7 @@ export const updateAssetMetadata = internalMutation({
     if (!asset) return null;
     const patch = args.patch as Record<string, unknown>;
     if (Object.keys(patch).length > 0) await ctx.db.patch(assetId, patch);
+    if (Object.keys(patch).length > 0) await scheduleReferenceSearch(ctx, asset.referenceId);
     const tags =
       args.addTagNames.length > 0 || args.removeTagIds.length > 0
         ? await updateAssetTags(ctx, assetId, {
@@ -482,6 +484,7 @@ export const saveDuplicateCapture = internalMutation({
       });
     }
 
+    await scheduleReferenceSearch(ctx, referenceId);
     return { reference: { ...reference, ...referencePatch }, assetId };
   },
 });
@@ -636,7 +639,7 @@ async function insertSourceSnapshot(
     jsonMetadata?: unknown;
   },
 ) {
-  return await ctx.db.insert("sourceSnapshots", {
+  const snapshotId = await ctx.db.insert("sourceSnapshots", {
     referenceId: args.referenceId,
     ...(args.pageTitle ? { pageTitle: args.pageTitle } : {}),
     ...(args.postText ? { postText: args.postText } : {}),
@@ -673,6 +676,8 @@ async function insertSourceSnapshot(
       : {}),
     createdAt: Date.now(),
   });
+  await scheduleReferenceSearch(ctx, args.referenceId);
+  return snapshotId;
 }
 
 function isLinkKind(kind: string) {

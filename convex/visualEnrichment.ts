@@ -1,10 +1,12 @@
+import { paginationOptsValidator } from "convex/server";
+import { visualModel, visualTag } from "./lib/searchSchema";
+import { validateVisualResult } from "./lib/visualValidation";
+import { refreshReferenceSearch } from "./lib/searchIndex";
+import type { Doc } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireOwnerAccess } from "./lib/privateAccess";
-import {
-  hammingDistanceHex,
-  sharedPaletteColors,
-} from "./lib/perceptualHash";
+import { hammingDistanceHex, sharedPaletteColors } from "./lib/perceptualHash";
 
 const visualJobTypes = ["dominant_colors", "perceptual_hash"] as const;
 
@@ -20,7 +22,8 @@ export const start = mutation({
       ctx.db.get(args.referenceId),
       ctx.db.get(args.assetId),
     ]);
-    if (!reference || reference.deleted) throw new Error("Reference not found.");
+    if (!reference || reference.deleted)
+      throw new Error("Reference not found.");
     if (!asset || asset.referenceId !== args.referenceId) {
       throw new Error("Visual asset not found.");
     }
@@ -201,14 +204,15 @@ export const findSimilar = query({
       .collect();
     const target = targetAssets.find(
       (asset) =>
-        typeof asset.perceptualHash === "string" && asset.perceptualHash.length > 0,
+        typeof asset.perceptualHash === "string" &&
+        asset.perceptualHash.length > 0,
     );
     if (!target?.perceptualHash) return [];
 
     const bestByReference = new Map<
       string,
       {
-        asset: any;
+        asset: Doc<"assets">;
         distance: number;
         sharedColors: string[];
         score: number;
@@ -339,7 +343,8 @@ function normalizeColors(values: string[]) {
         .filter((value) => /^#[0-9a-f]{6}$/.test(value)),
     ),
   ).slice(0, 8);
-  if (colors.length === 0) throw new Error("At least one dominant color is required.");
+  if (colors.length === 0)
+    throw new Error("At least one dominant color is required.");
   return colors;
 }
 
@@ -349,3 +354,180 @@ function positiveDimension(value: number) {
   }
   return Math.round(value);
 }
+
+/** Authenticated, bounded work enumeration; serves owned storage objects only. */
+export const listAssets = query({
+  args: { accessKey: v.string(), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    const page = await ctx.db.query("assets").paginate({
+      ...args.paginationOpts,
+      numItems: Math.min(32, Math.max(1, args.paginationOpts.numItems)),
+    });
+    const items = [];
+    let skipped = 0;
+    for (const asset of page.page) {
+      const reference = await ctx.db.get(asset.referenceId);
+      const inputStorageId = asset.previewStorageId ?? asset.originalStorageId;
+      // Linked URLs and Drive originals await the existing derivative pipeline.
+      if (
+        !reference ||
+        reference.deleted ||
+        !inputStorageId ||
+        (asset.mimeType && !asset.mimeType.startsWith("image/"))
+      ) {
+        skipped++;
+        continue;
+      }
+      const inputUrl = await ctx.storage.getUrl(inputStorageId);
+      if (!inputUrl) {
+        skipped++;
+        continue;
+      }
+      const existing = await ctx.db
+        .query("visualEnrichments")
+        .withIndex("by_asset_id", (q) => q.eq("assetId", asset._id))
+        .unique();
+      items.push({
+        assetId: asset._id,
+        referenceId: reference._id,
+        inputStorageId,
+        inputUrl,
+        inputVariant:
+          asset.previewStorageId === inputStorageId ? "preview" : "original",
+        originalContentHash: asset.contentHash ?? null,
+        sourceUrl: reference.sourceUrl,
+        title: reference.title ?? "",
+        platform: reference.platform,
+        expectedRevision: existing?.revision ?? 0,
+        completedPipeline:
+          existing?.inputStorageId === inputStorageId &&
+          (existing.originalContentHash ?? null) === (asset.contentHash ?? null)
+            ? existing.pipelineFingerprint
+            : null,
+      });
+    }
+    return {
+      items,
+      skipped,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+export const submit = mutation({
+  args: {
+    accessKey: v.string(),
+    assetId: v.id("assets"),
+    inputStorageId: v.id("_storage"),
+    inputSha256: v.string(),
+    originalContentHash: v.union(v.string(), v.null()),
+    pipelineFingerprint: v.string(),
+    expectedRevision: v.number(),
+    models: v.array(visualModel),
+    tags: v.array(visualTag),
+    ratings: v.array(v.object({ label: v.string(), confidence: v.number() })),
+    ocrText: v.optional(v.string()),
+    caption: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    validateVisualResult(args);
+    if (
+      !Number.isSafeInteger(args.expectedRevision) ||
+      args.expectedRevision < 0
+    )
+      throw new Error("Invalid result revision.");
+    const asset = await ctx.db.get(args.assetId);
+    if (
+      !asset ||
+      ![asset.previewStorageId, asset.originalStorageId].includes(
+        args.inputStorageId,
+      )
+    )
+      throw new Error("Asset input changed; reload the work item.");
+    const reference = await ctx.db.get(asset.referenceId);
+    if (!reference || reference.deleted)
+      throw new Error("Reference is unavailable.");
+    if ((asset.contentHash ?? null) !== args.originalContentHash)
+      throw new Error("Original content changed; reload the work item.");
+    const existing = await ctx.db
+      .query("visualEnrichments")
+      .withIndex("by_asset_id", (q) => q.eq("assetId", args.assetId))
+      .unique();
+    if (
+      existing &&
+      existing.pipelineFingerprint === args.pipelineFingerprint &&
+      existing.inputSha256 === args.inputSha256 &&
+      existing.inputStorageId === args.inputStorageId &&
+      (existing.originalContentHash ?? null) === args.originalContentHash
+    ) {
+      return { id: existing._id, replayed: true, revision: existing.revision };
+    }
+    if ((existing?.revision ?? 0) !== args.expectedRevision)
+      throw new Error(
+        "Another worker completed this asset; reload the work item.",
+      );
+    const now = Date.now();
+    const payload = {
+      assetId: asset._id,
+      referenceId: asset.referenceId,
+      inputStorageId: args.inputStorageId,
+      inputSha256: args.inputSha256,
+      pipelineFingerprint: args.pipelineFingerprint,
+      ...(args.originalContentHash
+        ? { originalContentHash: args.originalContentHash }
+        : {}),
+      models: args.models,
+      tags: args.tags,
+      ratings: args.ratings,
+      ...(args.ocrText !== undefined ? { ocrText: args.ocrText } : {}),
+      ...(args.caption !== undefined ? { caption: args.caption } : {}),
+      revision: (existing?.revision ?? 0) + 1,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    const id =
+      existing?._id ?? (await ctx.db.insert("visualEnrichments", payload));
+    if (existing) await ctx.db.replace(existing._id, payload);
+    // Human corrections live in their own table and survive replacement of machine output.
+    await refreshReferenceSearch(ctx, asset.referenceId);
+    return { id, replayed: false, revision: payload.revision };
+  },
+});
+
+export const correct = mutation({
+  args: {
+    accessKey: v.string(),
+    assetId: v.id("assets"),
+    rejectedTags: v.array(v.string()),
+    hideOcr: v.boolean(),
+    hideCaption: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    if (
+      args.rejectedTags.length > 256 ||
+      args.rejectedTags.some((t) => !t.trim() || t.length > 120)
+    )
+      throw new Error("Invalid correction list.");
+    const asset = await ctx.db.get(args.assetId);
+    if (!asset) throw new Error("Asset is unavailable.");
+    const existing = await ctx.db
+      .query("visualCorrections")
+      .withIndex("by_asset_id", (q) => q.eq("assetId", asset._id))
+      .unique();
+    const payload = {
+      assetId: asset._id,
+      rejectedTags: [...new Set(args.rejectedTags)],
+      hideOcr: args.hideOcr,
+      hideCaption: args.hideCaption,
+      updatedAt: Date.now(),
+    };
+    if (existing) await ctx.db.replace(existing._id, payload);
+    else await ctx.db.insert("visualCorrections", payload);
+    await refreshReferenceSearch(ctx, asset.referenceId);
+    return null;
+  },
+});

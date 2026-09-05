@@ -8,6 +8,7 @@ import {
   internalQuery,
   type ActionCtx,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import { upsertPreferenceSnapshotToDrive } from "./lib/drive";
 import {
@@ -376,7 +377,7 @@ async function exportState(ctx: MutationCtx) {
 }
 
 async function latestSourceSnapshot(
-  ctx: Pick<MutationCtx, "db">,
+  ctx: Pick<QueryCtx, "db">,
   referenceId: Id<"references">,
 ) {
   return await ctx.db

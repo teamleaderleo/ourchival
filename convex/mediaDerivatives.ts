@@ -5,6 +5,7 @@ import {
   type FunctionReference,
 } from "convex/server";
 import { v } from "convex/values";
+import { scheduleReferenceSearch } from "./lib/searchIndex";
 import { requireOwnerAccess } from "./lib/privateAccess";
 
 const defaultBatchSize = 4;
@@ -136,6 +137,7 @@ export const complete = internalMutation({
     });
 
     const previewKilobytes = Math.max(1, Math.round(args.previewFileSize / 1024));
+    await scheduleReferenceSearch(ctx, asset.referenceId);
     const thumbKilobytes = Math.max(1, Math.round(args.thumbFileSize / 1024));
     await ctx.db.patch(job._id, {
       status: "succeeded",

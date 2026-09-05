@@ -1,3 +1,5 @@
+import { scheduleReferenceSearch } from "./searchIndex";
+
 export type TagRecord = {
   _id: any;
   name: string;
@@ -62,6 +64,7 @@ export async function updateReferenceTags(
   );
 
   await ctx.db.patch(reference._id, { tagIds: nextTagIds });
+  await scheduleReferenceSearch(ctx, reference._id);
   return await getTagsByIds(ctx, nextTagIds);
 }
 
@@ -87,6 +90,7 @@ export async function updateAssetTags(
   );
 
   await ctx.db.patch(asset._id, { tagIds: nextTagIds });
+  await scheduleReferenceSearch(ctx, asset.referenceId);
   return await getTagsByIds(ctx, nextTagIds);
 }
 
