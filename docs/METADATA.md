@@ -39,3 +39,11 @@ local-first-vault changes. [Setup](VISUAL_SEARCH.md) and
 [validation evidence](VISUAL_SEARCH_VALIDATION.md) describe the implemented scope.
 The representative image/query pilot is still needed to choose useful thresholds
 and assess OCR and retrieval quality before archive-wide enrichment.
+
+The [reference-oriented trial](VISUAL_METADATA_EVALUATION.md) now covers 48 images
+sampled from the ongoing Air Blue/Drive archive and compares five local models.
+It supports focused tag groups and semantic retrieval, while identifying why
+unchecked structured captions should not populate reference fields automatically.
+The [source-tag lookup trial](SOURCE_TAG_LOOKUP.md) found exact Danbooru file-hash
+matches for 21 of those 48 images. Reusing attributed existing tags should be
+the first enrichment route, with local predictions filling gaps.
