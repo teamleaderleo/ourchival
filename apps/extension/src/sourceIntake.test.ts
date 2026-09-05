@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectSourceIntakeContext,
   reconcilePinterestQueue,
+  selectSourceIntakeState,
   sourceIntakePayload,
 } from "./sourceIntake";
 
@@ -84,6 +85,22 @@ describe("reconcilePinterestQueue", () => {
       pendingUrls: [discovered[1]],
       nextUrl: discovered[1],
     });
+  });
+});
+
+describe("selectSourceIntakeState", () => {
+  it("does not hide the current source behind another running import", () => {
+    const pixiv = {
+      provider: "pixiv_bookmarks" as const,
+      sourceUrl:
+        "https://www.pixiv.net/en/users/17656036/bookmarks/artworks?rest=show&mode=all",
+      running: true,
+      updatedAt: "2026-09-05T18:00:00.000Z",
+    };
+    const pinterest = detectSourceIntakeContext(
+      "https://ca.pinterest.com/teamleaderleo/",
+    );
+    expect(selectSourceIntakeState(pinterest, [pixiv])).toBeUndefined();
   });
 });
 
