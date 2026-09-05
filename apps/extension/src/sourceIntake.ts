@@ -149,17 +149,18 @@ export function selectSourceIntakeState<
     updatedAt: string;
   },
 >(context: SourceIntakeContext | undefined, states: T[]) {
+  const ranked = [...states].sort((left, right) => {
+    if (left.running !== right.running) return left.running ? -1 : 1;
+    return right.updatedAt.localeCompare(left.updatedAt);
+  });
   if (context) {
-    return states.find(
+    return ranked.find(
       (state) =>
         state.provider === context.provider &&
         state.sourceUrl === context.sourceUrl,
     );
   }
-  return [...states].sort((left, right) => {
-    if (left.running !== right.running) return left.running ? -1 : 1;
-    return right.updatedAt.localeCompare(left.updatedAt);
-  })[0];
+  return ranked[0];
 }
 
 const PINTEREST_RESERVED_ROOTS = new Set([

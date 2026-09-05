@@ -102,6 +102,27 @@ describe("selectSourceIntakeState", () => {
     );
     expect(selectSourceIntakeState(pinterest, [pixiv])).toBeUndefined();
   });
+
+  it("shows the newest receipt when a source has multiple runs", () => {
+    const context = detectSourceIntakeContext(
+      "https://ca.pinterest.com/teamleaderleo/",
+    )!;
+    const oldRun = {
+      provider: "pinterest_board" as const,
+      sourceUrl: context.sourceUrl,
+      running: false,
+      updatedAt: "2026-09-05T18:00:00.000Z",
+      observed: 0,
+    };
+    const latestRun = {
+      ...oldRun,
+      updatedAt: "2026-09-05T18:42:00.000Z",
+      observed: 42,
+    };
+    expect(selectSourceIntakeState(context, [oldRun, latestRun])).toBe(
+      latestRun,
+    );
+  });
 });
 
 describe("sourceIntakePayload", () => {
