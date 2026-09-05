@@ -686,6 +686,13 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
       exhausted: false,
     };
   }
+  const boardUrl = new URL(context.sourceUrl);
+  const boardParts = boardUrl.pathname.split("/").filter(Boolean);
+  const boardKey = boardParts.slice(0, 2).join("/");
+  const boardName = firstText(
+    document.querySelector<HTMLElement>("h1")?.textContent?.trim(),
+    boardParts[1]?.replaceAll("-", " "),
+  );
   const items = new Map<string, SourceIntakeItem>();
   let stagnantBottomRounds = 0;
   for (let round = 0; round < 10 && !stopSourceIntake; round += 1) {
@@ -708,7 +715,15 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
         ...(title ? { title } : {}),
         ...(previewImageUrl ? { previewImageUrl } : {}),
         sensitive: "unknown",
-        metadata: { boardUrl: context.sourceUrl },
+        metadata: {
+          provenance: {
+            platform: "pinterest",
+            containerType: "board",
+            containerKey: boardKey,
+            containerUrl: context.sourceUrl,
+            ...(boardName ? { containerName: boardName } : {}),
+          },
+        },
       });
     }
     const atBottom =

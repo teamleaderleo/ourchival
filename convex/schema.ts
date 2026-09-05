@@ -388,6 +388,35 @@ export default defineSchema({
     .index("by_session_key_and_status", ["sessionKey", "status"])
     .index("by_source_and_provider_id", ["source", "providerId"]),
 
+  referenceOrigins: defineTable({
+    referenceId: v.id("references"),
+    platform: v.union(
+      v.literal("x"),
+      v.literal("pinterest"),
+      v.literal("pixiv"),
+      v.literal("discord"),
+      v.literal("manual"),
+      v.literal("generic"),
+    ),
+    containerType: v.string(),
+    containerKey: v.string(),
+    containerUrl: v.optional(v.string()),
+    containerName: v.optional(v.string()),
+    providerItemId: v.string(),
+    captureSessionId: v.optional(v.string()),
+    firstObservedAt: v.number(),
+    lastObservedAt: v.number(),
+    ordinal: v.optional(v.number()),
+    jsonMetadata: v.optional(v.string()),
+  })
+    .index("by_reference_id", ["referenceId"])
+    .index("by_platform_and_container_key", ["platform", "containerKey"])
+    .index("by_platform_and_container_key_and_provider_item_id", [
+      "platform",
+      "containerKey",
+      "providerItemId",
+    ]),
+
   clipperPairingGrants: defineTable({
     codeHash: v.string(),
     createdAt: v.number(),
