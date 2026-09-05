@@ -29,6 +29,8 @@ export function ReferenceQuickLook({
   onMove: (action: "keep" | "later" | "trash") => Promise<boolean>;
 }) {
   const [assetIndex, setAssetIndex] = useState(0);
+  const [zoomed, setZoomed] = useState(false);
+  const imageViewport = useRef<HTMLDivElement>(null);
   const [copyStatus, setCopyStatus] = useState("");
   const copyGeneration = useRef(0);
   useEffect(() => { copyGeneration.current += 1; setCopyStatus(""); }, [reference._id]);
@@ -61,6 +63,10 @@ export function ReferenceQuickLook({
     [reference._id, references],
   );
   const imageSource = referencePreviewSource(reference, assetIndex);
+  useEffect(() => {
+    setZoomed(false);
+    imageViewport.current?.scrollTo(0, 0);
+  }, [imageSource]);
   const {
     resolvedUrl: imageUrl,
     loading: imageLoading,
@@ -106,9 +112,15 @@ export function ReferenceQuickLook({
       if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
-      if (event.repeat && ["k", "l", "f", "o", "delete"].includes(event.key.toLowerCase())) {
+      if (event.repeat && ["k", "l", "f", "o", "z", "delete"].includes(event.key.toLowerCase())) {
         event.preventDefault();
         event.stopPropagation();
+        return;
+      }
+      if (event.key.toLowerCase() === "z" && imageUrl && !imageFailed) {
+        event.preventDefault();
+        event.stopPropagation();
+        setZoomed((value) => !value);
         return;
       }
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {
@@ -146,7 +158,7 @@ export function ReferenceQuickLook({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        onClose();
+        if (zoomed) setZoomed(false); else onClose();
         return;
       }
       if (event.key === "ArrowLeft" && previous) {
@@ -177,7 +189,7 @@ export function ReferenceQuickLook({
 
     document.addEventListener("keydown", handleKey, true);
     return () => document.removeEventListener("keydown", handleKey, true);
-  }, [next, onClose, onOpen, onSelect, onToggleFavorite, previous, reference, move]);
+  }, [next, onClose, onOpen, onSelect, onToggleFavorite, previous, reference, move, zoomed, imageUrl, imageFailed]);
 
   return (
     <div
@@ -200,6 +212,7 @@ export function ReferenceQuickLook({
             <strong>{title}</strong>
           </div>
           <div className="quick-look-header-actions">
+            <button type="button" className="button ghost viewer-zoom" aria-label={zoomed ? "Fit preview to viewer" : "Show preview at actual size"} aria-pressed={zoomed} disabled={!imageUrl || imageFailed} title="Actual preview size / fit (Z or double-click image)" onClick={() => setZoomed((value) => !value)}>{zoomed ? "Fit" : "100%"}</button>
             <span className="quick-look-count">
               {index >= 0 ? index + 1 : 1} / {references.length}
             </span>
@@ -227,6 +240,7 @@ export function ReferenceQuickLook({
         </header>
 
         <div className="quick-look-stage">
+          <div ref={imageViewport} className={`quick-look-image-viewport ${zoomed ? "actual-size" : ""}`}>
           {imageUrl && !imageFailed ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -234,6 +248,8 @@ export function ReferenceQuickLook({
               src={imageUrl}
               alt={title}
               decoding="async"
+              onDoubleClick={() => setZoomed((value) => !value)}
+              title={zoomed ? "Double-click to fit" : "Double-click for actual preview size"}
               onError={() => setImageFailed(true)}
             />
           ) : (
@@ -250,6 +266,7 @@ export function ReferenceQuickLook({
             </div>
           )}
 
+          </div>
           <button
             type="button"
             className="quick-look-nav previous"
