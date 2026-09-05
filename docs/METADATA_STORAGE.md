@@ -49,3 +49,10 @@ receipt. Record actual live table/export sizes separately when annotations are
 published; include shared vocabulary, recipes, IDs, bookkeeping and search
 projections before making a whole-catalog saving claim. Export bytes and billed
 storage are different measures. Never count original media as metadata savings.
+
+## Browser layout metadata
+
+Natural thumbnail dimensions are cached locally for at most 2,048 asset IDs.
+This is additional, bounded layout metadata used to prepare later visits. It
+contains no image bytes and is separate from the tag-compression measurements
+above; it must not be counted as a compression saving.

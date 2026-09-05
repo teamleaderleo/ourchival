@@ -3,6 +3,9 @@
 import { BrandMark } from "./BrandMark";
 import { ArchiveSearch } from "./ArchiveSearch";
 import { ProjectPanel } from "./ProjectPanel";
+import { Popover } from "./Popover";
+import { Masonry } from "./Masonry";
+import { LoadMore } from "./LoadMore";
 
 import { useEffect, useState } from "react";
 import { InspectorOrganization } from "./InspectorOrganization";
@@ -109,10 +112,7 @@ export function ReferenceVault() {
         </div>
         <ArchiveSearch query={vault.query} onChange={vault.setQuery} />
         <div className="header-actions">
-          <details className="project-menu">
-            <summary className="button ghost">Projects</summary>
-            <div className="project-menu-content"><ProjectPanel query={vault.query} onChange={vault.setQuery} /></div>
-          </details>
+          <Popover className="project-menu" label="Projects"><ProjectPanel query={vault.query} onChange={vault.setQuery} /></Popover>
           {vault.status ? (
             <div
               className={`sync-status status-${vault.statusTone}`}
@@ -218,12 +218,12 @@ export function ReferenceVault() {
             </p>
           </div>
           <div className="vault-toolbar">
-            {vault.activeView !== "links" ? <button type="button" className={`button ${vault.imagesOnly ? "secondary" : "ghost"}`} aria-pressed={vault.imagesOnly} onClick={() => vault.setImagesOnly((value) => !value)}>Images only</button> : null}
             <SavedSearchPanel
               activeView={vault.activeView}
               query={vault.query}
               onApply={applySavedSearch}
             />
+            <TagFilterBar query={vault.query} onChange={vault.setQuery} imagesOnly={vault.imagesOnly} onImagesOnly={vault.setImagesOnly} onRefresh={vault.retryLoad} />
           </div>
 
           {vault.activeView === "links" ? (
@@ -268,7 +268,6 @@ export function ReferenceVault() {
             </form>
           ) : null}
 
-          <TagFilterBar query={vault.query} onChange={vault.setQuery} />
 
           {isReviewView && vault.selectedReference ? (
             <div className="review-strip">
@@ -326,12 +325,7 @@ export function ReferenceVault() {
             className={`reference-grid ${vault.activeView === "links" ? "link-grid" : ""} ${vault.filteredReferences.length === 0 ? "empty-grid" : ""}`}
           >
             {vault.isLoading && vault.filteredReferences.length === 0 ? (
-              <article className="empty-card loading-card" aria-live="polite">
-                <span className="empty-mark" aria-hidden="true">
-                  ◌
-                </span>
-                <h2>Opening {currentViewLabel.toLowerCase()}…</h2>
-              </article>
+              <div aria-label="Opening archive" aria-busy="true"><Masonry>{Array.from({ length: 8 }, (_, index) => <div key={index} className="masonry-skeleton" style={{ height: 180 + (index % 3) * 65 }} />)}</Masonry></div>
             ) : vault.loadFailed ? (
               <article className="empty-card load-error-card" role="alert">
                 <span className="empty-mark" aria-hidden="true">
@@ -371,7 +365,7 @@ export function ReferenceVault() {
                 </p>
               </article>
             ) : (
-              vault.filteredReferences.map((reference, index) => (
+              <Masonry>{vault.filteredReferences.map((reference, index) => (
                 <ReferenceCard
                   key={reference._id}
                   reference={reference}
@@ -381,36 +375,11 @@ export function ReferenceVault() {
                   onQuickLook={() => openQuickLook(reference._id)}
                   onToggleFavorite={() => void vault.toggleFavorite(reference)}
                 />
-              ))
+              ))}</Masonry>
             )}
           </section>
 
-          {!vault.isLoading && (vault.canLoadNewer || vault.hasMore) ? (
-            <div className="pagination-bar" aria-live="polite">
-              <div className="pagination-actions">
-                <button
-                  type="button"
-                  className="button ghost"
-                  onClick={() => void vault.loadNewerPage()}
-                  disabled={!vault.canLoadNewer || vault.isLoadingPage}
-                >
-                  Newer
-                </button>
-                <button
-                  type="button"
-                  className="button secondary"
-                  onClick={() => void vault.loadOlderPage()}
-                  disabled={!vault.hasMore || vault.isLoadingPage}
-                >
-                  {vault.isLoadingPage
-                    ? "Loading…"
-                    : vault.hasMore
-                      ? "Older"
-                      : "End reached"}
-                </button>
-              </div>
-            </div>
-          ) : null}
+          {!vault.isLoading && vault.hasMore ? <LoadMore busy={vault.isLoadingPage} auto={vault.statusTone !== "error"} onLoad={vault.loadOlderPage} /> : null}
         </main>
         {vault.selectedReference ? (
           <aside

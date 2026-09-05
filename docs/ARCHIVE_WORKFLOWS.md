@@ -3,8 +3,7 @@
 Here, the user is trying to find useful material, inspect it, decide whether to
 keep it, and connect it to work they can revisit.
 
-The default gallery shows entries with actual saved image assets. “Images only”
-can be switched off to include text posts and other captures in the current
+The default gallery shows entries with actual saved image assets. View & tools → Include text posts restores other captures in the current
 collection. This is a display filter, not deletion. Empty image pages advance
 through the existing chronological cursor. Collection totals still describe
 all saved entries, including those hidden by the image filter.
@@ -33,14 +32,26 @@ promise recovery of material deleted before capture or complete web-page backups
 
 ## Loading behavior
 
-The catalog's stored width and height reserve thumbnail space before image
-decoding. Unknown dimensions use a stable square; unusually tall/wide images
-use bounded frames with contain fitting. The derivative pipeline can populate
-dimensions for a later visit. The current frame does not change to a newly
-decoded natural size. CSS Grid replaces rebalancing newspaper columns.
+Natural image proportions are preserved in separate masonry columns. Images are
+not fitted into square frames. Appending older pages keeps existing cards in their
+columns. Stored dimensions reserve space when available; otherwise the browser
+learns and remembers natural dimensions after decoding, for subsequent visits.
+The dimension cache contains only asset IDs and dimensions, with at most 2,048
+entries. A previously unseen image with no catalog dimensions can still settle
+once on its first load; this does not rebalance all the masonry columns.
+
+Older pages append through a near-bottom sentinel, with a More button as a
+keyboard/failure fallback. Overlapping pages are deduplicated without changing
+existing order. Ten recent view/query combinations retain their loaded references
+and scroll position; mutations invalidate this cache. Refresh archive explicitly
+fetches fresh data. The first visit to an uncached collection can still require
+a fetch, but revisiting cached views does not clear and reload the canvas.
+
+Saved searches, projects and View & tools are floating popovers with outside-click
+and Escape dismissal. Browser pairing is under Settings → Connect a browser
+extension. Main action buttons have square edges.
 
 Only the first four cards request priority image loads. Other cards activate
-within 500px of the viewport; this also delays authenticated Drive fetches,
-which native image lazy loading alone could not delay. Private originals stay
-in Drive, and preview storage remains unchanged. This pass does not claim a
-measured cold-network latency improvement or introduce a new media service.
+within 500px of the viewport; this also delays authenticated Drive fetches.
+Private originals stay in Drive, and preview storage remains unchanged. This
+pass does not claim a measured cold-network latency improvement.

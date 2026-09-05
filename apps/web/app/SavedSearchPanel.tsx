@@ -1,4 +1,5 @@
 "use client";
+import { Popover } from "./Popover";
 
 import { useState, type FormEvent } from "react";
 import type { VaultView } from "./VaultNavigation";
@@ -98,11 +99,10 @@ export function SavedSearchPanel({
   }
 
   return (
-    <details className="saved-search-panel">
-      <summary>
+    <Popover className="saved-search-panel" label={<>
         <span>Saved searches</span>
         {searches.length > 0 ? <span>{searches.length}</span> : null}
-      </summary>
+      </>}>
       <form className="saved-search-create" onSubmit={saveCurrent}>
         <input
           value={name}
@@ -173,7 +173,7 @@ export function SavedSearchPanel({
           {status}
         </p>
       ) : null}
-    </details>
+    </Popover>
   );
 }
 

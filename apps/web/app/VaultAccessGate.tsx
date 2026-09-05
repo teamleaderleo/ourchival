@@ -389,7 +389,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
           aria-controls="vault-account-panel"
           onClick={() => setPanelOpen((open) => !open)}
         >
-          Account
+          Settings
         </button>
       </div>
 
@@ -401,8 +401,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
         >
           <div className="clipper-access-heading">
             <div>
-              <p className="eyebrow">Private capture</p>
-              <h2>Pair Ourchival Clipper</h2>
+              <h2>Settings</h2>
             </div>
             <button
               type="button"
@@ -412,6 +411,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
               Close
             </button>
           </div>
+          <details className="browser-connection"><summary>Connect a browser extension</summary>
           <p>
             Generate a short-lived code, then enter it in the browser extension.
             Each browser receives its own revocable credential.
@@ -477,6 +477,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
+          </details>
           <div className="clipper-access-footer">
             <span>Finished on this device?</span>
             <button
