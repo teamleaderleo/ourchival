@@ -144,6 +144,31 @@ links through this endpoint; richer post/media payloads should reuse the
 existing capture machinery and source snapshots with bounded provider cursors.
 Do not embed account cookies or credentials in records or portable exports.
 
+### Pixiv screenshot probe (2026-09-04)
+
+The owner's authenticated bookmarks page confirms a stable collection route of
+`/en/users/{userId}/bookmarks/artworks` and exposes these source dimensions in
+the normal UI:
+
+- artwork-kind selection (the visible selection was Illustrations)
+- newest-first ordering
+- public-bookmark visibility, with a separate visibility filter
+- bookmark tags
+- work tags and bookmark-date filters, currently marked as premium UI
+- an explicit reset action and a separate bulk-edit surface
+
+The visible grid showed five artwork cards across. At least one card displayed
+a `3` overlay, confirming that a bookmark occurrence can refer to a multi-page
+artwork and that page count must not be inferred as one from the grid thumbnail.
+The screenshot did not expose artwork titles, creator IDs, a total result count,
+or a pagination/end marker. Those remain unverified and the adapter must not
+claim completeness from this surface alone.
+
+Treat filter state as part of the capture session identity and receipt. Public
+and private bookmarks must be separate bounded runs, while every artwork keeps
+one provider artwork identity with ordered child assets. Premium-only filters
+are optional discovery aids, not intake requirements.
+
 The initial task said “Pixabay” and asked whether that meant Pixiv. Repository
 platform/parser support names Pixiv, and on 2026-09-04 the coordinating task
 relayed Leo's explicit clarification that Pixabay was speech recognition for
