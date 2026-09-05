@@ -12,6 +12,7 @@ export function ArchiveSearch({ query, onChange }: { query: string; onChange: (v
         document.querySelector("[aria-modal=true]")) return;
       event.preventDefault();
       input.current?.focus();
+      input.current?.select();
     }
     window.addEventListener("keydown", focusSearch);
     return () => window.removeEventListener("keydown", focusSearch);
@@ -19,7 +20,7 @@ export function ArchiveSearch({ query, onChange }: { query: string; onChange: (v
   return <label className="search-field header-search">
     <span className="sr-only">Search Ourchival</span>
     <span className="search-icon" aria-hidden="true">⌕</span>
-    <input ref={input} type="search" value={query} onChange={(event) => onChange(event.target.value)} placeholder="Search your archive" />
-    {query ? <button type="button" className="clear-search" onClick={() => onChange("")}>Clear</button> : <kbd aria-hidden="true">/</kbd>}
+    <input ref={input} type="search" value={query} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (query) onChange(""); else input.current?.blur(); } }} placeholder="Search your archive" />
+    {query ? <button type="button" className="clear-search" onClick={() => { onChange(""); input.current?.focus(); }}>Clear</button> : <kbd aria-hidden="true">/</kbd>}
   </label>;
 }

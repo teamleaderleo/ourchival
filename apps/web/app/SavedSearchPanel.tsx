@@ -2,7 +2,7 @@
 import { Popover } from "./Popover";
 
 import { useState, type FormEvent } from "react";
-import type { VaultView } from "./VaultNavigation";
+import { viewLabels, type VaultView } from "./VaultNavigation";
 import {
   createSavedSearch,
   removeSavedSearch,
@@ -22,6 +22,9 @@ export function SavedSearchPanel({
 }) {
   const searches = useSavedSearches();
   const [name, setName] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const canSaveCurrent = Boolean(query.trim()) || activeView !== "all";
@@ -64,7 +67,7 @@ export function SavedSearchPanel({
   }
 
   async function renameSearch(search: SavedSearch) {
-    const nextName = window.prompt("Rename saved search", search.name)?.trim();
+    const nextName = editName.trim();
     if (!nextName || nextName === search.name) return;
 
     setBusy(true);
@@ -76,6 +79,7 @@ export function SavedSearchPanel({
         query: search.query,
         view: search.view,
       });
+      setEditing(null);
       setStatus(`Renamed to “${nextName}”.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not rename search.");
@@ -85,11 +89,11 @@ export function SavedSearchPanel({
   }
 
   async function deleteSearch(search: SavedSearch) {
-    if (!window.confirm(`Delete saved search “${search.name}”?`)) return;
     setBusy(true);
     setStatus("Deleting search…");
     try {
       await removeSavedSearch(search._id);
+      setDeleting(null);
       setStatus(`Deleted “${search.name}”.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not delete search.");
@@ -131,7 +135,7 @@ export function SavedSearchPanel({
               <button
                 type="button"
                 className="saved-search-apply"
-                onClick={() => onApply(search)}
+                onClick={(event) => { const menu = event.currentTarget.closest("details"); if (menu) { menu.open = false; menu.querySelector("summary")?.focus(); } onApply(search); }}
                 disabled={busy}
               >
                 <strong>{search.name}</strong>
@@ -149,7 +153,7 @@ export function SavedSearchPanel({
               <button
                 type="button"
                 className="button ghost"
-                onClick={() => void renameSearch(search)}
+                onClick={() => { setEditing(search._id); setEditName(search.name); setDeleting(null); }}
                 disabled={busy}
               >
                 Rename
@@ -157,11 +161,21 @@ export function SavedSearchPanel({
               <button
                 type="button"
                 className="button ghost danger"
-                onClick={() => void deleteSearch(search)}
+                onClick={() => { setDeleting(search._id); setEditing(null); }}
                 disabled={busy}
               >
                 Delete
               </button>
+              {editing === search._id ? <form className="saved-search-inline" onSubmit={(event) => { event.preventDefault(); void renameSearch(search); }}>
+                <input autoFocus aria-label="Search name" value={editName} maxLength={80} disabled={busy} onChange={(event) => setEditName(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setEditing(null); } }} />
+                <button type="submit" className="button secondary" disabled={busy || !editName.trim() || editName.trim() === search.name}>Save</button>
+                <button type="button" className="button ghost" disabled={busy} onClick={() => setEditing(null)}>Cancel</button>
+              </form> : null}
+              {deleting === search._id ? <div className="saved-search-inline">
+                <span>Delete this saved search?</span>
+                <button type="button" className="button ghost danger" disabled={busy} onClick={() => void deleteSearch(search)}>Delete search</button>
+                <button type="button" className="button ghost" disabled={busy} onClick={() => setDeleting(null)}>Cancel</button>
+              </div> : null}
             </div>
           ))}
         </div>
@@ -178,10 +192,7 @@ export function SavedSearchPanel({
 }
 
 function describeSearch(search: SavedSearch) {
-  const view = search.view === "all" ? "Library" : capitalize(search.view);
+  const view = viewLabels[search.view];
   return search.query ? `${view} · ${search.query}` : view;
 }
 
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}

@@ -166,6 +166,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     if (activeView !== "inbox" && activeView !== "later") return;
 
     function handleReviewKey(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.isComposing || document.querySelector("[aria-modal=true], .popover[open]")) return;
+      if (event.repeat && ["k", "l", "a", "o", "delete", "backspace"].includes(event.key.toLowerCase())) { event.preventDefault(); return; }
       const target = event.target as HTMLElement | null;
       if (
         target?.tagName === "INPUT" ||
