@@ -37,3 +37,44 @@ test("Trash is retained during source, canonical and asset deduplication", async
   const restored = await t.query(internal.httpDb.findDuplicateCapture, { sourceUrl: "https://example.com/post", canonicalUrl: "https://example.com/canonical" });
   expect(restored?.reference.deleted).toBe(false);
 });
+
+test("An existing asset can be recaptured without a fetched replacement", async () => {
+  const t = convexTest(schema, modules);
+  const { referenceId, assetId } = await t.run(async (ctx) => {
+    const referenceId = await ctx.db.insert("references", {
+      kind: "image",
+      platform: "pinterest",
+      sourceUrl: "https://www.pinterest.com/pin/123/",
+      capturedAt: 1,
+      boardIds: [],
+      tagIds: [],
+      favorite: false,
+      archived: false,
+      deleted: false,
+    });
+    const assetId = await ctx.db.insert("assets", {
+      referenceId,
+      originalUrl: "https://i.pinimg.com/originals/a/b/c.jpg",
+      dominantColors: [],
+    });
+    return { referenceId, assetId };
+  });
+
+  await expect(
+    t.mutation(internal.httpDb.saveDuplicateCapture, {
+      referenceId,
+      reason: "source_url",
+      assetUrl: "https://i.pinimg.com/originals/a/b/c.jpg",
+      body: { kind: "image" },
+      tagNames: [],
+      details: { assetIndex: 0, assetCount: 1 },
+    }),
+  ).resolves.toBeTruthy();
+
+  await t.run(async (ctx) => {
+    const asset = await ctx.db.get(assetId);
+    expect(asset?.storageProvider).toBeUndefined();
+    expect(asset?.sourceIndex).toBe(0);
+    expect(asset?.sourceCount).toBe(1);
+  });
+});
