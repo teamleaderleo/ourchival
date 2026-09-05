@@ -4,6 +4,7 @@ export type SourceIntakeProvider = "pixiv_bookmarks" | "pinterest_board";
 
 export type SourceIntakeContext = {
   provider: SourceIntakeProvider;
+  scope: "bookmarks" | "profile" | "board";
   sourceUrl: string;
   currentUrl: string;
   cursor: string;
@@ -29,6 +30,7 @@ export type SourceIntakeChunk = {
   currentUrl: string;
   cursor: string;
   items: SourceIntakeItem[];
+  discoveredUrls?: string[];
   nextUrl?: string;
   reportedCount?: number;
   exhausted: boolean;
@@ -63,6 +65,7 @@ export function detectSourceIntakeContext(
     if (page > 1) current.searchParams.set("p", String(page));
     return {
       provider: "pixiv_bookmarks",
+      scope: "bookmarks",
       sourceUrl: source.toString(),
       currentUrl: current.toString(),
       cursor: `page:${page}`,
@@ -74,6 +77,22 @@ export function detectSourceIntakeContext(
   if (/(^|\.)pinterest\.[a-z.]+$/i.test(url.hostname)) {
     const parts = url.pathname.split("/").filter(Boolean);
     if (
+      parts.length === 1 &&
+      !parts[0]?.startsWith("_") &&
+      !PINTEREST_RESERVED_ROOTS.has(parts[0]!.toLowerCase())
+    ) {
+      const source = new URL(`/${parts[0]}/`, url.origin);
+      return {
+        provider: "pinterest_board",
+        scope: "profile",
+        sourceUrl: source.toString(),
+        currentUrl: source.toString(),
+        cursor: "boards:index",
+        sensitiveDefault: false,
+        label: "Pinterest boards",
+      };
+    }
+    if (
       parts.length !== 2 ||
       parts[0]?.startsWith("_") ||
       parts[1]?.startsWith("_") ||
@@ -84,6 +103,7 @@ export function detectSourceIntakeContext(
     const source = new URL(`/${parts[0]}/${parts[1]}/`, url.origin);
     return {
       provider: "pinterest_board",
+      scope: "board",
       sourceUrl: source.toString(),
       currentUrl: source.toString(),
       cursor: "scroll:0",
@@ -94,6 +114,40 @@ export function detectSourceIntakeContext(
 
   return undefined;
 }
+
+export function reconcilePinterestQueue(args: {
+  pendingUrls?: string[];
+  discoveredUrls?: string[];
+  currentUrl: string;
+  exhausted: boolean;
+}) {
+  const pending = new Set<string>();
+  for (const value of [
+    ...(args.pendingUrls ?? []),
+    ...(args.discoveredUrls ?? []),
+  ]) {
+    const context = detectSourceIntakeContext(value);
+    if (context?.provider === "pinterest_board" && context.scope === "board") {
+      pending.add(context.sourceUrl);
+    }
+  }
+  if (args.exhausted) {
+    const current = detectSourceIntakeContext(args.currentUrl);
+    if (current?.scope === "board") pending.delete(current.sourceUrl);
+  }
+  return {
+    pendingUrls: Array.from(pending),
+    nextUrl: args.exhausted ? pending.values().next().value : undefined,
+  };
+}
+
+const PINTEREST_RESERVED_ROOTS = new Set([
+  "ideas",
+  "pin",
+  "search",
+  "settings",
+  "today",
+]);
 
 export function sourceIntakePayload(
   item: SourceIntakeItem,

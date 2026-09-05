@@ -7,6 +7,7 @@ import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
 import {
   detectSourceIntakeContext,
+  reconcilePinterestQueue,
   sourceIntakePayload,
   type SourceIntakeChunk,
 } from "./sourceIntake";
@@ -555,7 +556,7 @@ async function startSourceIntake() {
   const context = detectSourceIntakeContext(tab?.url);
   if (!context) {
     throw new Error(
-      "Open a Pixiv bookmarks page or one Pinterest board first.",
+      "Open a Pixiv bookmarks page, your Pinterest profile, or one Pinterest board first.",
     );
   }
   const previous = (await getSourceIntakeStates()).find(
@@ -674,7 +675,8 @@ async function acceptSourceIntakeChunk(
     chunk.provider !== state.provider ||
     chunk.sourceUrl !== state.sourceUrl ||
     !Array.isArray(chunk.items) ||
-    chunk.items.length > 120
+    chunk.items.length > 120 ||
+    (chunk.discoveredUrls && chunk.discoveredUrls.length > 500)
   ) {
     throw new Error("The source chunk does not match this import.");
   }
@@ -705,8 +707,16 @@ async function acceptSourceIntakeChunk(
     ? await runPayloadBatch(payloads, state.provider, state.importId)
     : undefined;
   const now = new Date().toISOString();
+  const queue = reconcilePinterestQueue({
+    pendingUrls: state.pendingUrls,
+    discoveredUrls: chunk.discoveredUrls,
+    currentUrl: chunk.currentUrl,
+    exhausted: chunk.exhausted,
+  });
+  const nextUrl = chunk.nextUrl ?? queue.nextUrl;
   state.seenProviderIds = Array.from(seen);
-  state.currentUrl = chunk.nextUrl ?? chunk.currentUrl;
+  state.pendingUrls = queue.pendingUrls;
+  state.currentUrl = nextUrl ?? chunk.currentUrl;
   state.cursor = chunk.cursor;
   state.updatedAt = now;
   state.chunks += 1;
@@ -726,7 +736,8 @@ async function acceptSourceIntakeChunk(
     ? Math.max(0, state.reportedCount - state.observed)
     : 0;
 
-  if (chunk.exhausted) {
+  const sourceExhausted = chunk.exhausted && !nextUrl;
+  if (sourceExhausted) {
     state.running = false;
     state.exhausted = true;
     state.completedAt = now;
@@ -738,14 +749,14 @@ async function acceptSourceIntakeChunk(
   await saveSourceIntakeState(state);
   await reportSourceIntakeSession(
     state,
-    chunk.exhausted && state.unresolved === 0
+    sourceExhausted && state.unresolved === 0
       ? "completed"
       : state.running
         ? "running"
         : "interrupted",
   );
 
-  if (chunk.exhausted && typeof state.workerTabId === "number") {
+  if (sourceExhausted && typeof state.workerTabId === "number") {
     const workerTabId = state.workerTabId;
     setTimeout(
       () => void chrome.tabs.remove(workerTabId).catch(() => undefined),
@@ -755,7 +766,7 @@ async function acceptSourceIntakeChunk(
   return {
     ok: true,
     continue: state.running,
-    ...(state.running && chunk.nextUrl ? { nextUrl: chunk.nextUrl } : {}),
+    ...(state.running && nextUrl ? { nextUrl } : {}),
   };
 }
 
@@ -769,6 +780,7 @@ async function dispatchSourceIntake(tabId: number) {
       type: "OURCHIVAL_START_SOURCE_INTAKE",
       importId: state.importId,
       provider: state.provider,
+      sourceUrl: state.sourceUrl,
     })) as { ok?: boolean; error?: string } | undefined;
   try {
     let response = await start().catch(() => undefined);

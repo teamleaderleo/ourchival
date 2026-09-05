@@ -419,6 +419,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     activeSourceIntake = runSourceIntake(
       String(message.importId ?? ""),
       provider,
+      String(message.sourceUrl ?? ""),
     ).finally(() => {
       activeSourceIntake = undefined;
     });
@@ -486,13 +487,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function runSourceIntake(
   importId: string,
   provider: SourceIntakeProvider,
+  sourceUrl: string,
 ) {
-  if (!importId) return;
+  if (!importId || !sourceUrl) return;
   while (!stopSourceIntake) {
-    const chunk =
+    const scanned =
       provider === "pixiv_bookmarks"
         ? await scanPixivBookmarksPage()
-        : await scanPinterestBoardChunk();
+        : await scanPinterestPage();
+    const chunk = { ...scanned, sourceUrl };
     const response = (await chrome.runtime.sendMessage({
       type: "OURCHIVAL_SOURCE_INTAKE_CHUNK",
       importId,
@@ -508,6 +511,55 @@ async function runSourceIntake(
     if (provider === "pixiv_bookmarks") return;
     await wait(200);
   }
+}
+
+async function scanPinterestPage(): Promise<SourceIntakeChunk> {
+  const context = detectSourceIntakeContext(location.href);
+  if (context?.provider !== "pinterest_board") {
+    throw new Error("Open your Pinterest profile or one Pinterest board before importing.");
+  }
+  return context.scope === "profile"
+    ? scanPinterestProfile(context)
+    : scanPinterestBoardChunk();
+}
+
+async function scanPinterestProfile(
+  context: NonNullable<ReturnType<typeof detectSourceIntakeContext>>,
+): Promise<SourceIntakeChunk> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (document.querySelector('a[href]')) break;
+    await wait(250);
+  }
+  const boardUrls = new Set<string>();
+  let reportedCount = 0;
+  for (const anchor of Array.from(
+    document.querySelectorAll<HTMLAnchorElement>("a[href]"),
+  )) {
+    const candidate = detectSourceIntakeContext(anchor.href);
+    if (
+      candidate?.provider !== "pinterest_board" ||
+      candidate.scope !== "board"
+    ) {
+      continue;
+    }
+    boardUrls.add(candidate.sourceUrl);
+    const label = firstText(
+      anchor.getAttribute("aria-label") ?? undefined,
+      anchor.textContent?.trim(),
+    );
+    const count = label?.match(/([\d,]+)\s+Pins\b/i)?.[1];
+    if (count) reportedCount += Number(count.replaceAll(",", ""));
+  }
+  return {
+    provider: "pinterest_board",
+    sourceUrl: context.sourceUrl,
+    currentUrl: location.href,
+    cursor: "boards:index",
+    items: [],
+    discoveredUrls: Array.from(boardUrls),
+    ...(reportedCount ? { reportedCount } : {}),
+    exhausted: true,
+  };
 }
 
 async function scanPixivBookmarksPage(): Promise<SourceIntakeChunk> {
