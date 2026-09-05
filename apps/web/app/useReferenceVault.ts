@@ -144,6 +144,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   useEffect(() => {
     if (
       (imagesOnly || activeView === "inbox" || activeView === "later") &&
+      activeCount > 0 &&
       filteredReferences.length === 0 &&
       hasMore &&
       !isLoading &&
@@ -156,6 +157,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     filteredReferences.length,
     imagesOnly,
     hasMore,
+    activeCount,
     isLoading,
     isLoadingPage,
   ]);
@@ -550,7 +552,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     captureOpen,
     setCaptureOpen,
     undoMove,
-    hasMore,
+    hasMore: hasMore && activeCount > 0,
     canLoadNewer: cursorHistory.length > 0,
     pageNumber: cursorHistory.length + 1,
     isLoading,
