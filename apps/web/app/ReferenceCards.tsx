@@ -218,6 +218,7 @@ export function ThumbImage({
       src={resolvedUrl}
       width={width}
       height={height}
+      style={!width || !height ? { aspectRatio: "auto 3 / 4" } : undefined}
       alt={title ?? "Saved reference"}
       loading={priority ? "eager" : "lazy"}
       decoding="async"
