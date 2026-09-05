@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBatchSelectionItem } from "./batchSelection";
 import {
   referenceDisplayTitle,
   referenceMetadataLabel,
   referenceMode,
+  thumbnailRatio,
   type SavedReference,
 } from "./referenceVaultModel";
 import { usePrivateImageUrl } from "./usePrivateImageUrl";
@@ -17,13 +18,25 @@ export function ReferenceCard({
   onSelect,
   onQuickLook,
   onToggleFavorite,
+  priority = false,
 }: {
   reference: SavedReference;
   selected: boolean;
   onSelect: () => void;
   onQuickLook?: () => void;
   onToggleFavorite: () => void;
+  priority?: boolean;
 }) {
+  const cardRef = useRef<HTMLElement>(null);
+  const [nearViewport, setNearViewport] = useState(priority);
+  useEffect(() => {
+    if (nearViewport || !cardRef.current) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) { setNearViewport(true); observer.disconnect(); }
+    }, { rootMargin: "500px" });
+    observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, [nearViewport]);
   const asset = reference.assets[0];
   const mode = referenceMode(reference.kind);
   const snapshot = reference.sourceSnapshot;
@@ -50,22 +63,22 @@ export function ReferenceCard({
 
   return (
     <article
+      ref={cardRef}
       className={`reference-card ${mode === "links" ? "link-card" : ""} ${selected ? "selected" : ""} ${batch.selected ? "batch-selected" : ""}`}
     >
       <button
         type="button"
         className="card-select"
         aria-pressed={selected}
-        onClick={onSelect}
-        onDoubleClick={onQuickLook}
-        title={onQuickLook ? "Select · double-click for Quick Look" : undefined}
+        onClick={onQuickLook ?? onSelect}
+        title={onQuickLook ? "Open image" : undefined}
       >
-        <div className="thumb-wrap">
+        <div className="thumb-wrap" style={{ aspectRatio: mode === "links" ? "2 / 1" : String(thumbnailRatio(asset)) }}>
           <ThumbImage
-            imageUrl={imageUrl}
+            imageUrl={nearViewport ? imageUrl : undefined}
             title={title}
             kind={reference.kind}
-            priority={selected}
+            priority={priority}
           />
           {reference.assets.length > 1 ? (
             <span className="kind-badge" aria-label={`${reference.assets.length} images`}>
@@ -142,11 +155,11 @@ export function ReferenceCard({
         <button
           type="button"
           className="quick-look-toggle"
-          aria-label={`Quick look ${title}`}
-          title="Quick Look"
-          onClick={onQuickLook}
+          aria-label={`Details and organization for ${title}`}
+          title="Details and organization"
+          onClick={onSelect}
         >
-          ⤢
+          ⋯
         </button>
       ) : null}
     </article>

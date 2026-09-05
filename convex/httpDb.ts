@@ -371,7 +371,7 @@ export const saveDuplicateCapture = internalMutation({
     const referenceId = ctx.db.normalizeId("references", args.referenceId);
     if (!referenceId) return null;
     const reference = await ctx.db.get(referenceId);
-    if (!reference) return null;
+    if (!reference || reference.deleted) return null;
     const details = args.details as Record<string, any>;
     const metadata = args.metadata as Record<string, any> | undefined;
     const body = args.body as Record<string, any>;
@@ -538,7 +538,7 @@ async function findDuplicate(
       .collect();
     for (const asset of matchingAssets) {
       const reference = await ctx.db.get(asset.referenceId);
-      if (reference && !reference.deleted) {
+      if (reference) {
         return { reference, assetId: asset._id, reason: "asset_url" as const };
       }
     }
@@ -550,9 +550,7 @@ async function findDuplicate(
       q.eq("canonicalUrl", args.canonicalUrl),
     )
     .collect();
-  const canonicalReference = canonicalMatches.find(
-    (reference: any) => !reference.deleted,
-  );
+  const canonicalReference = canonicalMatches.find((reference: any) => reference.deleted) ?? canonicalMatches[0];
   if (canonicalReference) {
     return {
       reference: canonicalReference,
@@ -565,9 +563,7 @@ async function findDuplicate(
     .query("references")
     .withIndex("by_source_url", (q: any) => q.eq("sourceUrl", args.sourceUrl))
     .collect();
-  const sourceReference = sourceMatches.find(
-    (reference: any) => !reference.deleted,
-  );
+  const sourceReference = sourceMatches.find((reference: any) => reference.deleted) ?? sourceMatches[0];
   return sourceReference
     ? {
         reference: sourceReference,

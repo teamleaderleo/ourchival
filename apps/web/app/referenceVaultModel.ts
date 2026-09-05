@@ -108,6 +108,17 @@ export type SavedReference = {
 
 export type ReferenceLane = "all" | "images" | "links";
 
+export function hasImageAsset(reference: SavedReference) {
+  return reference.assets.some((asset) => Boolean(
+    asset.originalUrl || asset.storedUrl || asset.previewUrl || asset.thumbUrl,
+  ));
+}
+
+export function thumbnailRatio(asset?: ReferenceAsset) {
+  if (!asset?.width || !asset.height || !Number.isFinite(asset.width / asset.height)) return 1;
+  return Math.max(0.6, Math.min(2.4, asset.width / asset.height));
+}
+
 export type ReferenceFilterOptions = {
   query?: string;
   favoritesOnly?: boolean;

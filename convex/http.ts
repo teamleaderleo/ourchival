@@ -973,6 +973,8 @@ async function persistDuplicateCapture(
     metadata?: LinkMetadata;
   },
 ): Promise<DuplicateCapture | null> {
+  // Trash is a retained rejection, not an invitation to download the same post again.
+  if (duplicate.reference.deleted) return duplicate;
   const assetUrl = cleanString(args.body.assetUrl);
   let storedAsset: StoredRemoteAsset | undefined;
   if (assetUrl && !duplicate.assetId) {
@@ -1078,10 +1080,11 @@ function duplicateResponse(request: Request, duplicate: DuplicateCapture) {
   return jsonResponse(request, {
     ok: true,
     alreadySaved: true,
+    blocked: Boolean(duplicate.reference.deleted),
     duplicateReason: duplicate.reason,
     referenceId: duplicate.reference._id,
     assetId: duplicate.assetId,
-    storageStatus: "already saved",
+    storageStatus: duplicate.reference.deleted ? "blocked by Trash" : "already saved",
     existingReference: {
       title: duplicate.reference.title,
       sourceUrl: duplicate.reference.sourceUrl,

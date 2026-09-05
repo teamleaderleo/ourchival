@@ -110,3 +110,43 @@ body { background: var(--bg); }
   .button, .reference-card { transition: none; }
   .button:hover:not(:disabled) { transform: none; }
 }
+
+/* Stable rows: image decoding never rebalances the entire page. */
+.reference-grid, .reference-grid.link-grid {
+  columns: initial;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.reference-grid > .empty-card { grid-column: 1 / -1; }
+.reference-card { display: block; margin: 0; }
+.reference-card .thumb-wrap { width: 100%; }
+.reference-card .thumb,
+.reference-card .thumb.placeholder,
+.link-card .thumb,
+.link-card .thumb.placeholder {
+  width: 100%; height: 100%; min-height: 0; max-height: none;
+  object-fit: contain;
+}
+.header-search { flex: 1; max-width: 720px; min-width: 150px; margin-inline: 20px; }
+.header-search kbd { position: absolute; right: 14px; top: 12px; color: var(--muted); font-size: 13px; }
+.vault-toolbar { display: flex; justify-content: flex-end; align-items: center; margin-top: 8px; gap: 12px; }
+.project-menu { position: relative; }
+.project-menu > summary { list-style: none; }
+.project-menu > summary::-webkit-details-marker { display: none; }
+.project-menu-content { position: absolute; top: calc(100% + 12px); right: 0; width: min(600px, calc(100vw - 32px)); max-height: 70vh; overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); }
+.viewer-actions, .viewer-assets { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.viewer-assets { color: var(--muted); font-size: 13px; }
+.project-edit-form, .project-edit-form label { display: grid; gap: 8px; }
+.project-edit-form { padding-block: 14px; }
+.project-edit-form input, .project-edit-form textarea, .project-edit-form select { width: 100%; min-height: 38px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.quick-look-footer { flex-wrap: wrap; gap: 12px; }
+@media (max-width: 720px) {
+  .app-header { flex-wrap: wrap; padding-block: 8px; gap: 8px; }
+  .header-search { order: 3; min-width: 100%; margin: 0; }
+  .header-actions { margin-left: auto; }
+  .reference-grid, .reference-grid.link-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .project-menu-content { position: fixed; top: 72px; right: 12px; }
+  .quick-look-footer .button { padding: 8px 10px; }
+}

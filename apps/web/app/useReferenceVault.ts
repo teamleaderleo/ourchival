@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   filterReferences,
+  hasImageAsset,
   getSelectedReference,
   referenceCollection,
   referenceMode,
@@ -70,6 +71,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeView, setActiveView] = useState<VaultView>("inbox");
+  const [imagesOnly, setImagesOnly] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [undoMove, setUndoMove] = useState<UndoMove | null>(null);
@@ -86,13 +88,13 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const favoritesOnly = activeView === "favorites";
   const filteredReferences = useMemo(
     () =>
-      filterReferences(references, {
+      filterReferences(imagesOnly && activeView !== "links" ? references.filter(hasImageAsset) : references, {
         query,
         favoritesOnly,
         lane,
         collection,
       }),
-    [query, references, favoritesOnly, lane, collection],
+    [query, references, favoritesOnly, lane, collection, imagesOnly, activeView],
   );
   const selectedReference = getSelectedReference(
     filteredReferences,
@@ -126,7 +128,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
 
   useEffect(() => {
     if (
-      (activeView === "inbox" || activeView === "later") &&
+      (imagesOnly || activeView === "inbox" || activeView === "later") &&
       filteredReferences.length === 0 &&
       hasMore &&
       !isLoading &&
@@ -137,6 +139,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   }, [
     activeView,
     filteredReferences.length,
+    imagesOnly,
     hasMore,
     isLoading,
     isLoadingPage,
@@ -497,6 +500,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     setQuery,
     activeView,
     activeCount,
+    imagesOnly,
+    setImagesOnly,
     selectedReference,
     filteredReferences,
     libraryCount: counts.all,
@@ -634,7 +639,7 @@ function triageStatus(destination: TriageDestination) {
   if (destination === "keep") return "Kept in Library. Undo is available.";
   if (destination === "later") return "Moved to Later. Undo is available.";
   if (destination === "archive") return "Archived. Undo is available.";
-  if (destination === "trash") return "Moved to Trash. Undo is available.";
+  if (destination === "trash") return "Moved to Trash; recapture blocked. Undo is available.";
   return "Reference restored.";
 }
 
