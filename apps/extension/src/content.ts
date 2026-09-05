@@ -6,6 +6,7 @@ import {
 import type { PageSnapshot } from "@ourchival/shared";
 import {
   detectSourceIntakeContext,
+  pinterestOriginalImageUrl,
   type SourceIntakeChunk,
   type SourceIntakeItem,
   type SourceIntakeProvider,
@@ -709,11 +710,13 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
         image?.alt,
       );
       const previewImageUrl = absoluteHttpUrl(image?.currentSrc || image?.src);
+      const assetUrl = pinterestOriginalImageUrl(previewImageUrl);
       items.set(providerId, {
         providerId,
         sourceUrl: `${location.origin}/pin/${providerId}/`,
         ...(title ? { title } : {}),
         ...(previewImageUrl ? { previewImageUrl } : {}),
+        ...(assetUrl ? { assetUrl } : {}),
         sensitive: "unknown",
         metadata: {
           provenance: {
