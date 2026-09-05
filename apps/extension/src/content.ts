@@ -512,11 +512,22 @@ async function runSourceIntake(
   sourceUrl: string,
 ) {
   if (!importId || !sourceUrl) return;
+  const pinterestScan = {
+    providerIds: new Set<string>(),
+    recoveryProbes: 0,
+  };
+  if (
+    provider === "pinterest_board" &&
+    detectSourceIntakeContext(location.href)?.scope === "board"
+  ) {
+    window.scrollTo(0, 0);
+    await wait(750);
+  }
   while (!stopSourceIntake) {
     const scanned =
       provider === "pixiv_bookmarks"
         ? await scanPixivBookmarksPage()
-        : await scanPinterestPage();
+        : await scanPinterestPage(pinterestScan);
     const chunk = { ...scanned, sourceUrl };
     const response = (await chrome.runtime.sendMessage({
       type: "OURCHIVAL_SOURCE_INTAKE_CHUNK",
@@ -535,7 +546,10 @@ async function runSourceIntake(
   }
 }
 
-async function scanPinterestPage(): Promise<SourceIntakeChunk> {
+async function scanPinterestPage(scan: {
+  providerIds: Set<string>;
+  recoveryProbes: number;
+}): Promise<SourceIntakeChunk> {
   const context = detectSourceIntakeContext(location.href);
   if (context?.provider !== "pinterest_board") {
     throw new Error(
@@ -544,7 +558,7 @@ async function scanPinterestPage(): Promise<SourceIntakeChunk> {
   }
   return context.scope === "profile"
     ? scanPinterestProfile(context)
-    : scanPinterestBoardChunk();
+    : scanPinterestBoardChunk(scan);
 }
 
 async function scanPinterestProfile(
@@ -663,7 +677,10 @@ async function scanPixivBookmarksPage(): Promise<SourceIntakeChunk> {
   };
 }
 
-async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
+async function scanPinterestBoardChunk(scan: {
+  providerIds: Set<string>;
+  recoveryProbes: number;
+}): Promise<SourceIntakeChunk> {
   const context = detectSourceIntakeContext(location.href);
   if (context?.provider !== "pinterest_board") {
     throw new Error("Open one Pinterest board before importing.");
@@ -701,6 +718,7 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
     for (const anchor of pinterestBoardPinAnchors()) {
       const providerId = anchor.href.match(/\/pin\/(\d+)/)?.[1];
       if (!providerId || items.has(providerId)) continue;
+      scan.providerIds.add(providerId);
       const card = closestPinterestCard(anchor);
       const image = card.querySelector<HTMLImageElement>("img");
       const title = firstText(
@@ -736,9 +754,26 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
     window.scrollBy(0, Math.max(480, Math.floor(window.innerHeight * 0.8)));
     await wait(500);
   }
-  const exhausted =
+  const settledAtBottom =
     window.scrollY + window.innerHeight >=
       document.documentElement.scrollHeight - 4 && stagnantBottomRounds >= 2;
+  const expectedPinsObserved =
+    !reportedCount || scan.providerIds.size >= reportedCount;
+  if (
+    settledAtBottom &&
+    !expectedPinsObserved &&
+    scan.recoveryProbes < 6
+  ) {
+    scan.recoveryProbes += 1;
+    window.scrollBy(
+      0,
+      -Math.max(960, Math.floor(window.innerHeight * 4)),
+    );
+    await wait(1_000);
+  }
+  const exhausted =
+    settledAtBottom &&
+    (expectedPinsObserved || scan.recoveryProbes >= 6);
   return {
     provider: "pinterest_board",
     sourceUrl: context.sourceUrl,
