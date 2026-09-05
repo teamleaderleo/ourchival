@@ -1,13 +1,14 @@
 import { CaptureSessionPanel } from "../CaptureSessionPanel";
 import { ReferenceVault } from "../ReferenceVault";
 import { VaultAccessGate } from "../VaultAccessGate";
+import Link from "next/link";
 
 export default function EarlierHostedCatalog() {
   return (
     <>
       <p className="access-message">
         Earlier hosted catalog · This is separate from Air Blue’s working archive.
-        {" "}<a href="/">Return to the working archive</a>
+        {" "}<Link href="/">Return to the working archive</Link>
       </p>
       <VaultAccessGate>
         <CaptureSessionPanel />
