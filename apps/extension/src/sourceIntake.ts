@@ -141,6 +141,27 @@ export function reconcilePinterestQueue(args: {
   };
 }
 
+export function selectSourceIntakeState<
+  T extends {
+    provider: SourceIntakeProvider;
+    sourceUrl: string;
+    running: boolean;
+    updatedAt: string;
+  },
+>(context: SourceIntakeContext | undefined, states: T[]) {
+  if (context) {
+    return states.find(
+      (state) =>
+        state.provider === context.provider &&
+        state.sourceUrl === context.sourceUrl,
+    );
+  }
+  return [...states].sort((left, right) => {
+    if (left.running !== right.running) return left.running ? -1 : 1;
+    return right.updatedAt.localeCompare(left.updatedAt);
+  })[0];
+}
+
 const PINTEREST_RESERVED_ROOTS = new Set([
   "ideas",
   "pin",

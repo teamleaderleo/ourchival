@@ -7,6 +7,7 @@ import {
 } from "./imports";
 import {
   detectSourceIntakeContext,
+  selectSourceIntakeState,
   type SourceIntakeContext,
 } from "./sourceIntake";
 import {
@@ -77,22 +78,7 @@ async function render() {
   ) {
     sourceIntakes.push(legacySourceIntake);
   }
-  const sourceIntake =
-    (sourceContext
-      ? sourceIntakes.find(
-          (candidate) =>
-            candidate.provider === sourceContext.provider &&
-            candidate.sourceUrl === sourceContext.sourceUrl,
-        )
-      : undefined) ??
-    sourceIntakes
-      .filter((candidate) => candidate.running)
-      .sort((left, right) =>
-        right.updatedAt.localeCompare(left.updatedAt),
-      )[0] ??
-    sourceIntakes.sort((left, right) =>
-      right.updatedAt.localeCompare(left.updatedAt),
-    )[0];
+  const sourceIntake = selectSourceIntakeState(sourceContext, sourceIntakes);
   const normalizedEndpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
   const connected = Boolean(normalizedEndpoint && settings.deviceToken);
 
@@ -634,7 +620,7 @@ function batchSourceLabel(source: BatchCaptureSource) {
   if (source === "x_post") return "X post images";
   if (source === "x_likes") return "X Likes";
   if (source === "pixiv_bookmarks") return "Pixiv bookmarks";
-  if (source === "pinterest_board") return "Pinterest board";
+  if (source === "pinterest_board") return "Pinterest boards";
   if (source === "retry") return "Failed-item retry";
   return "Pasted links";
 }
