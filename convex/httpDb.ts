@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { captureSessionCompletedAt } from "./lib/captureSessions";
 import {
   applyReferenceStatsDelta,
   ensureReferenceStats,
@@ -170,7 +171,7 @@ export const upsertCaptureSession = internalMutation({
         ...counts,
         status: args.status,
         startedAt: Math.min(existing.startedAt, args.startedAt),
-        ...(args.completedAt ? { completedAt: args.completedAt } : {}),
+        completedAt: captureSessionCompletedAt(args.status, args.completedAt),
         updatedAt: args.updatedAt,
       });
       return await ctx.db.get(existing._id);
