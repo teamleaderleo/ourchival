@@ -9,15 +9,18 @@
  */
 
 import type * as boards from "../boards.js";
+import type * as captureObservations from "../captureObservations.js";
 import type * as captureSessions from "../captureSessions.js";
 import type * as crons from "../crons.js";
 import type * as enrichmentBatch from "../enrichmentBatch.js";
 import type * as enrichmentJobs from "../enrichmentJobs.js";
 import type * as http from "../http.js";
 import type * as httpDb from "../httpDb.js";
+import type * as lib_captureSessions from "../lib/captureSessions.js";
 import type * as lib_drive from "../lib/drive.js";
 import type * as lib_enrichmentJobState from "../lib/enrichmentJobState.js";
 import type * as lib_imageAnalysis from "../lib/imageAnalysis.js";
+import type * as lib_linkIntake from "../lib/linkIntake.js";
 import type * as lib_linkMetadata from "../lib/linkMetadata.js";
 import type * as lib_perceptualHash from "../lib/perceptualHash.js";
 import type * as lib_platform from "../lib/platform.js";
@@ -49,15 +52,18 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   boards: typeof boards;
+  captureObservations: typeof captureObservations;
   captureSessions: typeof captureSessions;
   crons: typeof crons;
   enrichmentBatch: typeof enrichmentBatch;
   enrichmentJobs: typeof enrichmentJobs;
   http: typeof http;
   httpDb: typeof httpDb;
+  "lib/captureSessions": typeof lib_captureSessions;
   "lib/drive": typeof lib_drive;
   "lib/enrichmentJobState": typeof lib_enrichmentJobState;
   "lib/imageAnalysis": typeof lib_imageAnalysis;
+  "lib/linkIntake": typeof lib_linkIntake;
   "lib/linkMetadata": typeof lib_linkMetadata;
   "lib/perceptualHash": typeof lib_perceptualHash;
   "lib/platform": typeof lib_platform;

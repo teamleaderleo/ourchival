@@ -30,6 +30,17 @@ const observedXLikesSources = new Set<string>();
 const networkXLikesPostIds = new Set<string>();
 const unparseableXLikesArticles = new Set<string>();
 let networkXLikesPages = 0;
+let activeXLikesIdentity: { importId: string; profileUrl: string } | undefined;
+const pendingXLikesObservations = new Map<
+  string,
+  {
+    providerId: string;
+    sourceUrl?: string;
+    stage: "discovered" | "rendered" | "archived";
+  }
+>();
+let xLikesObservationTimer: number | undefined;
+let xLikesObservationFlush = Promise.resolve();
 
 const xLikesChunkSize = 24;
 const xLikesIdleRoundLimit = 80;
@@ -55,9 +66,61 @@ window.addEventListener("message", (event) => {
   for (const postId of event.data.postIds.slice(0, 200)) {
     if (typeof postId === "string" && /^\d+$/.test(postId)) {
       networkXLikesPostIds.add(postId);
+      queueXLikesObservation({ providerId: postId, stage: "discovered" });
     }
   }
 });
+
+function queueXLikesObservation(observation: {
+  providerId: string;
+  sourceUrl?: string;
+  stage: "discovered" | "rendered" | "archived";
+}) {
+  if (!activeXLikesIdentity) return;
+  const existing = pendingXLikesObservations.get(observation.providerId);
+  const rank = { discovered: 0, rendered: 1, archived: 2 } as const;
+  if (!existing || rank[observation.stage] >= rank[existing.stage]) {
+    pendingXLikesObservations.set(observation.providerId, {
+      ...existing,
+      ...observation,
+      sourceUrl: observation.sourceUrl ?? existing?.sourceUrl,
+    });
+  }
+  if (xLikesObservationTimer !== undefined) return;
+  xLikesObservationTimer = window.setTimeout(() => {
+    xLikesObservationTimer = undefined;
+    void flushXLikesObservations();
+  }, 350);
+}
+
+async function flushXLikesObservations() {
+  xLikesObservationFlush = xLikesObservationFlush
+    .catch(() => undefined)
+    .then(async () => {
+      while (activeXLikesIdentity && pendingXLikesObservations.size > 0) {
+        const observations = Array.from(
+          pendingXLikesObservations.values(),
+        ).slice(0, 200);
+        for (const observation of observations) {
+          pendingXLikesObservations.delete(observation.providerId);
+        }
+        const response = (await chrome.runtime
+          .sendMessage({
+            type: "OURCHIVAL_X_LIKES_OBSERVED",
+            ...activeXLikesIdentity,
+            observations,
+          })
+          .catch(() => undefined)) as { ok?: boolean } | undefined;
+        if (!response?.ok) {
+          for (const observation of observations) {
+            queueXLikesObservation(observation);
+          }
+          break;
+        }
+      }
+    });
+  await xLikesObservationFlush;
+}
 
 if (isXPage()) {
   const observer = new MutationObserver(() => scheduleArchiveBadgeRefresh());
@@ -695,6 +758,10 @@ async function runXLikesImport(args: {
         "The X Likes import checkpoint does not match this page.",
       );
     }
+    activeXLikesIdentity = {
+      importId: args.importId,
+      profileUrl: args.profileUrl,
+    };
     if (!args.resumeAfterSourceUrl) {
       window.scrollTo({ top: 0 });
       await wait(400);
@@ -726,6 +793,11 @@ async function runXLikesImport(args: {
         }
         visibleBottomSourceUrl = parsed.sourceUrl;
         observedXLikesSources.add(parsed.sourceUrl);
+        queueXLikesObservation({
+          providerId: parsed.postId,
+          sourceUrl: parsed.sourceUrl,
+          stage: "rendered",
+        });
 
         if (seekingCursor) {
           if (parsed.sourceUrl === args.resumeAfterSourceUrl) {
@@ -743,6 +815,15 @@ async function runXLikesImport(args: {
       const indexed = await queryIndexedSourceUrls(
         candidates.map(({ parsed }) => parsed.sourceUrl),
       );
+      for (const { parsed } of candidates) {
+        if (indexed.has(parsed.sourceUrl)) {
+          queueXLikesObservation({
+            providerId: parsed.postId!,
+            sourceUrl: parsed.sourceUrl,
+            stage: "archived",
+          });
+        }
+      }
       const knownOnlyRound =
         candidates.length > 0 && indexed.size === candidates.length;
       for (const { article, snapshot, parsed } of candidates) {
@@ -838,6 +919,11 @@ async function runXLikesImport(args: {
     finishMessage =
       error instanceof Error ? error.message : "The X Likes import stopped.";
   } finally {
+    if (xLikesObservationTimer !== undefined) {
+      window.clearTimeout(xLikesObservationTimer);
+      xLikesObservationTimer = undefined;
+    }
+    await flushXLikesObservations();
     await chrome.runtime.sendMessage({
       type: "OURCHIVAL_X_LIKES_FINISHED",
       importId: args.importId,
@@ -855,6 +941,7 @@ async function runXLikesImport(args: {
           observedXLikesSources.size > 20_000,
       },
     });
+    activeXLikesIdentity = undefined;
   }
 }
 

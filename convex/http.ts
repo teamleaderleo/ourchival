@@ -76,6 +76,23 @@ type CaptureSessionBody = {
   completedAt?: string;
 };
 
+type CaptureObservationBody = {
+  sessionKey?: string;
+  source?: string;
+  observations?: Array<{
+    providerId?: string;
+    sourceUrl?: string;
+    stage?: "discovered" | "rendered" | "archived" | "failed";
+    error?: string;
+    observedAt?: string;
+  }>;
+};
+
+type CaptureObservationGapsBody = {
+  sessionKey?: string;
+  limit?: number;
+};
+
 type UpdateReferenceBody = {
   title?: string;
   notes?: string;
@@ -122,6 +139,8 @@ for (const path of [
   "/auth-check",
   "/capture",
   "/capture-session",
+  "/capture-observations",
+  "/capture-observation-gaps",
   "/capture-links",
   "/references",
   "/reference-status",
@@ -624,6 +643,109 @@ http.route({
         400,
       );
     }
+  }),
+});
+
+http.route({
+  path: "/capture-observation-gaps",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+    const body = (await readJson(request)) as
+      CaptureObservationGapsBody | undefined;
+    const sessionKey = cleanString(body?.sessionKey);
+    if (!sessionKey || sessionKey.length > 160) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "sessionKey is required" },
+        400,
+      );
+    }
+    const gaps = await ctx.runQuery(internal.captureObservations.listGaps, {
+      sessionKey,
+      limit: Math.min(400, Math.max(1, Math.floor(body?.limit ?? 200))),
+    });
+    return jsonResponse(request, { ok: true, gaps });
+  }),
+});
+
+http.route({
+  path: "/capture-observations",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+
+    const body = (await readJson(request)) as
+      CaptureObservationBody | undefined;
+    const sessionKey = cleanString(body?.sessionKey);
+    const source = cleanString(body?.source);
+    if (!sessionKey || !source || !Array.isArray(body?.observations)) {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error: "sessionKey, source, and observations are required",
+        },
+        400,
+      );
+    }
+    if (
+      sessionKey.length > 160 ||
+      source.length > 64 ||
+      body.observations.length === 0 ||
+      body.observations.length > 200
+    ) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Invalid observation batch" },
+        400,
+      );
+    }
+
+    const observations = body.observations.flatMap((item) => {
+      const providerId = cleanString(item.providerId);
+      const sourceUrl = cleanUrl(item.sourceUrl);
+      const status =
+        item.stage === "discovered" ||
+        item.stage === "rendered" ||
+        item.stage === "archived" ||
+        item.stage === "failed"
+          ? item.stage
+          : undefined;
+      if (!providerId || providerId.length > 96 || !status) return [];
+      const error = cleanString(item.error);
+      return [
+        {
+          providerId,
+          ...(sourceUrl ? { sourceUrl } : {}),
+          status,
+          ...(error ? { error: error.slice(0, 320) } : {}),
+          observedAt: parseOptionalDate(item.observedAt) ?? Date.now(),
+        },
+      ];
+    });
+    if (observations.length !== body.observations.length) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Invalid observation" },
+        400,
+      );
+    }
+    const receipt = await ctx.runMutation(internal.captureObservations.record, {
+      sessionKey,
+      source,
+      observations,
+      updatedAt: Date.now(),
+    });
+    return jsonResponse(request, { ok: true, receipt });
   }),
 });
 

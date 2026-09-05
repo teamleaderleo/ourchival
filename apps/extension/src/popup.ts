@@ -19,6 +19,7 @@ import {
   normalizeSiteRoot,
   saveSettings,
   SOURCE_INTAKE_KEY,
+  SOURCE_INTAKES_KEY,
   SETTINGS_KEY,
   type BatchCaptureSource,
   type BatchCaptureState,
@@ -57,13 +58,41 @@ async function render() {
   const batch = state[LAST_BATCH_KEY] as BatchCaptureState | undefined;
   const xLikesImport = state[X_LIKES_IMPORT_KEY] as
     XLikesImportState | undefined;
-  const sourceIntake = state[SOURCE_INTAKE_KEY] as
-    SourceIntakeState | undefined;
   const [activeTab] = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true,
   });
   const sourceContext = detectSourceIntakeContext(activeTab?.url);
+  const sourceIntakes = Object.values(
+    (state[SOURCE_INTAKES_KEY] as
+      Record<string, SourceIntakeState> | undefined) ?? {},
+  );
+  const legacySourceIntake = state[SOURCE_INTAKE_KEY] as
+    SourceIntakeState | undefined;
+  if (
+    legacySourceIntake &&
+    !sourceIntakes.some(
+      (candidate) => candidate.importId === legacySourceIntake.importId,
+    )
+  ) {
+    sourceIntakes.push(legacySourceIntake);
+  }
+  const sourceIntake =
+    (sourceContext
+      ? sourceIntakes.find(
+          (candidate) =>
+            candidate.provider === sourceContext.provider &&
+            candidate.sourceUrl === sourceContext.sourceUrl,
+        )
+      : undefined) ??
+    sourceIntakes
+      .filter((candidate) => candidate.running)
+      .sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      )[0] ??
+    sourceIntakes.sort((left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt),
+    )[0];
   const normalizedEndpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
   const connected = Boolean(normalizedEndpoint && settings.deviceToken);
 
@@ -73,17 +102,9 @@ async function render() {
     return;
   }
 
-  const batchRunning = Boolean(batch?.running);
-  const xLikesRunning = Boolean(xLikesImport?.running);
-  const sourceRunning = Boolean(sourceIntake?.running);
-  const disabled =
-    batchRunning || xLikesRunning || sourceRunning || savedLinkImportActive
-      ? "disabled"
-      : "";
-  const xLikesDisabled =
-    batchRunning || sourceRunning || savedLinkImportActive ? "disabled" : "";
-  const sourceDisabled =
-    batchRunning || xLikesRunning || savedLinkImportActive ? "disabled" : "";
+  const disabled = savedLinkImportActive ? "disabled" : "";
+  const xLikesDisabled = "";
+  const sourceDisabled = "";
 
   root.innerHTML = `
     <main>
@@ -95,7 +116,7 @@ async function render() {
         </div>
       </header>
 
-      ${renderSourceIntake(sourceIntake, sourceContext, sourceDisabled)}
+      ${renderSourceIntake(sourceIntake, sourceContext, sourceDisabled, sourceIntakes)}
 
       <section class="x-likes-panel">
         <div class="section-heading">
@@ -216,7 +237,10 @@ async function render() {
 
   document.getElementById("pause-source")?.addEventListener("click", () => {
     transientMessage = "Pausing after the current source chunk…";
-    void sendRuntimeMessage({ type: "OURCHIVAL_PAUSE_SOURCE" });
+    void sendRuntimeMessage({
+      type: "OURCHIVAL_PAUSE_SOURCE",
+      importId: sourceIntake?.importId,
+    });
   });
 
   document
@@ -426,6 +450,7 @@ function renderSourceIntake(
   state: SourceIntakeState | undefined,
   context: SourceIntakeContext | undefined,
   disabled: string,
+  states: SourceIntakeState[],
 ) {
   if (!state && !context) return "";
   const active = state?.running ? state : undefined;
@@ -458,6 +483,12 @@ function renderSourceIntake(
     !context && state && !state.running
       ? `<p class="hint">Open ${escapeHtml(state.label)} to continue or begin a fresh pass.</p>`
       : "";
+  const otherRunning = states.filter(
+    (candidate) => candidate.running && candidate.importId !== state?.importId,
+  ).length;
+  const concurrent = otherRunning
+    ? `<p class="hint">${otherRunning} other source ${otherRunning === 1 ? "import is" : "imports are"} also running.</p>`
+    : "";
   return `
     <section class="x-likes-panel source-intake-panel">
       <div class="section-heading">
@@ -470,6 +501,7 @@ function renderSourceIntake(
       ${progress}
       ${sealed}
       ${guidance}
+      ${concurrent}
     </section>
   `;
 }
@@ -555,7 +587,7 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
         state.audit.networkMissingInDom || state.audit.domMissingInVault
           ? ` · ${state.audit.networkMissingInDom} render gaps · ${state.audit.domMissingInVault} archive gaps`
           : ""
-      }${state.audit.unparseableArticles ? ` · ${state.audit.unparseableArticles} unparsed` : ""}</p>`
+      }${state.audit.unparseableArticles ? ` · ${state.audit.unparseableArticles} unparsed` : ""}${state.audit.durable ? " · exact gaps saved" : ""}</p>`
     : "";
   return `
     <div class="batch-counts x-likes-progress">
