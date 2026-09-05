@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireOwnerAccess } from "./lib/privateAccess";
+import { scheduleReferenceSearch } from "./lib/searchIndex";
 
 export const listRecent = query({
   args: { accessKey: v.string() },
@@ -40,7 +41,7 @@ export const create = mutation({
     await requireOwnerAccess(args.accessKey);
     const now = Date.now();
 
-    return await ctx.db.insert("references", {
+    const referenceId = await ctx.db.insert("references", {
       kind: args.kind,
       sourceUrl: args.sourceUrl,
       ...(args.title ? { title: args.title } : {}),
@@ -53,5 +54,7 @@ export const create = mutation({
       archived: false,
       deleted: false,
     });
+    await scheduleReferenceSearch(ctx, referenceId);
+    return referenceId;
   },
 });

@@ -71,7 +71,7 @@ export const syncRecent = mutation({
         duplicateCount: existing?.duplicateCount ?? 0,
         skippedCount: existing?.skippedCount ?? 0,
         failedCount: existing?.failedCount ?? 0,
-        status: existing?.status === "running" ? "running" : "completed" as const,
+        status: existing?.status === "running" ? "running" as const : "completed" as const,
         reviewState: existing?.reviewState ?? "unreviewed" as const,
         startedAt: existing?.startedAt ?? startedAt,
         completedAt: existing?.completedAt ?? completedAt,

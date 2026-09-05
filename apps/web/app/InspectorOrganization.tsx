@@ -1,4 +1,7 @@
 "use client";
+import { useState } from "react";
+import { ReferenceVisualMetadata } from "./ReferenceVisualMetadata";
+import { PersonalTagExamples } from "./PersonalTagExamples";
 
 import { ReferenceBoardAssignment } from "./BoardPanel";
 import { ReferenceEnrichmentPanel } from "./ReferenceEnrichmentPanel";
@@ -7,11 +10,56 @@ import { RelatedReferencesPanel } from "./RelatedReferencesPanel";
 import { ReferenceSuggestedTagsPanel } from "./ReferenceSuggestedTagsPanel";
 import { referenceMode, type SavedReference } from "./referenceVaultModel";
 
-export function InspectorOrganization({ reference }: { reference: SavedReference }) {
+export function InspectorOrganization({
+  reference,
+}: {
+  reference: SavedReference;
+}) {
+  const [metadataOpen, setMetadataOpen] = useState(false);
+  const [examplesOpen, setExamplesOpen] = useState(false);
   const linkLike = referenceMode(reference.kind) === "links";
 
   return (
-    <div className="inspector-organization" aria-label="Reference organization and discovery">
+    <div
+      className="inspector-organization"
+      aria-label="Reference organization and discovery"
+    >
+      {reference.assets.length ? (
+        <details
+          onToggle={(event) => setMetadataOpen(event.currentTarget.open)}
+        >
+          <summary>
+            <span>Image metadata</span>
+            <small>Review generated terms</small>
+          </summary>
+          {metadataOpen ? (
+            <ReferenceVisualMetadata
+              key={reference._id}
+              reference={reference}
+            />
+          ) : null}
+        </details>
+      ) : null}
+      {reference.assets.length > 0 && (
+        <details
+          className="personal-tag-disclosure"
+          onToggle={(event) => {
+            const details = event.currentTarget;
+            setExamplesOpen(details.open);
+            if (details.open)
+              requestAnimationFrame(() =>
+                details.scrollIntoView({ block: "start" }),
+              );
+          }}
+        >
+          <summary>
+            <span>Teach a personal tag</span>
+          </summary>
+          {examplesOpen && (
+            <PersonalTagExamples key={reference._id} reference={reference} />
+          )}
+        </details>
+      )}
       <details open>
         <summary>
           <span>Organize</span>

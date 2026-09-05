@@ -26,6 +26,11 @@ export type ReferenceTag = {
   name: string;
   slug: string;
   createdAt: number;
+  code?: number;
+  aliases?: string[];
+  definition?: string;
+  definitionVersion?: number;
+  revision?: number;
 };
 
 export type ReferenceSearchMatch = {

@@ -11,3 +11,4 @@ out
 pnpm-debug.log*
 *.tsbuildinfo
 .vercel
+.models/
