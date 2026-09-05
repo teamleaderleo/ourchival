@@ -559,6 +559,16 @@ async function startSourceIntake() {
       "Open a Pixiv bookmarks page, your Pinterest profile, or one Pinterest board first.",
     );
   }
+  let profileDiscovery: SourceIntakeChunk | undefined;
+  if (context.scope === "profile" && typeof tab?.id === "number") {
+    const response = (await chrome.tabs
+      .sendMessage(tab.id, { type: "OURCHIVAL_DISCOVER_PINTEREST_BOARDS" })
+      .catch(() => undefined)) as
+      { ok?: boolean; chunk?: SourceIntakeChunk } | undefined;
+    if (response?.ok && response.chunk?.discoveredUrls?.length) {
+      profileDiscovery = response.chunk;
+    }
+  }
   const previous = (await getSourceIntakeStates()).find(
     (candidate) =>
       candidate.provider === context.provider &&
@@ -587,7 +597,7 @@ async function startSourceIntake() {
         provider: context.provider,
         label: context.label,
         sourceUrl: context.sourceUrl,
-        currentUrl: context.currentUrl,
+        currentUrl: profileDiscovery?.discoveredUrls?.[0] ?? context.currentUrl,
         cursor: context.cursor,
         sensitiveDefault: context.sensitiveDefault,
         running: true,
@@ -601,8 +611,14 @@ async function startSourceIntake() {
         duplicates: 0,
         failed: 0,
         skipped: 0,
-        unresolved: 0,
+        ...(profileDiscovery?.reportedCount
+          ? { reportedCount: profileDiscovery.reportedCount }
+          : {}),
+        unresolved: profileDiscovery?.reportedCount ?? 0,
         seenProviderIds: [],
+        ...(profileDiscovery?.discoveredUrls
+          ? { pendingUrls: profileDiscovery.discoveredUrls }
+          : {}),
       };
   await saveSourceIntakeState(state);
   await reportSourceIntakeSession(state, "running");
@@ -620,7 +636,7 @@ async function startSourceIntake() {
   }
 
   const worker = await chrome.tabs.create({
-    url: resumable ? state.currentUrl : context.currentUrl,
+    url: state.currentUrl,
     active: false,
   });
   if (typeof worker.id !== "number") {

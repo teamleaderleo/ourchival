@@ -405,6 +405,27 @@ document.addEventListener(
 );
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "OURCHIVAL_DISCOVER_PINTEREST_BOARDS") {
+    const context = detectSourceIntakeContext(location.href);
+    if (
+      context?.provider !== "pinterest_board" ||
+      context.scope !== "profile"
+    ) {
+      sendResponse({ ok: false, error: "Open your Pinterest profile first." });
+      return;
+    }
+    void scanPinterestProfile(context)
+      .then((chunk) => sendResponse({ ok: true, chunk }))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          error:
+            error instanceof Error ? error.message : "Board discovery failed.",
+        }),
+      );
+    return true;
+  }
+
   if (message?.type === "OURCHIVAL_START_SOURCE_INTAKE") {
     if (activeSourceIntake) {
       sendResponse({ ok: true, alreadyRunning: true });
@@ -516,7 +537,9 @@ async function runSourceIntake(
 async function scanPinterestPage(): Promise<SourceIntakeChunk> {
   const context = detectSourceIntakeContext(location.href);
   if (context?.provider !== "pinterest_board") {
-    throw new Error("Open your Pinterest profile or one Pinterest board before importing.");
+    throw new Error(
+      "Open your Pinterest profile or one Pinterest board before importing.",
+    );
   }
   return context.scope === "profile"
     ? scanPinterestProfile(context)
@@ -526,15 +549,22 @@ async function scanPinterestPage(): Promise<SourceIntakeChunk> {
 async function scanPinterestProfile(
   context: NonNullable<ReturnType<typeof detectSourceIntakeContext>>,
 ): Promise<SourceIntakeChunk> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (document.querySelector('a[href]')) break;
+  let boardAnchors: HTMLAnchorElement[] = [];
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    boardAnchors = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>("a[href]"),
+    ).filter((anchor) => {
+      const candidate = detectSourceIntakeContext(anchor.href);
+      return (
+        candidate?.provider === "pinterest_board" && candidate.scope === "board"
+      );
+    });
+    if (boardAnchors.length > 0) break;
     await wait(250);
   }
   const boardUrls = new Set<string>();
   let reportedCount = 0;
-  for (const anchor of Array.from(
-    document.querySelectorAll<HTMLAnchorElement>("a[href]"),
-  )) {
+  for (const anchor of boardAnchors) {
     const candidate = detectSourceIntakeContext(anchor.href);
     if (
       candidate?.provider !== "pinterest_board" ||
@@ -554,11 +584,11 @@ async function scanPinterestProfile(
     provider: "pinterest_board",
     sourceUrl: context.sourceUrl,
     currentUrl: location.href,
-    cursor: "boards:index",
+    cursor: boardUrls.size ? "boards:index" : "boards:waiting",
     items: [],
     discoveredUrls: Array.from(boardUrls),
     ...(reportedCount ? { reportedCount } : {}),
-    exhausted: true,
+    exhausted: boardUrls.size > 0,
   };
 }
 
