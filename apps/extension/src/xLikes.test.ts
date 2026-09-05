@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { XDomSnapshot } from "@ourchival/parsers";
 import {
   buildXLikePayloads,
+  classifyAssetStorage,
   classifyXLikeCapture,
   isXLikesUrl,
 } from "./xLikes";
@@ -135,5 +136,42 @@ describe("classifyXLikeCapture", () => {
     expect(classifyXLikeCapture(payload, { alreadySaved: false })).toBe(
       "saved",
     );
+  });
+});
+
+describe("classifyAssetStorage", () => {
+  it("prefers the structured storage provider", () => {
+    expect(
+      classifyAssetStorage({
+        storageProvider: "google_drive",
+        storageStatus: "an unrelated status",
+      }),
+    ).toBe("stored");
+    expect(classifyAssetStorage({ storageProvider: "convex" })).toBe(
+      "stored",
+    );
+    expect(classifyAssetStorage({ storageProvider: "linked" })).toBe(
+      "linked",
+    );
+  });
+
+  it("understands older server status strings", () => {
+    expect(
+      classifyAssetStorage({
+        storageStatus: "stored original asset in Google Drive",
+      }),
+    ).toBe("stored");
+    expect(
+      classifyAssetStorage({
+        storageStatus:
+          "Google Drive env vars are missing; stored original asset in Convex Storage fallback",
+      }),
+    ).toBe("stored");
+    expect(
+      classifyAssetStorage({ storageStatus: "fetch failed: 403" }),
+    ).toBe("linked");
+    expect(
+      classifyAssetStorage({ storageStatus: "already saved" }),
+    ).toBeUndefined();
   });
 });

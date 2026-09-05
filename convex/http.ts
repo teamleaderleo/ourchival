@@ -133,6 +133,7 @@ type DuplicateCapture = {
   reference: any;
   assetId: any | null;
   reason: "asset_url" | "canonical_url" | "source_url";
+  storedAsset?: StoredRemoteAsset;
 };
 
 for (const path of [
@@ -1031,6 +1032,12 @@ http.route({
         referenceId: created.referenceId,
         assetId: created.assetId,
         storageStatus,
+        ...(storedAsset
+          ? {
+              storageProvider: storedAsset.storageProvider,
+              storedBytes: storedAsset.fileSize,
+            }
+          : {}),
       },
       201,
     );
@@ -1162,6 +1169,7 @@ async function persistDuplicateCapture(
         reference: saved.reference,
         assetId: saved.assetId,
         reason: duplicate.reason,
+        ...(storedAsset ? { storedAsset } : {}),
       }
     : null;
 }
@@ -1231,7 +1239,13 @@ function duplicateResponse(request: Request, duplicate: DuplicateCapture) {
     duplicateReason: duplicate.reason,
     referenceId: duplicate.reference._id,
     assetId: duplicate.assetId,
-    storageStatus: "already saved",
+    storageStatus: duplicate.storedAsset?.status ?? "already saved",
+    ...(duplicate.storedAsset
+      ? {
+          storageProvider: duplicate.storedAsset.storageProvider,
+          storedBytes: duplicate.storedAsset.fileSize,
+        }
+      : {}),
     existingReference: {
       title: duplicate.reference.title,
       sourceUrl: duplicate.reference.sourceUrl,

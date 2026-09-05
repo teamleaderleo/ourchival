@@ -597,6 +597,8 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
       ${(state.refreshedPosts ?? 0) > 0 ? `<span><strong>${state.refreshedPosts}</strong> refreshed</span>` : ""}
       ${state.duplicates > 0 ? `<span><strong>${state.duplicates}</strong> existing posts</span>` : ""}
       ${state.failed > 0 ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
+      ${(state.originalsStored ?? 0) > 0 ? `<span><strong>${state.originalsStored}</strong> originals secured</span>` : ""}
+      ${(state.originalsLinked ?? 0) > 0 ? `<span><strong>${state.originalsLinked}</strong> link-only</span>` : ""}
     </div>
     <p class="hint"><strong>${status}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"}</p>
     ${audit}

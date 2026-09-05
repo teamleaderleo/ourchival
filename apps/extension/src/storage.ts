@@ -61,6 +61,9 @@ export type BatchCaptureState = {
   duplicates: number;
   failed: number;
   skipped: number;
+  originalsStored?: number;
+  originalsLinked?: number;
+  storedBytes?: number;
   currentLabel?: string;
   refreshedSourceUrls?: string[];
   items: BatchCaptureItem[];
@@ -94,6 +97,9 @@ export type XLikesImportState = {
   duplicates: number;
   failed: number;
   skipped: number;
+  originalsStored?: number;
+  originalsLinked?: number;
+  storedBytes?: number;
   lastSourceUrl?: string;
   lastPublishedAt?: string;
   stopReason?: XLikesImportStopReason;

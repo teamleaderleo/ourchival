@@ -35,6 +35,7 @@ import {
 } from "./storage";
 import {
   buildXLikePayloads,
+  classifyAssetStorage,
   classifyXLikeCapture,
   isXLikesUrl,
 } from "./xLikes";
@@ -58,6 +59,8 @@ type CaptureResponse = {
   referenceId?: string;
   assetId?: string | null;
   storageStatus?: string;
+  storageProvider?: "google_drive" | "convex" | "linked";
+  storedBytes?: number;
   alreadySaved?: boolean;
   duplicateReason?: "asset_url" | "canonical_url" | "source_url";
   existingReference?: CaptureResult["existingReference"];
@@ -894,6 +897,11 @@ async function captureXLikesChunk(
     duplicates: checkpoint.duplicates + state.duplicates,
     failed: checkpoint.failed + state.failed,
     skipped: checkpoint.skipped + state.skipped,
+    originalsStored:
+      (checkpoint.originalsStored ?? 0) + (state.originalsStored ?? 0),
+    originalsLinked:
+      (checkpoint.originalsLinked ?? 0) + (state.originalsLinked ?? 0),
+    storedBytes: (checkpoint.storedBytes ?? 0) + (state.storedBytes ?? 0),
     ...(durableAudit
       ? {
           audit: mergeXLikesAuditReceipt(latestCheckpoint.audit, durableAudit),
@@ -1296,6 +1304,9 @@ async function runBatch(
     duplicates: 0,
     failed: 0,
     skipped: 0,
+    originalsStored: 0,
+    originalsLinked: 0,
+    storedBytes: 0,
     refreshedSourceUrls: [],
     items,
     successfulTabIds: [],
@@ -1327,6 +1338,9 @@ async function continueBatch(
   state.running = true;
   state.attached ??= 0;
   state.refreshed ??= 0;
+  state.originalsStored ??= 0;
+  state.originalsLinked ??= 0;
+  state.storedBytes ??= 0;
   state.refreshedSourceUrls ??= [];
   await chrome.action.setBadgeText({ text: "…" });
   await chrome.action.setBadgeBackgroundColor({ color: "#6f5bb7" });
@@ -1449,6 +1463,17 @@ function applyBatchItemOutcome(
     } else state.saved += 1;
   } else if (result.body.alreadySaved) state.duplicates += 1;
   else state.saved += 1;
+  const storage = classifyAssetStorage(result.body);
+  if (storage === "stored") {
+    state.originalsStored = (state.originalsStored ?? 0) + 1;
+    state.storedBytes =
+      (state.storedBytes ?? 0) +
+      (Number.isFinite(result.body.storedBytes)
+        ? Math.max(0, result.body.storedBytes ?? 0)
+        : 0);
+  } else if (storage === "linked") {
+    state.originalsLinked = (state.originalsLinked ?? 0) + 1;
+  }
   if (typeof item.tabId === "number") state.successfulTabIds.push(item.tabId);
 }
 
