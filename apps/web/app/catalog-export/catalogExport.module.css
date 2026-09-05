@@ -1,0 +1,85 @@
+.page {
+  max-width: 760px;
+  margin: 36px auto;
+  padding: 0 24px 48px;
+  font-size: 14px;
+}
+.page h1 {
+  font-size: clamp(24px, 4vw, 34px);
+  margin: 12px 0;
+}
+.page p {
+  line-height: 1.55;
+}
+.filters {
+  border: 0;
+  padding: 0;
+  margin: 24px 0 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.filters label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+.filters select,
+.filters input,
+.filters textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px;
+  font: inherit;
+  border: 1px solid #cbbfdd;
+  border-radius: 8px;
+  background: #faf7ff;
+  color: #30283b;
+}
+.advanced {
+  grid-column: 1 / -1;
+}
+.advanced summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.advanced label {
+  margin-top: 12px;
+}
+.results {
+  margin-top: 28px;
+  border-top: 1px solid #51445f;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.results ul {
+  padding: 0;
+  list-style: none;
+}
+.results li {
+  display: grid;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid #352d40;
+  overflow-wrap: anywhere;
+}
+.results li span,
+.note {
+  color: #b8aec9;
+  font-size: 13px;
+}
+.error {
+  color: #ffb2bb;
+}
+@media (max-width: 500px) {
+  .page {
+    margin-top: 20px;
+    padding-inline: 16px;
+  }
+  .filters {
+    grid-template-columns: 1fr;
+  }
+}

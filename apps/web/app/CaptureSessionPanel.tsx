@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { ThumbImage, getDomain } from "./ReferenceCards";
 import {
   setCaptureSessionReviewState,
@@ -78,6 +79,8 @@ export function CaptureSessionPanel() {
               </button>
             </div>
           </header>
+
+          <Link className="button ghost" href="/catalog-export">Export catalog for an agent</Link>
 
           {selectedSession ? (
             <SessionDetail

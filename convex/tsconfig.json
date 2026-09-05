@@ -12,6 +12,7 @@
     "target": "ES2022"
   },
   "files": [
+    "./catalog.ts",
     "./crons.ts",
     "./mediaDerivatives.ts",
     "./mediaDerivativesNode.ts",
