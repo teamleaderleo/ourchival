@@ -31,12 +31,14 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   const [checking, setChecking] = useState(true);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const [message, setMessage] = useState("");
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const verificationSequence = useRef(0);
   const googleEnabled = Boolean(
     process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim(),
   );
 
   useEffect(() => {
+    setRecoveryMode(new URLSearchParams(window.location.search).get("recovery") === "1");
     let current = 0;
     const refresh = async () => {
       const attempt = ++current;
@@ -190,8 +192,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
         <p className="eyebrow">Private archive</p>
         <h1>Sign in to Ourchival</h1>
         <p>
-          Continue with the Google account connected to this vault. A recovery
-          key stays available as a fallback.
+          Continue with the Google account connected to this vault.
         </p>
 
         <GoogleOwnerSignIn
@@ -199,7 +200,13 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
           disabled={checking}
         />
 
-        <details className="recovery-access" open={!googleEnabled}>
+        {!googleEnabled && !recoveryMode ? (
+          <p className="access-message" role="status">
+            Sign-in is not configured for this address yet. Your archive is still preserved.
+          </p>
+        ) : null}
+
+        {recoveryMode ? <details className="recovery-access" open>
           <summary>Use recovery key</summary>
           <form onSubmit={submit}>
             <label>
@@ -209,7 +216,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
                 autoComplete="current-password"
                 value={accessKey}
                 onChange={(event) => setAccessKey(event.target.value)}
-                autoFocus={!googleEnabled}
+                autoFocus
               />
             </label>
             <button
@@ -219,7 +226,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
               {checking ? "Checking…" : "Unlock vault"}
             </button>
           </form>
-        </details>
+        </details> : null}
         {message ? (
           <p className="access-message" role="alert">
             {message}
