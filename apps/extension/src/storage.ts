@@ -163,6 +163,10 @@ export type SourceIntakeState = {
   duplicates: number;
   failed: number;
   skipped: number;
+  originalCandidates?: number;
+  originalsStored?: number;
+  originalsLinked?: number;
+  storedBytes?: number;
   reportedCount?: number;
   unresolved: number;
   seenProviderIds: string[];
