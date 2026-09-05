@@ -1,0 +1,116 @@
+/* A small shared scale for readable archive chrome; artwork keeps the canvas. */
+:root {
+  --type-control: 13px;
+  --type-caption: 12px;
+  --type-body: 14px;
+}
+body {
+  font-kerning: normal;
+  line-height: 1.5;
+}
+.vault-heading {
+  align-items: center;
+}
+.vault-heading h1 {
+  font-size: clamp(30px, 3vw, 40px);
+  font-weight: 550;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
+}
+.brand-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.nav-label,
+.eyebrow {
+  font-size: var(--type-caption);
+  font-weight: 600;
+  letter-spacing: 0.075em;
+}
+.nav-button {
+  min-height: 42px;
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.nav-count,
+.vault-count,
+.brand-subtitle {
+  font-size: var(--type-caption);
+}
+.card-copy {
+  padding: 12px;
+}
+.card-copy h2 {
+  font-size: var(--type-body);
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.45;
+}
+.card-meta,
+.card-description,
+.card-tags span,
+.kind-badge {
+  font-size: var(--type-caption);
+  line-height: 1.45;
+}
+.vault-tools > summary strong,
+.saved-search-panel summary,
+.inspector-organization > details > summary > span {
+  font-size: var(--type-control);
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+.vault-tools > summary small,
+.vault-tools > summary > span:last-child,
+.inspector-organization > details > summary > small,
+.saved-search-panel summary span:last-child,
+.saved-search-hint,
+.saved-search-status {
+  font-size: var(--type-caption);
+  line-height: 1.45;
+}
+.capture-panel label,
+.inspector-fields label,
+.tag-filter-bar label,
+.link-filter-bar label {
+  font-size: var(--type-control);
+  font-weight: 500;
+}
+.tag-filter-chips button,
+.assigned-tags button,
+.quick-reasons button,
+.saved-search-create .button,
+.saved-search-list .button,
+.saved-search-create input,
+.saved-search-apply strong {
+  font-size: var(--type-control);
+}
+.saved-search-apply span {
+  font-size: var(--type-caption);
+}
+.inspector-organization-body {
+  padding: 12px;
+  gap: 10px;
+}
+.personal-tag-form {
+  gap: 12px;
+}
+.personal-tag-form label,
+.personal-tag-teaching > label {
+  font-size: var(--type-control);
+  font-weight: 500;
+}
+.personal-tag-form p,
+.personal-tag-teaching > p {
+  margin: 0;
+  font-size: var(--type-control);
+  line-height: 1.55;
+}
+.personal-tag-actions {
+  margin-block: 0;
+}
+.personal-tag-example {
+  margin-block: 0;
+}

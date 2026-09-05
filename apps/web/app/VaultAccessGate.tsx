@@ -1,5 +1,7 @@
 "use client";
 
+import { BrandMark } from "./BrandMark";
+
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleOwnerSignIn } from "./GoogleOwnerSignIn";
 import {
@@ -35,8 +37,34 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    const refresh = () => {
-      const stored = getOwnerAccessKey();
+    let current = 0;
+    const refresh = async () => {
+      const attempt = ++current;
+      let stored = getOwnerAccessKey();
+      if (!stored) {
+        setChecking(true);
+        try {
+          const response = await fetch("/api/local-session", { cache: "no-store" });
+          if (attempt !== current) return;
+          if (response.ok) {
+            const body = await response.json() as { credential?: string };
+            if (attempt !== current) return;
+            stored = body.credential ?? "";
+          } else if (response.status === 503) {
+            setMessage("The local archive is not ready. Try opening it again.");
+            setSessionUnavailable(true);
+            setChecking(false);
+            return;
+          }
+        } catch {
+          if (attempt !== current) return;
+          setMessage("The archive is temporarily unreachable. Try opening it again.");
+          setSessionUnavailable(true);
+          setChecking(false);
+          return;
+        }
+      }
+      if (attempt !== current) return;
       setAccessKey(stored);
       if (stored) {
         setSessionUnavailable(false);
@@ -47,8 +75,9 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
         setChecking(false);
       }
     };
-    refresh();
-    return onOwnerAccessChange(refresh);
+    void refresh();
+    const unsubscribe = onOwnerAccessChange(() => void refresh());
+    return () => { current++; unsubscribe(); };
   }, []);
 
   async function verify(key: string, quiet = false) {
@@ -137,13 +166,13 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (sessionUnavailable && accessKey) {
+  if (sessionUnavailable) {
     return (
       <AccessStatusCard
         title="Vault temporarily unavailable"
         message={message}
         primaryLabel="Try again"
-        onPrimary={() => void verify(accessKey, true)}
+        onPrimary={() => accessKey ? void verify(accessKey, true) : window.location.reload()}
         secondaryLabel="Sign in again"
         onSecondary={forgetSavedSession}
       />
@@ -157,9 +186,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   return (
     <main className="access-screen">
       <section className="access-card" aria-busy={checking}>
-        <div className="brand-mark" aria-hidden="true">
-          O
-        </div>
+        <BrandMark />
         <p className="eyebrow">Private archive</p>
         <h1>Sign in to Ourchival</h1>
         <p>
@@ -223,9 +250,7 @@ function AccessStatusCard({
   return (
     <main className="access-screen">
       <section className="access-card access-status-card" aria-busy={busy}>
-        <div className="brand-mark" aria-hidden="true">
-          O
-        </div>
+        <BrandMark />
         <p className="eyebrow">Private archive</p>
         <h1>{title}</h1>
         <p>{message}</p>
@@ -364,7 +389,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
           aria-controls="vault-account-panel"
           onClick={() => setPanelOpen((open) => !open)}
         >
-          Account
+          Settings
         </button>
       </div>
 
@@ -376,8 +401,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
         >
           <div className="clipper-access-heading">
             <div>
-              <p className="eyebrow">Private capture</p>
-              <h2>Pair Ourchival Clipper</h2>
+              <h2>Settings</h2>
             </div>
             <button
               type="button"
@@ -387,6 +411,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
               Close
             </button>
           </div>
+          <details className="browser-connection"><summary>Connect a browser extension</summary>
           <p>
             Generate a short-lived code, then enter it in the browser extension.
             Each browser receives its own revocable credential.
@@ -452,6 +477,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
+          </details>
           <div className="clipper-access-footer">
             <span>Finished on this device?</span>
             <button

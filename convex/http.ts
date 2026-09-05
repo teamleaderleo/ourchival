@@ -1,7 +1,11 @@
 import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
-import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
+import {
+  fetchDriveFile,
+  uploadBlobToDrive,
+  uploadStreamToDrive,
+} from "./lib/drive";
 import {
   fetchPublicResponse,
   fetchLinkMetadata,
@@ -22,11 +26,13 @@ import {
   requireOwnerAccess,
   type AccessPrincipal,
 } from "./lib/privateAccess";
+import { readLinkBatch } from "./lib/linkIntake";
 import { normalizeSourceUrl } from "./lib/urls";
 
 const http = httpRouter();
-const maxRemoteAssetBytes = 25 * 1024 * 1024;
+const maxBufferedRemoteAssetBytes = 25 * 1024 * 1024;
 const remoteAssetTimeoutMs = 15_000;
+const remoteAssetStreamTimeoutMs = 8 * 60 * 1000;
 const pairingLifetimeMs = 10 * 60 * 1000;
 
 type CaptureBody = {
@@ -35,6 +41,8 @@ type CaptureBody = {
   sourceUrl?: string;
   canonicalUrl?: string;
   assetUrl?: string;
+  assetIndex?: number;
+  assetCount?: number;
   pageTitle?: string;
   pageDescription?: string;
   siteName?: string;
@@ -73,6 +81,23 @@ type CaptureSessionBody = {
   completedAt?: string;
 };
 
+type CaptureObservationBody = {
+  sessionKey?: string;
+  source?: string;
+  observations?: Array<{
+    providerId?: string;
+    sourceUrl?: string;
+    stage?: "discovered" | "rendered" | "archived" | "failed";
+    error?: string;
+    observedAt?: string;
+  }>;
+};
+
+type CaptureObservationGapsBody = {
+  sessionKey?: string;
+  limit?: number;
+};
+
 type UpdateReferenceBody = {
   title?: string;
   notes?: string;
@@ -82,6 +107,17 @@ type UpdateReferenceBody = {
   lastOpenedAt?: number;
   archived?: boolean;
   deleted?: boolean;
+};
+
+type UpdateAssetBody = {
+  notes?: string;
+  addTags?: string[];
+  removeTagIds?: string[];
+  metadata?: unknown;
+};
+
+type ReferenceStatusBody = {
+  sourceUrls?: string[];
 };
 
 type StoredRemoteAsset = {
@@ -102,14 +138,20 @@ type DuplicateCapture = {
   reference: any;
   assetId: any | null;
   reason: "asset_url" | "canonical_url" | "source_url";
+  storedAsset?: StoredRemoteAsset;
 };
 
 for (const path of [
   "/auth-check",
   "/capture",
   "/capture-session",
+  "/capture-observations",
+  "/capture-observation-gaps",
+  "/capture-links",
   "/references",
+  "/reference-status",
   "/reference",
+  "/asset",
   "/reference-metadata",
   "/preference-export",
   "/drive-file",
@@ -129,6 +171,29 @@ for (const path of [
     ),
   });
 }
+
+http.route({
+  path: "/reference-status",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+      const body = (await request
+        .json()
+        .catch(() => ({}))) as ReferenceStatusBody;
+      const sourceUrls = cleanStringArray(body.sourceUrls, 80)
+        .map(normalizeSourceUrl)
+        .filter(Boolean);
+      const indexedSourceUrls = await ctx.runQuery(
+        internal.httpDb.referenceStatuses,
+        { sourceUrls },
+      );
+      return jsonResponse(request, { ok: true, indexedSourceUrls });
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+  }),
+});
 
 http.route({
   path: "/auth-check",
@@ -315,6 +380,7 @@ http.route({
       let cursor = requestUrl.searchParams.get("cursor") || null;
       let hasMore = true;
       let scanned = 0;
+      let searchMode: string | undefined;
       let counts;
 
       while (hasMore && references.length < pageSize && scanned < maxScanned) {
@@ -333,6 +399,7 @@ http.route({
         cursor = batch.continueCursor;
         hasMore = batch.hasMore;
         scanned += batch.scanned;
+        searchMode = batch.searchMode;
         counts = batch.counts;
         if (batch.scanned === 0) break;
       }
@@ -343,6 +410,7 @@ http.route({
         continueCursor: hasMore ? cursor : null,
         hasMore,
         scanned,
+        searchMode,
         counts,
       });
     } catch (error) {
@@ -440,6 +508,50 @@ http.route({
 });
 
 http.route({
+  path: "/asset",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    const denied = await ownerDenied(request);
+    if (denied) return denied;
+    const assetId = new URL(request.url).searchParams.get("id");
+    if (!assetId)
+      return jsonResponse(request, { ok: false, error: "id is required" }, 400);
+    const body = (await readJson(request)) as UpdateAssetBody | undefined;
+    if (!body)
+      return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
+
+    const notes = cleanString(body.notes)?.slice(0, 4_000);
+    const metadata = boundedJsonMetadata(body.metadata);
+    if (body.metadata !== undefined && metadata === undefined) {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error: "metadata must be valid JSON no larger than 32 KiB",
+        },
+        400,
+      );
+    }
+    const updated = await ctx.runMutation(internal.httpDb.updateAssetMetadata, {
+      assetId,
+      patch: serializableValue({
+        ...(typeof body.notes === "string" ? { notes: notes ?? "" } : {}),
+        ...(metadata ? { jsonMetadata: metadata } : {}),
+      }),
+      addTagNames: cleanTagNames(body.addTags),
+      removeTagIds: cleanStringArray(body.removeTagIds, 32),
+    });
+    if (!updated)
+      return jsonResponse(
+        request,
+        { ok: false, error: "Asset not found" },
+        404,
+      );
+    return jsonResponse(request, { ok: true, ...updated });
+  }),
+});
+
+http.route({
   path: "/reference",
   method: "PATCH",
   handler: httpAction(async (ctx, request) => {
@@ -511,6 +623,138 @@ http.route({
         404,
       );
     return jsonResponse(request, { ok: true });
+  }),
+});
+
+http.route({
+  path: "/capture-links",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+    try {
+      const body = await readLinkBatch(request);
+      const receipt = await ctx.runMutation(internal.httpDb.importLinkBatch, {
+        batch: body,
+      });
+      return jsonResponse(request, receipt);
+    } catch {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error:
+            "Batch was not acknowledged. Check the input limits, then submit the same list to resume.",
+        },
+        400,
+      );
+    }
+  }),
+});
+
+http.route({
+  path: "/capture-observation-gaps",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+    const body = (await readJson(request)) as
+      CaptureObservationGapsBody | undefined;
+    const sessionKey = cleanString(body?.sessionKey);
+    if (!sessionKey || sessionKey.length > 160) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "sessionKey is required" },
+        400,
+      );
+    }
+    const gaps = await ctx.runQuery(internal.captureObservations.listGaps, {
+      sessionKey,
+      limit: Math.min(400, Math.max(1, Math.floor(body?.limit ?? 200))),
+    });
+    return jsonResponse(request, { ok: true, gaps });
+  }),
+});
+
+http.route({
+  path: "/capture-observations",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+
+    const body = (await readJson(request)) as
+      CaptureObservationBody | undefined;
+    const sessionKey = cleanString(body?.sessionKey);
+    const source = cleanString(body?.source);
+    if (!sessionKey || !source || !Array.isArray(body?.observations)) {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error: "sessionKey, source, and observations are required",
+        },
+        400,
+      );
+    }
+    if (
+      sessionKey.length > 160 ||
+      source.length > 64 ||
+      body.observations.length === 0 ||
+      body.observations.length > 200
+    ) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Invalid observation batch" },
+        400,
+      );
+    }
+
+    const observations = body.observations.flatMap((item) => {
+      const providerId = cleanString(item.providerId);
+      const sourceUrl = cleanUrl(item.sourceUrl);
+      const status =
+        item.stage === "discovered" ||
+        item.stage === "rendered" ||
+        item.stage === "archived" ||
+        item.stage === "failed"
+          ? item.stage
+          : undefined;
+      if (!providerId || providerId.length > 96 || !status) return [];
+      const error = cleanString(item.error);
+      return [
+        {
+          providerId,
+          ...(sourceUrl ? { sourceUrl } : {}),
+          status,
+          ...(error ? { error: error.slice(0, 320) } : {}),
+          observedAt: parseOptionalDate(item.observedAt) ?? Date.now(),
+        },
+      ];
+    });
+    if (observations.length !== body.observations.length) {
+      return jsonResponse(
+        request,
+        { ok: false, error: "Invalid observation" },
+        400,
+      );
+    }
+    const receipt = await ctx.runMutation(internal.captureObservations.record, {
+      sessionKey,
+      source,
+      observations,
+      updatedAt: Date.now(),
+    });
+    return jsonResponse(request, { ok: true, receipt });
   }),
 });
 
@@ -602,6 +846,8 @@ http.route({
     const postId = cleanString(body.postId);
     const postText = cleanString(body.postText);
     const altText = cleanString(body.altText);
+    const assetIndex = boundedAssetOrdinal(body.assetIndex);
+    const assetCount = boundedAssetCount(body.assetCount);
     const rawMetadata = cleanString(body.rawMetadata);
     const tagNames = cleanTagNames(body.tags);
     const captureSessionId = cleanString(body.captureSessionId);
@@ -635,6 +881,8 @@ http.route({
         pageTitle,
         postText,
         altText,
+        assetIndex,
+        assetCount,
         selectedText,
         rawMetadata,
         explicitAuthorName,
@@ -678,6 +926,8 @@ http.route({
           pageTitle,
           postText,
           altText,
+          assetIndex,
+          assetCount,
           selectedText,
           rawMetadata,
           explicitAuthorName,
@@ -753,6 +1003,15 @@ http.route({
       tagNames,
       ...(assetUrl ? { assetUrl } : {}),
       ...(storedAsset ? { storedAsset: serializableValue(storedAsset) } : {}),
+      ...(assetUrl
+        ? {
+            assetDetails: serializableValue({
+              assetIndex,
+              assetCount,
+              altText,
+            }),
+          }
+        : {}),
       snapshot: serializableValue({
         ...(title ? { pageTitle: title } : {}),
         ...(postText ? { postText } : {}),
@@ -781,6 +1040,12 @@ http.route({
         referenceId: created.referenceId,
         assetId: created.assetId,
         storageStatus,
+        ...(storedAsset
+          ? {
+              storageProvider: storedAsset.storageProvider,
+              storedBytes: storedAsset.fileSize,
+            }
+          : {}),
       },
       201,
     );
@@ -860,6 +1125,8 @@ async function persistDuplicateCapture(
     pageTitle?: string;
     postText?: string;
     altText?: string;
+    assetIndex?: number;
+    assetCount?: number;
     selectedText?: string;
     rawMetadata?: string;
     explicitAuthorName?: string;
@@ -871,6 +1138,8 @@ async function persistDuplicateCapture(
     metadata?: LinkMetadata;
   },
 ): Promise<DuplicateCapture | null> {
+  // Trash is a retained rejection, not an invitation to download the same post again.
+  if (duplicate.reference.deleted) return duplicate;
   const assetUrl = cleanString(args.body.assetUrl);
   let storedAsset: StoredRemoteAsset | undefined;
   if (assetUrl && !duplicate.assetId) {
@@ -892,6 +1161,8 @@ async function persistDuplicateCapture(
       pageTitle: args.pageTitle,
       postText: args.postText,
       altText: args.altText,
+      assetIndex: args.assetIndex,
+      assetCount: args.assetCount,
       selectedText: args.selectedText,
       rawMetadata: args.rawMetadata,
       explicitAuthorName: args.explicitAuthorName,
@@ -908,6 +1179,7 @@ async function persistDuplicateCapture(
         reference: saved.reference,
         assetId: saved.assetId,
         reason: duplicate.reason,
+        ...(storedAsset ? { storedAsset } : {}),
       }
     : null;
 }
@@ -924,6 +1196,46 @@ function cleanTagNames(value: unknown) {
   ).slice(0, 12);
 }
 
+function cleanStringArray(value: unknown, limit: number) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, limit);
+}
+
+function boundedAssetOrdinal(value: unknown) {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value < 100
+    ? value
+    : undefined;
+}
+
+function boundedAssetCount(value: unknown) {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= 100
+    ? value
+    : undefined;
+}
+
+function boundedJsonMetadata(value: unknown) {
+  if (value === undefined) return undefined;
+  try {
+    const json = JSON.stringify(value);
+    return typeof json === "string" && json.length <= 32_768 ? json : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function boundedSessionCount(value: unknown) {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.min(1_000_000, Math.max(0, Math.floor(value)))
@@ -934,10 +1246,19 @@ function duplicateResponse(request: Request, duplicate: DuplicateCapture) {
   return jsonResponse(request, {
     ok: true,
     alreadySaved: true,
+    blocked: Boolean(duplicate.reference.deleted),
     duplicateReason: duplicate.reason,
     referenceId: duplicate.reference._id,
     assetId: duplicate.assetId,
-    storageStatus: "already saved",
+    storageStatus: duplicate.reference.deleted
+      ? "blocked by Trash"
+      : duplicate.storedAsset?.status ?? "already saved",
+    ...(duplicate.storedAsset
+      ? {
+          storageProvider: duplicate.storedAsset.storageProvider,
+          storedBytes: duplicate.storedAsset.fileSize,
+        }
+      : {}),
     existingReference: {
       title: duplicate.reference.title,
       sourceUrl: duplicate.reference.sourceUrl,
@@ -1045,7 +1366,7 @@ async function fetchAndStoreRemoteAsset(
   args: { assetUrl: string; sourceUrl: string; title?: string },
 ): Promise<StoredRemoteAsset> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), remoteAssetTimeoutMs);
+  let timer = setTimeout(() => controller.abort(), remoteAssetTimeoutMs);
   try {
     const { response } = await fetchPublicResponse(args.assetUrl, {
       signal: controller.signal,
@@ -1063,9 +1384,6 @@ async function fetchAndStoreRemoteAsset(
 
     const mimeType = response.headers.get("Content-Type") ?? undefined;
     const contentLength = Number(response.headers.get("Content-Length") ?? 0);
-    if (contentLength > maxRemoteAssetBytes) {
-      return { status: "remote asset too large", storageProvider: "linked" };
-    }
     if (!mimeType?.toLowerCase().startsWith("image/")) {
       return {
         status: `remote asset is ${mimeType ?? "an unknown type"}`,
@@ -1073,9 +1391,49 @@ async function fetchAndStoreRemoteAsset(
       };
     }
 
-    const blob = await readBoundedBlob(response, mimeType, maxRemoteAssetBytes);
+    if (
+      contentLength > maxBufferedRemoteAssetBytes &&
+      response.body
+    ) {
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => controller.abort(),
+        remoteAssetStreamTimeoutMs,
+      );
+      const driveUpload = await uploadStreamToDrive({
+        stream: response.body,
+        size: contentLength,
+        sourceUrl: args.sourceUrl,
+        title: args.title,
+        mimeType,
+      });
+      if (driveUpload.ok && driveUpload.file?.id) {
+        return {
+          status: driveUpload.status,
+          storageProvider: "google_drive",
+          mimeType,
+          fileSize: contentLength,
+          driveFileId: driveUpload.file.id,
+          driveFolderId: driveUpload.file.parents?.[0],
+          driveWebViewLink: driveUpload.file.webViewLink,
+          driveWebContentLink: driveUpload.file.webContentLink,
+          driveThumbnailLink: driveUpload.file.thumbnailLink,
+          driveMimeType: driveUpload.file.mimeType,
+        };
+      }
+      return { status: driveUpload.status, storageProvider: "linked" };
+    }
+
+    const blob = await readBoundedBlob(
+      response,
+      mimeType,
+      maxBufferedRemoteAssetBytes,
+    );
     if (!blob) {
-      return { status: "remote asset too large", storageProvider: "linked" };
+      return {
+        status: "remote asset too large for buffered fallback",
+        storageProvider: "linked",
+      };
     }
 
     const driveUpload = await uploadBlobToDrive({
@@ -1125,7 +1483,7 @@ async function readBoundedBlob(
 ) {
   if (!response.body) return new Blob([], { type: mimeType });
   const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
+  const chunks: ArrayBuffer[] = [];
   let total = 0;
 
   try {
@@ -1137,7 +1495,7 @@ async function readBoundedBlob(
         await reader.cancel();
         return undefined;
       }
-      chunks.push(value);
+      chunks.push(new Uint8Array(value).buffer);
     }
     return new Blob(chunks, { type: mimeType });
   } finally {

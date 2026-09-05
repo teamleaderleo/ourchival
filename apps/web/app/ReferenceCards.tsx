@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBatchSelectionItem } from "./batchSelection";
 import {
   referenceDisplayTitle,
-  referenceKindLabel,
   referenceMetadataLabel,
   referenceMode,
   type SavedReference,
 } from "./referenceVaultModel";
 import { usePrivateImageUrl } from "./usePrivateImageUrl";
 import { useReferenceTags } from "./useReferenceTags";
+import { rememberedDimensions, rememberDimensions } from "./imageDimensions";
 
 export function ReferenceCard({
   reference,
@@ -18,14 +18,28 @@ export function ReferenceCard({
   onSelect,
   onQuickLook,
   onToggleFavorite,
+  priority = false,
 }: {
   reference: SavedReference;
   selected: boolean;
   onSelect: () => void;
   onQuickLook?: () => void;
   onToggleFavorite: () => void;
+  priority?: boolean;
 }) {
+  const cardRef = useRef<HTMLElement>(null);
+  const [nearViewport, setNearViewport] = useState(priority);
+  useEffect(() => {
+    if (nearViewport || !cardRef.current) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) { setNearViewport(true); observer.disconnect(); }
+    }, { rootMargin: "500px" });
+    observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, [nearViewport]);
   const asset = reference.assets[0];
+  const [learned, setLearned] = useState(() => asset ? rememberedDimensions(asset._id) : undefined);
+  const dimensions = learned ?? (asset?.width && asset.height ? { width: asset.width, height: asset.height } : undefined);
   const mode = referenceMode(reference.kind);
   const snapshot = reference.sourceSnapshot;
   const [tags] = useReferenceTags(reference.tagIds, reference.tags);
@@ -51,27 +65,37 @@ export function ReferenceCard({
 
   return (
     <article
+      ref={cardRef}
       className={`reference-card ${mode === "links" ? "link-card" : ""} ${selected ? "selected" : ""} ${batch.selected ? "batch-selected" : ""}`}
     >
       <button
         type="button"
         className="card-select"
         aria-pressed={selected}
-        onClick={onSelect}
-        onDoubleClick={onQuickLook}
-        title={onQuickLook ? "Select · double-click for Quick Look" : undefined}
+        onClick={onQuickLook ?? onSelect}
+        title={onQuickLook ? "Open image" : undefined}
       >
-        <div className="thumb-wrap">
+        <div className="thumb-wrap" style={dimensions ? { aspectRatio: `${dimensions.width} / ${dimensions.height}` } : undefined}>
           <ThumbImage
-            imageUrl={imageUrl}
+            imageUrl={nearViewport ? imageUrl : undefined}
             title={title}
             kind={reference.kind}
-            priority={selected}
+            priority={priority}
+            width={dimensions?.width}
+            height={dimensions?.height}
+            onDimensions={(width, height) => {
+              if (!asset) return;
+              rememberDimensions(asset._id, width, height);
+              if (dimensions?.width !== width || dimensions?.height !== height) setLearned({ width, height });
+            }}
           />
-          <span className="kind-badge">
-            {referenceKindLabel(reference.kind)}
-          </span>
+          {reference.assets.length > 1 ? (
+            <span className="kind-badge" aria-label={`${reference.assets.length} images`}>
+              {reference.assets.length}
+            </span>
+          ) : null}
         </div>
+      </button>
         <div className="card-copy">
           {mode === "links" ? (
             <p className="link-source-row">
@@ -84,13 +108,14 @@ export function ReferenceCard({
               />
             </p>
           ) : null}
-          <h2>{title}</h2>
+          <h2>{mode === "links" ? <button type="button" className="card-title-open" onClick={onQuickLook ?? onSelect}>{title}</button> : title}</h2>
+          {mode !== "links" ? <a className="card-source-link" href={reference.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a> : null}
           {mode === "links" && snapshot?.description ? (
             <p className="card-description">{snapshot.description}</p>
-          ) : mode !== "links" ? (
+          ) : mode !== "links" && !title.includes(sourceLabel) ? (
             <p className="card-domain">{sourceLabel}</p>
           ) : null}
-          {visibleTags.length > 0 ? (
+          {mode === "links" && visibleTags.length > 0 ? (
             <div className="card-tags" aria-label="Reference tags">
               {visibleTags.map((tag) => (
                 <span key={tag._id}>#{tag.name}</span>
@@ -109,18 +134,13 @@ export function ReferenceCard({
               {hiddenMatchCount > 0 ? <span>+{hiddenMatchCount}</span> : null}
             </div>
           ) : null}
-          <p className="card-meta">
-            <span>
-              {mode === "links"
-                ? reference.lastOpenedAt
-                  ? "Opened"
-                  : "Unread"
-                : reference.platform}
-            </span>
-            <span>{formatCaptureDate(reference.capturedAt)}</span>
-          </p>
+          {mode === "links" ? (
+            <p className="card-meta">
+              <span>{reference.lastOpenedAt ? "Opened" : "Unread"}</span>
+              <span>{formatCaptureDate(reference.capturedAt)}</span>
+            </p>
+          ) : null}
         </div>
-      </button>
       <button
         type="button"
         className={`batch-select-toggle ${batch.selected ? "active" : ""}`}
@@ -145,11 +165,11 @@ export function ReferenceCard({
         <button
           type="button"
           className="quick-look-toggle"
-          aria-label={`Quick look ${title}`}
-          title="Quick Look"
-          onClick={onQuickLook}
+          aria-label={`Details and organization for ${title}`}
+          title="Details and organization"
+          onClick={onSelect}
         >
-          ⤢
+          ⋯
         </button>
       ) : null}
     </article>
@@ -161,11 +181,17 @@ export function ThumbImage({
   title,
   kind,
   priority = false,
+  width,
+  height,
+  onDimensions,
 }: {
   imageUrl?: string | null;
   title?: string;
   kind: string;
   priority?: boolean;
+  width?: number;
+  height?: number;
+  onDimensions?: (width: number, height: number) => void;
 }) {
   const [failed, setFailed] = useState(false);
   const { resolvedUrl, loading } = usePrivateImageUrl(imageUrl);
@@ -191,11 +217,15 @@ export function ThumbImage({
     <img
       className="thumb"
       src={resolvedUrl}
+      width={width}
+      height={height}
+      style={!width || !height ? { aspectRatio: "auto 3 / 4" } : undefined}
       alt={title ?? "Saved reference"}
       loading={priority ? "eager" : "lazy"}
       decoding="async"
       fetchPriority={priority ? "high" : "auto"}
       onError={() => setFailed(true)}
+      onLoad={(event) => onDimensions?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
     />
   );
 }

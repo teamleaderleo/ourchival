@@ -1,5 +1,5 @@
 import {
-  action,
+  internalAction,
   internalMutation,
   internalQuery,
   mutation,
@@ -248,11 +248,11 @@ export const fail = internalMutation({
   },
 });
 
-export const processSourceMetadata = action({
+export const processSourceMetadata = internalAction({
   args: {
     jobId: v.id("enrichmentJobs"),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ status: string; summary: string } | null> => {
     const jobContext = await ctx.runQuery(
       internal.enrichmentJobs.getJobContext,
       args,

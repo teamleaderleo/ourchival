@@ -1,5 +1,6 @@
 node_modules
 .next
+.next-*/
 dist
 build
 out
@@ -11,3 +12,4 @@ out
 pnpm-debug.log*
 *.tsbuildinfo
 .vercel
+.models/

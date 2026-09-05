@@ -6,6 +6,7 @@ import "./styles.css";
 export const metadata: Metadata = {
   title: "Ourchival",
   description: "A private archive for the images that stay with you.",
+  icons: { icon: "/archive-cat.png", apple: "/archive-cat.png" },
 };
 
 export default function RootLayout({

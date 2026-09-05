@@ -1,3 +1,5 @@
+import { CatIcon } from "./CatIcon";
+
 export type VaultView =
   | "inbox"
   | "all"
@@ -9,7 +11,7 @@ export type VaultView =
   | "trash";
 
 export const viewLabels: Record<VaultView, string> = {
-  inbox: "Inbox",
+  inbox: "New",
   all: "Library",
   images: "Images",
   links: "Links",
@@ -30,68 +32,68 @@ export function VaultSidebar({
 }) {
   return (
     <aside className="vault-sidebar" aria-label="Vault navigation">
-      <nav>
-        <p className="nav-label">Review</p>
+      <nav aria-label="Review">
         <VaultNavButton
-          label="Inbox"
+          label="New"
           count={counts.inbox}
           active={activeView === "inbox"}
           onClick={() => onChange("inbox")}
-          icon="↓"
+          icon="inbox"
         />
       </nav>
 
-      <nav className="sidebar-section">
-        <p className="nav-label">Library</p>
+      <nav className="sidebar-section" aria-label="Library">
         <VaultNavButton
-          label="Kept"
+          label="Library"
           count={counts.all}
           active={activeView === "all"}
           onClick={() => onChange("all")}
+          icon="all"
         />
         <VaultNavButton
           label="Images"
           count={counts.images}
           active={activeView === "images"}
           onClick={() => onChange("images")}
+          icon="images"
         />
         <VaultNavButton
           label="Links"
           count={counts.links}
           active={activeView === "links"}
           onClick={() => onChange("links")}
+          icon="links"
         />
         <VaultNavButton
           label="Favorites"
           count={counts.favorites}
           active={activeView === "favorites"}
           onClick={() => onChange("favorites")}
-          icon="★"
+          icon="favorites"
         />
       </nav>
 
-      <nav className="sidebar-section">
-        <p className="nav-label">Workflow</p>
+      <nav className="sidebar-section" aria-label="Workflow">
         <VaultNavButton
           label="Later"
           count={counts.later}
           active={activeView === "later"}
           onClick={() => onChange("later")}
-          icon="◷"
+          icon="later"
         />
         <VaultNavButton
           label="Archive"
           count={counts.archive}
           active={activeView === "archive"}
           onClick={() => onChange("archive")}
-          icon="□"
+          icon="archive"
         />
         <VaultNavButton
           label="Trash"
           count={counts.trash}
           active={activeView === "trash"}
           onClick={() => onChange("trash")}
-          icon="×"
+          icon="trash"
         />
       </nav>
     </aside>
@@ -109,21 +111,22 @@ function VaultNavButton({
   count: number;
   active: boolean;
   onClick: () => void;
-  icon?: string;
+  icon: VaultView;
 }) {
   return (
     <button
       type="button"
       className={`nav-button ${active ? "active" : ""}`}
+      aria-current={active ? "page" : undefined}
       onClick={onClick}
     >
       <span className="nav-button-label">
         <span className="nav-icon" aria-hidden="true">
-          {icon ?? "•"}
+          <CatIcon name={icon} />
         </span>
         {label}
       </span>
-      <span className="nav-count">{count}</span>
+      {count > 0 && !active ? <span className="nav-count">{count.toLocaleString("en-US")}</span> : null}
     </button>
   );
 }

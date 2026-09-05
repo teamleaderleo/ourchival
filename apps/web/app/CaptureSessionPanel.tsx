@@ -35,7 +35,9 @@ export function CaptureSessionPanel() {
       await refresh();
     } catch (caught) {
       setMessage(
-        caught instanceof Error ? caught.message : "Could not update the session.",
+        caught instanceof Error
+          ? caught.message
+          : "Could not update the session.",
       );
     } finally {
       setBusy(false);
@@ -58,7 +60,11 @@ export function CaptureSessionPanel() {
           <header>
             <div>
               <p className="eyebrow">Bundles and imports</p>
-              <h2>{selectedSession ? sessionTitle(selectedSession) : "Capture sessions"}</h2>
+              <h2>
+                {selectedSession
+                  ? sessionTitle(selectedSession)
+                  : "Capture sessions"}
+              </h2>
             </div>
             <div>
               {selectedSession ? (
@@ -73,7 +79,11 @@ export function CaptureSessionPanel() {
                   Back
                 </button>
               ) : null}
-              <button type="button" className="button ghost" onClick={() => setOpen(false)}>
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => setOpen(false)}
+              >
                 Close
               </button>
             </div>
@@ -124,10 +134,15 @@ function SessionList({
     <div className="capture-session-list">
       <div className="capture-session-list-heading">
         <p>
-          Multi-image posts and browser imports stay together after the Clipper popup
-          closes.
+          Multi-image posts and browser imports stay together after the Clipper
+          popup closes.
         </p>
-        <button type="button" className="button secondary" onClick={onSync} disabled={loading}>
+        <button
+          type="button"
+          className="button secondary"
+          onClick={onSync}
+          disabled={loading}
+        >
           {loading ? "Syncing…" : "Sync recent"}
         </button>
       </div>
@@ -140,18 +155,23 @@ function SessionList({
             key={session._id}
             onClick={() => onSelect(session)}
           >
-            <span className={`capture-session-kind ${session.kind}`} aria-hidden="true">
+            <span
+              className={`capture-session-kind ${session.kind}`}
+              aria-hidden="true"
+            >
               {session.kind === "bundle" ? "▦" : "⇣"}
             </span>
             <span className="capture-session-row-copy">
               <strong>{sessionTitle(session)}</strong>
               <small>
-                {session.kind === "bundle" ? "Creative bundle" : "Bulk import"} ·{" "}
-                {formatSessionDate(session.startedAt)}
+                {session.kind === "bundle" ? "Creative bundle" : "Bulk import"}{" "}
+                · {formatSessionDate(session.startedAt)}
               </small>
               <span>
                 {session.savedCount} saved
-                {session.duplicateCount ? ` · ${session.duplicateCount} existing` : ""}
+                {session.duplicateCount
+                  ? ` · ${session.duplicateCount} existing`
+                  : ""}
                 {session.failedCount ? ` · ${session.failedCount} failed` : ""}
               </span>
             </span>
@@ -192,22 +212,57 @@ function SessionDetail({
     <div className="capture-session-detail">
       <section className="capture-session-summary">
         <div>
-          <span className={`capture-session-kind ${session.kind}`} aria-hidden="true">
+          <span
+            className={`capture-session-kind ${session.kind}`}
+            aria-hidden="true"
+          >
             {session.kind === "bundle" ? "▦" : "⇣"}
           </span>
           <div>
-            <strong>{session.kind === "bundle" ? "Creative bundle" : "Bulk import"}</strong>
+            <strong>
+              {session.kind === "bundle" ? "Creative bundle" : "Bulk import"}
+            </strong>
             <span>{formatSessionDate(session.startedAt)}</span>
           </div>
         </div>
         <dl>
-          <div><dt>Saved</dt><dd>{session.savedCount}</dd></div>
-          <div><dt>Existing</dt><dd>{session.duplicateCount}</dd></div>
-          <div><dt>Skipped</dt><dd>{session.skippedCount}</dd></div>
-          <div><dt>Failed</dt><dd>{session.failedCount}</dd></div>
+          <div>
+            <dt>Saved</dt>
+            <dd>{session.savedCount}</dd>
+          </div>
+          <div>
+            <dt>Existing</dt>
+            <dd>{session.duplicateCount}</dd>
+          </div>
+          <div>
+            <dt>Skipped</dt>
+            <dd>{session.skippedCount}</dd>
+          </div>
+          <div>
+            <dt>Failed</dt>
+            <dd>{session.failedCount}</dd>
+          </div>
         </dl>
+        {typeof session.discoveredCount === "number" ? (
+          <p className="capture-session-message">
+            Receipt: {session.discoveredCount} discovered ·{" "}
+            {session.renderedCount ?? 0} rendered · {session.archivedCount ?? 0}{" "}
+            archived
+            {session.discoveredCount - (session.renderedCount ?? 0) > 0
+              ? ` · ${session.discoveredCount - (session.renderedCount ?? 0)} awaiting render`
+              : ""}
+            {(session.renderedCount ?? 0) - (session.archivedCount ?? 0) > 0
+              ? ` · ${(session.renderedCount ?? 0) - (session.archivedCount ?? 0)} awaiting archive`
+              : ""}
+          </p>
+        ) : null}
         {session.sourceUrl ? (
-          <a className="button ghost full-width" href={session.sourceUrl} target="_blank" rel="noreferrer">
+          <a
+            className="button ghost full-width"
+            href={session.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
             Open bundle source ↗
           </a>
         ) : null}
@@ -242,7 +297,10 @@ function SessionDetail({
       {message ? <p className="capture-session-message">{message}</p> : null}
       {error ? <p className="capture-session-message error">{error}</p> : null}
 
-      <section className="capture-session-reference-list" aria-label="Session references">
+      <section
+        className="capture-session-reference-list"
+        aria-label="Session references"
+      >
         {references.length > 0 ? (
           references.map((reference) => (
             <article key={reference._id}>
@@ -261,17 +319,25 @@ function SessionDetail({
                 </strong>
                 {reference.description ? <p>{reference.description}</p> : null}
                 <span>
-                  {reference.triageState || "inbox"} · {formatSessionDate(reference.capturedAt)}
+                  {reference.triageState || "inbox"} ·{" "}
+                  {formatSessionDate(reference.capturedAt)}
                 </span>
               </div>
-              <a className="button ghost" href={reference.sourceUrl} target="_blank" rel="noreferrer">
+              <a
+                className="button ghost"
+                href={reference.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Open
               </a>
             </article>
           ))
         ) : (
           <p className="capture-session-empty">
-            {loading ? "Loading session references…" : "No active references remain in this session."}
+            {loading
+              ? "Loading session references…"
+              : "No active references remain in this session."}
           </p>
         )}
       </section>
@@ -280,10 +346,12 @@ function SessionDetail({
 }
 
 function sessionTitle(session: CaptureSession) {
-  return session.label?.trim() ||
+  return (
+    session.label?.trim() ||
     (session.kind === "bundle"
       ? `${session.savedCount} captured images`
-      : `${session.savedCount} imported references`);
+      : `${session.savedCount} imported references`)
+  );
 }
 
 function reviewStateLabel(state: CaptureSessionReviewState) {

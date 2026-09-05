@@ -1,0 +1,17 @@
+{
+  "model": "eva",
+  "images": 48,
+  "assertions": 5870,
+  "unique_terms": 2074,
+  "readable_tag_arrays_utf8_bytes": 446902,
+  "shared_dictionary_utf8_bytes": 115025,
+  "otg_v1_payload_bytes_including_headers": 70824,
+  "compact_total_bytes": 185849,
+  "saved_bytes": 261053,
+  "saved_percent": 58.41,
+  "compact_json_transport_bytes": 210145,
+  "lossless_round_trip": true,
+  "scope": "Tag payloads and shared dictionary only; excludes database record overhead, IDs, indexes, model recipes, OCR and captions. Not physical disk usage or billed Convex storage.",
+  "input_sha256": "1fdbdd821abed5da30fc8a3e03b0cc7fad02e2058e4c6edd381ef8418e95a7b9",
+  "measurement_version": 1
+}

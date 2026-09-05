@@ -8,20 +8,26 @@
     "dev": "pnpm --filter @ourchival/web dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
-    "test": "vitest --run",
+    "test": "vitest --run && node --test scripts/local-vault.node-test.mjs",
     "typecheck": "pnpm -r typecheck && tsc -p convex/tsconfig.json",
     "extension:dev": "pnpm --filter @ourchival/extension dev",
     "extension:build": "pnpm --filter @ourchival/extension build",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
+    "local:vault": "node scripts/local-vault.mjs dev",
+    "local:vault:setup": "node scripts/local-vault.mjs setup",
+    "local:vault:drive": "node scripts/local-vault.mjs drive",
+    "local:vault:status": "node scripts/local-vault.mjs status",
     "google:drive-auth": "node scripts/google-drive-auth.mjs"
   },
   "dependencies": {
     "sharp": "0.34.1"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^22.10.2",
-    "convex": "^1.17.4",
+    "convex": "^1.45.0",
+    "convex-test": "^0.0.56",
     "eslint": "^9.17.0",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",

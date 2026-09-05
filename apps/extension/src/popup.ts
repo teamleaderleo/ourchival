@@ -1,5 +1,14 @@
 import type { CapturePayload } from "@ourchival/shared";
-import { parseBookmarksHtml, parseUrlList } from "./imports";
+import {
+  parseBookmarksHtml,
+  parseUrlList,
+  savedLinkSessionKey,
+  type ImportedUrl,
+} from "./imports";
+import {
+  detectSourceIntakeContext,
+  type SourceIntakeContext,
+} from "./sourceIntake";
 import {
   getPopupState,
   LAST_BATCH_KEY,
@@ -9,11 +18,14 @@ import {
   normalizePairingEndpoint,
   normalizeSiteRoot,
   saveSettings,
+  SOURCE_INTAKE_KEY,
+  SOURCE_INTAKES_KEY,
   SETTINGS_KEY,
   type BatchCaptureSource,
   type BatchCaptureState,
   type CaptureResult,
   type ExtensionSettings,
+  type SourceIntakeState,
   type XLikesImportState,
   X_LIKES_IMPORT_KEY,
 } from "./storage";
@@ -46,6 +58,41 @@ async function render() {
   const batch = state[LAST_BATCH_KEY] as BatchCaptureState | undefined;
   const xLikesImport = state[X_LIKES_IMPORT_KEY] as
     XLikesImportState | undefined;
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  const sourceContext = detectSourceIntakeContext(activeTab?.url);
+  const sourceIntakes = Object.values(
+    (state[SOURCE_INTAKES_KEY] as
+      Record<string, SourceIntakeState> | undefined) ?? {},
+  );
+  const legacySourceIntake = state[SOURCE_INTAKE_KEY] as
+    SourceIntakeState | undefined;
+  if (
+    legacySourceIntake &&
+    !sourceIntakes.some(
+      (candidate) => candidate.importId === legacySourceIntake.importId,
+    )
+  ) {
+    sourceIntakes.push(legacySourceIntake);
+  }
+  const sourceIntake =
+    (sourceContext
+      ? sourceIntakes.find(
+          (candidate) =>
+            candidate.provider === sourceContext.provider &&
+            candidate.sourceUrl === sourceContext.sourceUrl,
+        )
+      : undefined) ??
+    sourceIntakes
+      .filter((candidate) => candidate.running)
+      .sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      )[0] ??
+    sourceIntakes.sort((left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt),
+    )[0];
   const normalizedEndpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
   const connected = Boolean(normalizedEndpoint && settings.deviceToken);
 
@@ -55,10 +102,9 @@ async function render() {
     return;
   }
 
-  const batchRunning = Boolean(batch?.running);
-  const xLikesRunning = Boolean(xLikesImport?.running);
-  const disabled = batchRunning || xLikesRunning ? "disabled" : "";
-  const xLikesDisabled = batchRunning ? "disabled" : "";
+  const disabled = savedLinkImportActive ? "disabled" : "";
+  const xLikesDisabled = "";
+  const sourceDisabled = "";
 
   root.innerHTML = `
     <main>
@@ -69,6 +115,8 @@ async function render() {
           <h1>Import from this browser</h1>
         </div>
       </header>
+
+      ${renderSourceIntake(sourceIntake, sourceContext, sourceDisabled, sourceIntakes)}
 
       <section class="x-likes-panel">
         <div class="section-heading">
@@ -139,7 +187,7 @@ async function render() {
                 <input id="bookmarks-file" type="file" accept=".html,.htm,text/html" ${disabled} />
               </label>
             </div>
-            <p id="import-feedback" class="hint">Duplicate lines and bookmark entries are removed before the job starts.</p>
+            <p id="import-feedback" class="hint">Already-saved links keep their original import context. Keep this popup open; re-submit the same list or file to resume.</p>
           </form>
         </div>
       </details>
@@ -182,6 +230,19 @@ async function render() {
     void sendRuntimeMessage({ type: "OURCHIVAL_PAUSE_X_LIKES" });
   });
 
+  document.getElementById("import-source")?.addEventListener("click", () => {
+    transientMessage = "Starting the resumable source import…";
+    void sendRuntimeMessage({ type: "OURCHIVAL_IMPORT_SOURCE" });
+  });
+
+  document.getElementById("pause-source")?.addEventListener("click", () => {
+    transientMessage = "Pausing after the current source chunk…";
+    void sendRuntimeMessage({
+      type: "OURCHIVAL_PAUSE_SOURCE",
+      importId: sourceIntake?.importId,
+    });
+  });
+
   document
     .getElementById("url-import-form")
     ?.addEventListener("submit", (event) => {
@@ -189,6 +250,7 @@ async function render() {
       const form = event.currentTarget as HTMLFormElement;
       const entries = parseUrlList(
         String(new FormData(form).get("url-list") ?? ""),
+        true,
       );
       const feedback = document.getElementById("import-feedback");
       if (entries.length === 0) {
@@ -197,11 +259,7 @@ async function render() {
         return;
       }
       transientMessage = `Starting import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
-      void sendRuntimeMessage({
-        type: "OURCHIVAL_CAPTURE_URLS",
-        source: "url_list",
-        entries,
-      });
+      void importSavedLinks("url_list", entries);
     });
 
   document
@@ -212,7 +270,7 @@ async function render() {
       const feedback = document.getElementById("import-feedback");
       if (!file) return;
       try {
-        const entries = parseBookmarksHtml(await file.text());
+        const entries = parseBookmarksHtml(await file.text(), true);
         if (entries.length === 0) {
           if (feedback)
             feedback.textContent =
@@ -220,11 +278,7 @@ async function render() {
           return;
         }
         transientMessage = `Starting bookmark import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
-        void sendRuntimeMessage({
-          type: "OURCHIVAL_CAPTURE_URLS",
-          source: "bookmarks",
-          entries,
-        });
+        void importSavedLinks("bookmarks", entries);
       } catch (error) {
         if (feedback) {
           feedback.textContent =
@@ -392,6 +446,66 @@ function bindPairingForm() {
     });
 }
 
+function renderSourceIntake(
+  state: SourceIntakeState | undefined,
+  context: SourceIntakeContext | undefined,
+  disabled: string,
+  states: SourceIntakeState[],
+) {
+  if (!state && !context) return "";
+  const active = state?.running ? state : undefined;
+  const label =
+    active?.label ?? context?.label ?? state?.label ?? "Source import";
+  const sameSource = Boolean(
+    state && context && state.sourceUrl === context.sourceUrl,
+  );
+  const button = active
+    ? '<button id="pause-source" type="button" class="secondary full-width">Pause after this chunk</button>'
+    : context
+      ? `<button id="import-source" type="button" class="primary full-width" ${disabled}>${sameSource && !state?.exhausted ? "Continue import" : `Import ${escapeHtml(label)}`}</button>`
+      : "";
+  const progress = state
+    ? `<div class="batch-counts source-progress">
+        <span><strong>${state.observed}</strong> observed</span>
+        <span><strong>${state.saved}</strong> new</span>
+        ${state.duplicates ? `<span><strong>${state.duplicates}</strong> existing</span>` : ""}
+        ${state.failed ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
+        ${state.reportedCount ? `<span><strong>${state.unresolved}</strong> unresolved</span>` : ""}
+      </div>
+      <p class="hint"><strong>${state.running ? "Importing" : state.exhausted ? "Source end reached" : "Paused"}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"} · ${escapeHtml(state.cursor)}</p>
+      ${state.message ? `<p class="hint">${escapeHtml(state.message)}</p>` : ""}`
+    : "";
+  const sealed =
+    active?.sensitiveDefault || context?.sensitiveDefault
+      ? '<p class="hint"><strong>Sealed by default.</strong> Private previews stay out of the ordinary Inbox view.</p>'
+      : "";
+  const guidance =
+    !context && state && !state.running
+      ? `<p class="hint">Open ${escapeHtml(state.label)} to continue or begin a fresh pass.</p>`
+      : "";
+  const otherRunning = states.filter(
+    (candidate) => candidate.running && candidate.importId !== state?.importId,
+  ).length;
+  const concurrent = otherRunning
+    ? `<p class="hint">${otherRunning} other source ${otherRunning === 1 ? "import is" : "imports are"} also running.</p>`
+    : "";
+  return `
+    <section class="x-likes-panel source-intake-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Saved source</p>
+          <h2>${escapeHtml(label)}</h2>
+        </div>
+      </div>
+      ${button}
+      ${progress}
+      ${sealed}
+      ${guidance}
+      ${concurrent}
+    </section>
+  `;
+}
+
 function renderBatch(batch: BatchCaptureState | undefined) {
   if (!batch) return "";
   const progress = batch.total
@@ -424,7 +538,7 @@ function renderBatch(batch: BatchCaptureState | undefined) {
       <div class="section-heading compact">
         <div>
           <p class="eyebrow">${escapeHtml(batchSourceLabel(batch.source))}</p>
-          <h2>${batch.running ? "Importing into Inbox" : "Import complete"}</h2>
+          <h2>${batch.running ? "Importing into Inbox" : batch.source === "x_likes" ? "Last chunk saved" : "Import complete"}</h2>
         </div>
         <strong>${batch.completed}/${batch.total}</strong>
       </div>
@@ -434,7 +548,9 @@ function renderBatch(batch: BatchCaptureState | undefined) {
       ${batch.currentLabel ? `<p class="current-item">${escapeHtml(batch.currentLabel)}</p>` : ""}
       <div class="batch-counts">
         <span><strong>${batch.saved}</strong> saved</span>
-        <span><strong>${batch.duplicates}</strong> existing</span>
+        ${batch.source === "x_likes" && (batch.attached ?? 0) > 0 ? `<span><strong>${batch.attached}</strong> extra images</span>` : ""}
+        ${batch.source === "x_likes" && (batch.refreshed ?? 0) > 0 ? `<span><strong>${batch.refreshed}</strong> refreshed</span>` : ""}
+        ${batch.duplicates > 0 ? `<span><strong>${batch.duplicates}</strong> existing</span>` : ""}
         <span><strong>${batch.skipped}</strong> skipped</span>
         <span><strong>${batch.failed}</strong> failed</span>
       </div>
@@ -448,26 +564,44 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
   if (!state) return "";
   const status = state.running
     ? "Importing"
-    : state.exhausted
-      ? "Timeline reached"
-      : state.stopReason === "paused"
-        ? "Paused"
-        : "Ready to continue";
-  const mediaNote =
-    state.captureAttempts === state.discoveredPosts
-      ? ""
-      : ` · ${state.captureAttempts} media captures`;
+    : state.stopReason === "known_boundary"
+      ? "Caught up"
+      : state.stopReason === "stalled" || state.stopReason === "timeline_end"
+        ? "X paused loading"
+        : state.exhausted
+          ? "Timeline reached"
+          : state.stopReason === "paused"
+            ? "Paused"
+            : "Ready to continue";
   const message = state.message
     ? `<p class="hint">${escapeHtml(state.message)}</p>`
+    : "";
+  const audit = state.audit
+    ? `<p class="hint"><strong>${
+        state.audit.status === "verified"
+          ? "Receipt verified"
+          : state.audit.status === "gaps"
+            ? "Receipt has gaps"
+            : "Partial receipt"
+      }</strong> · ${state.audit.networkPosts} from X · ${state.audit.observedPosts} rendered · ${state.audit.vaultChecked ? `${state.audit.vaultPosts} archived` : "vault check unavailable"}${
+        state.audit.networkMissingInDom || state.audit.domMissingInVault
+          ? ` · ${state.audit.networkMissingInDom} render gaps · ${state.audit.domMissingInVault} archive gaps`
+          : ""
+      }${state.audit.unparseableArticles ? ` · ${state.audit.unparseableArticles} unparsed` : ""}${state.audit.durable ? " · exact gaps saved" : ""}</p>`
     : "";
   return `
     <div class="batch-counts x-likes-progress">
       <span><strong>${state.discoveredPosts}</strong> posts</span>
       <span><strong>${state.saved}</strong> new</span>
-      <span><strong>${state.duplicates}</strong> existing</span>
-      <span><strong>${state.failed}</strong> failed</span>
+      ${(state.attachedMedia ?? 0) > 0 ? `<span><strong>${state.attachedMedia}</strong> extra images</span>` : ""}
+      ${(state.refreshedPosts ?? 0) > 0 ? `<span><strong>${state.refreshedPosts}</strong> refreshed</span>` : ""}
+      ${state.duplicates > 0 ? `<span><strong>${state.duplicates}</strong> existing posts</span>` : ""}
+      ${state.failed > 0 ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
+      ${(state.originalsStored ?? 0) > 0 ? `<span><strong>${state.originalsStored}</strong> originals secured</span>` : ""}
+      ${(state.originalsLinked ?? 0) > 0 ? `<span><strong>${state.originalsLinked}</strong> link-only</span>` : ""}
     </div>
-    <p class="hint"><strong>${status}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"}${mediaNote}</p>
+    <p class="hint"><strong>${status}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"}</p>
+    ${audit}
     ${message}
   `;
 }
@@ -499,6 +633,8 @@ function batchSourceLabel(source: BatchCaptureSource) {
   if (source === "bookmarks") return "Bookmarks HTML";
   if (source === "x_post") return "X post images";
   if (source === "x_likes") return "X Likes";
+  if (source === "pixiv_bookmarks") return "Pixiv bookmarks";
+  if (source === "pinterest_board") return "Pinterest board";
   if (source === "retry") return "Failed-item retry";
   return "Pasted links";
 }
@@ -536,3 +672,57 @@ chrome.storage.onChanged.addListener((_changes, areaName) => {
 });
 
 void render();
+
+let savedLinkImportActive = false;
+async function importSavedLinks(
+  source: "url_list" | "bookmarks",
+  entries: ImportedUrl[],
+) {
+  if (savedLinkImportActive) return;
+  savedLinkImportActive = true;
+  try {
+    const sessionKey = await savedLinkSessionKey(source, entries);
+    let offset = 0;
+    let endpoint: string | undefined;
+    // Empty first batch reads the existing session cursor after popup/worker restart.
+    let probe = true;
+    do {
+      const receipt = await chrome.runtime.sendMessage({
+        type: "OURCHIVAL_SAVED_LINK_BATCH",
+        expectedEndpoint: endpoint,
+        batch: {
+          sessionKey,
+          source,
+          total: entries.length,
+          offset,
+          entries: probe ? [] : entries.slice(offset, offset + 50),
+        },
+      });
+      if (!receipt?.ok)
+        throw new Error(receipt?.error || "Import was interrupted.");
+      if (
+        !Number.isSafeInteger(receipt.nextOffset) ||
+        receipt.nextOffset < offset ||
+        receipt.nextOffset > entries.length ||
+        (!probe && receipt.nextOffset === offset)
+      ) {
+        throw new Error("Import returned an invalid progress receipt.");
+      }
+      offset = receipt.nextOffset;
+      endpoint = receipt.endpoint;
+      probe = false;
+      transientMessage =
+        `${offset} / ${entries.length} links · ${receipt.saved} saved · ${receipt.duplicates} already saved. ` +
+        (receipt.complete
+          ? "Import complete. Review in Inbox."
+          : "Keep open to continue. Re-submit the same list to resume after closing.");
+      await render();
+    } while (offset < entries.length);
+  } catch (error) {
+    transientMessage = `${error instanceof Error ? error.message : "Import interrupted."} Committed links are safe. Re-submit the same list or file to resume.`;
+    await render();
+  } finally {
+    savedLinkImportActive = false;
+    await render();
+  }
+}

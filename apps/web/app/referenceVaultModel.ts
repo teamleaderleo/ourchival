@@ -1,6 +1,12 @@
 export type ReferenceAsset = {
   _id: string;
   originalUrl?: string;
+  sourceIndex?: number;
+  sourceCount?: number;
+  altText?: string;
+  notes?: string;
+  tagIds?: string[];
+  jsonMetadata?: string;
   storedUrl?: string | null;
   previewUrl?: string | null;
   thumbUrl?: string | null;
@@ -20,6 +26,11 @@ export type ReferenceTag = {
   name: string;
   slug: string;
   createdAt: number;
+  code?: number;
+  aliases?: string[];
+  definition?: string;
+  definitionVersion?: number;
+  revision?: number;
 };
 
 export type ReferenceSearchMatch = {
@@ -43,11 +54,28 @@ export type ReferenceSourceSnapshot = {
   metadataStatus?: "ready" | "missing" | "failed";
   httpStatus?: number;
   metadataFetchedAt?: number;
+  sourceMetadata?: {
+    provenance?: string;
+    sourceKind?: string;
+    feedContext?: string;
+    textLanguage?: string;
+    mediaIndex?: number;
+    mediaCount?: number;
+    engagement?: {
+      replies?: number;
+      reposts?: number;
+      quotes?: number;
+      likes?: number;
+      bookmarks?: number;
+      views?: number;
+    };
+  };
   createdAt: number;
 };
 
 export type TriageState = "inbox" | "kept" | "later";
-export type ReferenceCollection = "inbox" | "library" | "later" | "archive" | "trash";
+export type ReferenceCollection =
+  "inbox" | "library" | "later" | "archive" | "trash";
 
 export type SavedReference = {
   _id: string;
@@ -80,6 +108,13 @@ export type SavedReference = {
 
 export type ReferenceLane = "all" | "images" | "links";
 
+export function hasImageAsset(reference: SavedReference) {
+  return reference.assets.some((asset) => Boolean(
+    asset.originalUrl || asset.storedUrl || asset.previewUrl || asset.thumbUrl,
+  ));
+}
+
+
 export type ReferenceFilterOptions = {
   query?: string;
   favoritesOnly?: boolean;
@@ -100,7 +135,9 @@ export function filterReferences(
   }
 
   if (options.lane && options.lane !== "all") {
-    list = list.filter((reference) => referenceMode(reference.kind) === options.lane);
+    list = list.filter(
+      (reference) => referenceMode(reference.kind) === options.lane,
+    );
   }
 
   if (options.favoritesOnly) {
@@ -144,7 +181,9 @@ export function searchTextOnly(value: string) {
     .trim()
     .toLowerCase()
     .split(/\s+/)
-    .filter((token) => !/^(site|domain|type|kind|tag|board|project):/.test(token))
+    .filter(
+      (token) => !/^(site|domain|type|kind|tag|board|project):/.test(token),
+    )
     .join(" ");
 }
 
@@ -153,10 +192,15 @@ export function getSelectedReference(
   selectedId: string | null,
 ) {
   if (!visibleReferences.length || !selectedId) return undefined;
-  return visibleReferences.find((reference) => reference._id === selectedId) ?? visibleReferences[0];
+  return (
+    visibleReferences.find((reference) => reference._id === selectedId) ??
+    visibleReferences[0]
+  );
 }
 
-export function referenceCollection(reference: SavedReference): ReferenceCollection {
+export function referenceCollection(
+  reference: SavedReference,
+): ReferenceCollection {
   if (reference.deleted) return "trash";
   if (reference.archived) return "archive";
   if (reference.triageState === "inbox") return "inbox";
@@ -166,7 +210,7 @@ export function referenceCollection(reference: SavedReference): ReferenceCollect
 
 export function referenceCollectionLabel(reference: SavedReference) {
   const collection = referenceCollection(reference);
-  if (collection === "inbox") return "Inbox";
+  if (collection === "inbox") return "New";
   if (collection === "later") return "Later";
   if (collection === "archive") return "Archived";
   if (collection === "trash") return "Trash";
@@ -185,7 +229,9 @@ export function referenceDisplayTitle(reference: SavedReference) {
 export function referenceMetadataLabel(reference: SavedReference) {
   const snapshot = reference.sourceSnapshot;
   if (snapshot?.metadataStatus === "failed") {
-    return snapshot.httpStatus ? `HTTP ${snapshot.httpStatus}` : "Metadata failed";
+    return snapshot.httpStatus
+      ? `HTTP ${snapshot.httpStatus}`
+      : "Metadata failed";
   }
   if (snapshot?.metadataStatus === "missing") return "Sparse metadata";
   if (snapshot?.metadataStatus === "ready") return "Metadata ready";
@@ -193,7 +239,8 @@ export function referenceMetadataLabel(reference: SavedReference) {
 }
 
 export function assetLabel(asset: ReferenceAsset | undefined, kind?: string) {
-  if (!asset) return referenceMode(kind ?? "") === "links" ? "Link only" : "Page only";
+  if (!asset)
+    return referenceMode(kind ?? "") === "links" ? "Link only" : "Page only";
   if (asset.storageProvider === "google_drive") return "Google Drive original";
   if (asset.storageProvider === "convex") return "Convex fallback original";
   if (asset.storageProvider === "linked") return "Linked source URL";

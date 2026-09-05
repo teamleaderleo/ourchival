@@ -1,5 +1,12 @@
 "use client";
 
+import { BrandMark } from "./BrandMark";
+import { ArchiveSearch } from "./ArchiveSearch";
+import { ProjectPanel } from "./ProjectPanel";
+import { Popover } from "./Popover";
+import { Masonry } from "./Masonry";
+import { LoadMore } from "./LoadMore";
+
 import { useEffect, useState } from "react";
 import { InspectorOrganization } from "./InspectorOrganization";
 import { ReferenceCard } from "./ReferenceCards";
@@ -19,16 +26,6 @@ export function ReferenceVault() {
   const currentViewLabel = viewLabels[vault.activeView];
   const isReviewView =
     vault.activeView === "inbox" || vault.activeView === "later";
-  const displayedCount = vault.query
-    ? `${vault.filteredReferences.length}${vault.hasMore ? "+" : ""}`
-    : String(vault.activeCount);
-  const displayedCountLabel = vault.query
-    ? vault.filteredReferences.length === 1 && !vault.hasMore
-      ? "result"
-      : "results"
-    : vault.activeCount === 1
-      ? "reference"
-      : "references";
   const quickLookReference = quickLookId
     ? (vault.filteredReferences.find(
         (reference) => reference._id === quickLookId,
@@ -57,12 +54,10 @@ export function ReferenceVault() {
   }, [quickLookReference, vault.selectedReference]);
 
   function openQuickLook(referenceId: string) {
-    vault.setSelectedId(referenceId);
     setQuickLookId(referenceId);
   }
 
   function selectQuickLookReference(referenceId: string) {
-    vault.setSelectedId(referenceId);
     setQuickLookId(referenceId);
   }
 
@@ -100,15 +95,14 @@ export function ReferenceVault() {
     <div className="app-frame">
       <header className="app-header">
         <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
-            O
-          </div>
+          <BrandMark />
           <div>
             <p className="brand-name">Ourchival</p>
-            <p className="brand-subtitle">Visual archive</p>
           </div>
         </div>
+        <ArchiveSearch query={vault.query} onChange={vault.setQuery} />
         <div className="header-actions">
+          <Popover className="project-menu" label="Projects"><ProjectPanel query={vault.query} onChange={vault.setQuery} /></Popover>
           {vault.status ? (
             <div
               className={`sync-status status-${vault.statusTone}`}
@@ -183,7 +177,7 @@ export function ReferenceVault() {
             className="button primary capture-submit"
             disabled={vault.isSaving}
           >
-            {vault.isSaving ? "Saving…" : "Save to Inbox"}
+            {vault.isSaving ? "Saving…" : "Save"}
           </button>
         </form>
       ) : null}
@@ -206,40 +200,14 @@ export function ReferenceVault() {
           onChange={vault.changeView}
         />
         <main className="vault-main">
-          <div className="vault-heading">
-            <h1>{currentViewLabel}</h1>
-            <p className="vault-count">
-              <strong>{displayedCount}</strong>
-              <span>{displayedCountLabel}</span>
-            </p>
-          </div>
+          <h1 className="sr-only">{currentViewLabel}</h1>
           <div className="vault-toolbar">
-            <label className="search-field">
-              <span className="sr-only">Search Ourchival</span>
-              <span className="search-icon" aria-hidden="true">
-                ⌕
-              </span>
-              <input
-                type="search"
-                value={vault.query}
-                onChange={(event) => vault.setQuery(event.target.value)}
-                placeholder="Search artist, source, lighting, notes, domain…"
-              />
-              {vault.query ? (
-                <button
-                  type="button"
-                  className="clear-search"
-                  onClick={() => vault.setQuery("")}
-                >
-                  Clear
-                </button>
-              ) : null}
-            </label>
             <SavedSearchPanel
               activeView={vault.activeView}
               query={vault.query}
               onApply={applySavedSearch}
             />
+            <TagFilterBar query={vault.query} onChange={vault.setQuery} imagesOnly={vault.imagesOnly} onImagesOnly={vault.setImagesOnly} onRefresh={vault.retryLoad} />
           </div>
 
           {vault.activeView === "links" ? (
@@ -284,7 +252,6 @@ export function ReferenceVault() {
             </form>
           ) : null}
 
-          <TagFilterBar query={vault.query} onChange={vault.setQuery} />
 
           {isReviewView && vault.selectedReference ? (
             <div className="review-strip">
@@ -342,12 +309,7 @@ export function ReferenceVault() {
             className={`reference-grid ${vault.activeView === "links" ? "link-grid" : ""} ${vault.filteredReferences.length === 0 ? "empty-grid" : ""}`}
           >
             {vault.isLoading && vault.filteredReferences.length === 0 ? (
-              <article className="empty-card loading-card" aria-live="polite">
-                <span className="empty-mark" aria-hidden="true">
-                  ◌
-                </span>
-                <h2>Opening {currentViewLabel.toLowerCase()}…</h2>
-              </article>
+              <div aria-label="Opening archive" aria-busy="true"><Masonry>{Array.from({ length: 8 }, (_, index) => <div key={index} className="masonry-skeleton" style={{ height: 180 + (index % 3) * 65 }} />)}</Masonry></div>
             ) : vault.loadFailed ? (
               <article className="empty-card load-error-card" role="alert">
                 <span className="empty-mark" aria-hidden="true">
@@ -387,45 +349,21 @@ export function ReferenceVault() {
                 </p>
               </article>
             ) : (
-              vault.filteredReferences.map((reference) => (
+              <Masonry>{vault.filteredReferences.map((reference, index) => (
                 <ReferenceCard
                   key={reference._id}
                   reference={reference}
+                  priority={index < 4}
                   selected={reference._id === vault.selectedReference?._id}
                   onSelect={() => vault.setSelectedId(reference._id)}
                   onQuickLook={() => openQuickLook(reference._id)}
                   onToggleFavorite={() => void vault.toggleFavorite(reference)}
                 />
-              ))
+              ))}</Masonry>
             )}
           </section>
 
-          {!vault.isLoading && (vault.canLoadNewer || vault.hasMore) ? (
-            <div className="pagination-bar" aria-live="polite">
-              <div className="pagination-actions">
-                <button
-                  type="button"
-                  className="button ghost"
-                  onClick={() => void vault.loadNewerPage()}
-                  disabled={!vault.canLoadNewer || vault.isLoadingPage}
-                >
-                  Newer
-                </button>
-                <button
-                  type="button"
-                  className="button secondary"
-                  onClick={() => void vault.loadOlderPage()}
-                  disabled={!vault.hasMore || vault.isLoadingPage}
-                >
-                  {vault.isLoadingPage
-                    ? "Loading…"
-                    : vault.hasMore
-                      ? "Older"
-                      : "End reached"}
-                </button>
-              </div>
-            </div>
-          ) : null}
+          {!vault.isLoading && vault.hasMore ? <LoadMore busy={vault.isLoadingPage} auto={vault.statusTone !== "error"} onLoad={vault.loadOlderPage} /> : null}
         </main>
         {vault.selectedReference ? (
           <aside
@@ -471,6 +409,15 @@ export function ReferenceVault() {
           onClose={() => setQuickLookId(null)}
           onOpen={vault.markReferenceOpened}
           onToggleFavorite={vault.toggleFavorite}
+          onInspect={() => { vault.setSelectedId(quickLookReference._id); setQuickLookId(null); }}
+          onMove={async (action) => {
+            const index = vault.filteredReferences.findIndex((item) => item._id === quickLookReference._id);
+            const next = vault.filteredReferences[index + 1] ?? vault.filteredReferences[index - 1];
+            if (!await vault.moveReference(quickLookReference._id, action)) return false;
+            vault.setSelectedId(null);
+            setQuickLookId(next?._id ?? null);
+            return true;
+          }}
         />
       ) : null}
     </div>
@@ -496,7 +443,7 @@ function normalizeDomainToken(value: string) {
 }
 
 function emptyHeading(view: string, label: string) {
-  if (view === "inbox") return "Inbox cleared";
+  if (view === "inbox") return "All caught up";
   if (view === "later") return "Nothing waiting for later";
   if (view === "archive") return "Archive is empty";
   if (view === "trash") return "Trash is empty";
@@ -507,9 +454,9 @@ function emptyMessage(view: string) {
   if (view === "inbox")
     return "New captures will arrive here for a quick decision.";
   if (view === "later")
-    return "Defer an Inbox item when it deserves another look.";
+    return "Defer a new save when it deserves another look.";
   if (view === "archive")
     return "Archived references stay available without filling the Library.";
-  if (view === "trash") return "Items in Trash can be restored to Inbox.";
-  return "Keep an Inbox reference to add it to this collection.";
+  if (view === "trash") return "Items in Trash can be restored to New.";
+  return "Keep a new reference to add it to this collection.";
 }

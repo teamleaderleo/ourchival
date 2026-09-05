@@ -1,3 +1,4 @@
+import { getSourceContext } from "./lib/sourceContext";
 import {
   internalAction,
   internalMutation,
@@ -154,11 +155,7 @@ export const getContext = internalQuery({
     const reference = await ctx.db.get(job.referenceId);
     if (!reference) return null;
     const [snapshot, tags] = await Promise.all([
-      ctx.db
-        .query("sourceSnapshots")
-        .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
-        .order("desc")
-        .first(),
+      getSourceContext(ctx, reference._id),
       getTagsByIds(ctx, reference.tagIds),
     ]);
     return { job, reference, snapshot, tags };
@@ -236,7 +233,7 @@ export const process = internalAction({
   args: {
     jobId: v.id("enrichmentJobs"),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ inserted: number; summary: string } | { status: string; summary: string } | null> => {
     const context = await ctx.runQuery(internal.suggestedTags.getContext, args);
     if (!context || context.job.status !== "queued") return null;
     const claimed = await ctx.runMutation(internal.enrichmentJobs.claim, args);
