@@ -108,6 +108,36 @@ to an existing reference; their board occurrence survives. Materialize collectio
 membership only when requested. For mutable feeds use the X Likes-style stable
 run identity plus native cursor, not a changing whole-feed digest.
 
+### Pinterest live probe (2026-09-04)
+
+A read-only probe against the owner's saved-board UI confirmed the following
+adapter constraints:
+
+- The profile exposed 14 boards with 3,641 reported board memberships. Board
+  URLs, titles, reported pin counts and a stable numeric board ID were visible
+  without opening individual pins.
+- Board cards exposed stable numeric pin URLs, a display label/alt description
+  when Pinterest had one, and proxied thumbnails. A representative detail page
+  exposed a larger proxied image. Some cards exposed an outbound `Visit site`
+  URL while others did not, so a Pinterest pin URL and an outbound source URL
+  must remain separate optional facts.
+- The grid is virtualized: after one ordinary scroll, none of the first eight
+  rendered pin IDs remained in the DOM. A fast two-page stride reached the end
+  of a 794-pin board but reconciled only 769 unique rendered pin IDs. A slower
+  one-page pass raised that to 772, still leaving 22 memberships unresolved.
+  The adapter must never equate “reached the bottom” with complete capture.
+- A receipt therefore needs at least `reported`, `observed`, `unresolved`,
+  current board/cursor position and a bounded set-reconciliation digest. A run
+  may be `exhausted` while remaining `incomplete`; it should be resumable with
+  smaller overlap windows or a provider cursor when one is available.
+- One monolithic scroll exceeded the browser controller's 30-second operation
+  bound. Keep each observation chunk comfortably below that limit, persist its
+  receipt before the next scroll, and tolerate DOM replacement between chunks.
+
+These observations support a board-at-a-time adapter with overlapping windows,
+not a single account-wide mutable manifest. The reported membership count is a
+reconciliation target, not proof that every membership remains renderable.
+
 Pixiv bookmarks should preserve artwork ID, creator ID, bookmark visibility,
 bookmark tags, page count and ordered page assets. Start with saved artwork
 links through this endpoint; richer post/media payloads should reuse the
