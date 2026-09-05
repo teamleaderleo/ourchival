@@ -612,6 +612,10 @@ async function startSourceIntake() {
         duplicates: 0,
         failed: 0,
         skipped: 0,
+        originalCandidates: 0,
+        originalsStored: 0,
+        originalsLinked: 0,
+        storedBytes: 0,
         ...(profileDiscovery?.reportedCount
           ? { reportedCount: profileDiscovery.reportedCount }
           : {}),
@@ -747,6 +751,15 @@ async function acceptSourceIntakeChunk(
   state.duplicates += batch?.duplicates ?? 0;
   state.failed += batch?.failed ?? 0;
   state.skipped += batch?.skipped ?? 0;
+  state.originalCandidates =
+    (state.originalCandidates ?? 0) +
+    payloads.filter((payload) => Boolean(payload.assetUrl)).length;
+  state.originalsStored =
+    (state.originalsStored ?? 0) + (batch?.originalsStored ?? 0);
+  state.originalsLinked =
+    (state.originalsLinked ?? 0) + (batch?.originalsLinked ?? 0);
+  state.storedBytes =
+    (state.storedBytes ?? 0) + (batch?.storedBytes ?? 0);
   if (typeof chunk.reportedCount === "number") {
     state.reportedCount = Math.max(
       state.reportedCount ?? 0,

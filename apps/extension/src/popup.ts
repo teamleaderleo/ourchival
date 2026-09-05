@@ -457,6 +457,8 @@ function renderSourceIntake(
         ${state.duplicates ? `<span><strong>${state.duplicates}</strong> existing</span>` : ""}
         ${state.failed ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
         ${state.reportedCount ? `<span><strong>${state.unresolved}</strong> unresolved</span>` : ""}
+        ${(state.originalCandidates ?? 0) > 0 ? `<span><strong>${state.originalsStored ?? 0}/${state.originalCandidates}</strong> originals secured</span>` : ""}
+        ${(state.originalsLinked ?? 0) > 0 ? `<span><strong>${state.originalsLinked}</strong> link-only</span>` : ""}
       </div>
       <p class="hint"><strong>${state.running ? "Importing" : state.exhausted ? "Source end reached" : "Paused"}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"} · ${escapeHtml(state.cursor)}</p>
       ${state.message ? `<p class="hint">${escapeHtml(state.message)}</p>` : ""}`
