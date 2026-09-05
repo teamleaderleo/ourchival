@@ -160,9 +160,16 @@ the normal UI:
 The visible grid showed five artwork cards across. At least one card displayed
 a `3` overlay, confirming that a bookmark occurrence can refer to a multi-page
 artwork and that page count must not be inferred as one from the grid thumbnail.
-The screenshot did not expose artwork titles, creator IDs, a total result count,
-or a pagination/end marker. Those remain unverified and the adapter must not
-claim completeness from this surface alone.
+A second screenshot confirmed that each grid card visibly carries an artwork
+title and creator display name, while hover status exposes a stable
+`/en/artworks/{artworkId}` URL. Creator IDs still require detail-page evidence;
+display names are not identity.
+
+The same screenshot showed numbered pages `1` through `7` plus a next-page
+control. This makes page number a natural bounded transport cursor, subject to
+verifying its URL representation and behavior when new bookmarks arrive. A
+total artwork count and final page remain unverified, so the adapter must not
+infer completion merely from the first visible pagination window.
 
 Treat filter state as part of the capture session identity and receipt. Public
 and private bookmarks must be separate bounded runs, while every artwork keeps
