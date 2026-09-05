@@ -1,4 +1,9 @@
 import { paginationOptsValidator } from "convex/server";
+import {
+  normalizedVisualTags,
+  tagKey,
+  visualResultCurrent,
+} from "./lib/visualMetadata";
 import { visualModel, visualTag } from "./lib/searchSchema";
 import { validateVisualResult } from "./lib/visualValidation";
 import { refreshReferenceSearch } from "./lib/searchIndex";
@@ -480,7 +485,7 @@ export const submit = mutation({
         ? { originalContentHash: args.originalContentHash }
         : {}),
       models: args.models,
-      tags: args.tags,
+      tags: normalizedVisualTags(args.tags),
       ratings: args.ratings,
       ...(args.ocrText !== undefined ? { ocrText: args.ocrText } : {}),
       ...(args.caption !== undefined ? { caption: args.caption } : {}),
@@ -499,6 +504,7 @@ export const submit = mutation({
 
 export const correct = mutation({
   args: {
+    expectedRevision: v.optional(v.number()),
     accessKey: v.string(),
     assetId: v.id("assets"),
     rejectedTags: v.array(v.string()),
@@ -518,9 +524,16 @@ export const correct = mutation({
       .query("visualCorrections")
       .withIndex("by_asset_id", (q) => q.eq("assetId", asset._id))
       .unique();
+    if (
+      args.expectedRevision !== undefined &&
+      args.expectedRevision !== (existing?.revision ?? 0)
+    ) {
+      throw new Error("Corrections changed elsewhere. Reload before saving.");
+    }
     const payload = {
       assetId: asset._id,
-      rejectedTags: [...new Set(args.rejectedTags)],
+      rejectedTags: [...new Set(args.rejectedTags.map(tagKey))],
+      revision: (existing?.revision ?? 0) + 1,
       hideOcr: args.hideOcr,
       hideCaption: args.hideCaption,
       updatedAt: Date.now(),
@@ -529,5 +542,63 @@ export const correct = mutation({
     else await ctx.db.insert("visualCorrections", payload);
     await refreshReferenceSearch(ctx, asset.referenceId);
     return null;
+  },
+});
+
+export const inspect = query({
+  args: { accessKey: v.string(), referenceId: v.id("references") },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    const reference = await ctx.db.get(args.referenceId);
+    if (!reference) throw new Error("Reference is unavailable.");
+    const assets = await ctx.db
+      .query("assets")
+      .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
+      .take(33);
+    const items = await Promise.all(
+      assets.slice(0, 32).map(async (asset) => {
+        const [result, correction] = await Promise.all([
+          ctx.db
+            .query("visualEnrichments")
+            .withIndex("by_asset_id", (q) => q.eq("assetId", asset._id))
+            .unique(),
+          ctx.db
+            .query("visualCorrections")
+            .withIndex("by_asset_id", (q) => q.eq("assetId", asset._id))
+            .unique(),
+        ]);
+        const rejectedTags = (correction?.rejectedTags ?? []).map(tagKey);
+        return {
+          assetId: asset._id,
+          state: !result
+            ? ("not_analyzed" as const)
+            : visualResultCurrent(asset, result)
+              ? ("ready" as const)
+              : ("stale" as const),
+          generatedAt: result?.updatedAt ?? null,
+          tags: result
+            ? normalizedVisualTags(result.tags).map((tag) => ({
+                ...tag,
+                rejected: rejectedTags.includes(tag.name),
+              }))
+            : [],
+          ocrText: result?.ocrText ?? "",
+          caption: result?.caption ?? "",
+          models:
+            result?.models.map((model) => ({
+              id: model.id,
+              revision: model.revision,
+              task: model.task,
+            })) ?? [],
+          corrections: {
+            rejectedTags,
+            hideOcr: correction?.hideOcr ?? false,
+            hideCaption: correction?.hideCaption ?? false,
+            revision: correction?.revision ?? 0,
+          },
+        };
+      }),
+    );
+    return { items, truncated: assets.length > 32 };
   },
 });

@@ -1,3 +1,4 @@
+import { getSourceContext } from "./sourceContext";
 import {
   findReferenceSearchMatches,
   type ReferenceSearchContext,
@@ -236,6 +237,7 @@ export async function hydrateReference(
 
 export function sourceSnapshotPayload(snapshot: any) {
   return {
+    fieldSources: snapshot.fieldSources,
     pageTitle: snapshot.pageTitle,
     postText: snapshot.postText,
     altText: snapshot.altText,
@@ -340,11 +342,7 @@ async function getReferenceStatsDocument(ctx: any) {
 }
 
 async function getLatestSnapshot(ctx: any, referenceId: any) {
-  return await ctx.db
-    .query("sourceSnapshots")
-    .withIndex("by_reference", (q: any) => q.eq("referenceId", referenceId))
-    .order("desc")
-    .first();
+  return await getSourceContext(ctx, referenceId);
 }
 
 function parseReferenceListOptions(url: URL): ReferenceListOptions {

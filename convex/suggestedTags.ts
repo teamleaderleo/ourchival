@@ -1,3 +1,4 @@
+import { getSourceContext } from "./lib/sourceContext";
 import {
   internalAction,
   internalMutation,
@@ -154,11 +155,7 @@ export const getContext = internalQuery({
     const reference = await ctx.db.get(job.referenceId);
     if (!reference) return null;
     const [snapshot, tags] = await Promise.all([
-      ctx.db
-        .query("sourceSnapshots")
-        .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
-        .order("desc")
-        .first(),
+      getSourceContext(ctx, reference._id),
       getTagsByIds(ctx, reference.tagIds),
     ]);
     return { job, reference, snapshot, tags };

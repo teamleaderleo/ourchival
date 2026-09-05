@@ -1,3 +1,5 @@
+import { visualResultCurrent } from "./visualMetadata";
+import { getSourceContext } from "./sourceContext";
 import { internal } from "../_generated/api";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Id, Doc } from "../_generated/dataModel";
@@ -36,11 +38,7 @@ export async function refreshReferenceSearch(
     return;
   }
   const [snapshot, tags, boards, uses, visualRows, assets] = await Promise.all([
-    ctx.db
-      .query("sourceSnapshots")
-      .withIndex("by_reference", (q) => q.eq("referenceId", referenceId))
-      .order("desc")
-      .first(),
+    getSourceContext(ctx, referenceId),
     Promise.all(reference.tagIds.slice(0, 64).map((id) => ctx.db.get(id))),
     Promise.all(reference.boardIds.slice(0, 32).map((id) => ctx.db.get(id))),
     ctx.db
@@ -57,12 +55,10 @@ export async function refreshReferenceSearch(
       .take(33),
   ]);
   const hydratedUses = await Promise.all(
-    uses
-      .slice(0, 32)
-      .map(async (use) => ({
-        ...use,
-        project: await ctx.db.get(use.projectId),
-      })),
+    uses.slice(0, 32).map(async (use) => ({
+      ...use,
+      project: await ctx.db.get(use.projectId),
+    })),
   );
   const assetTagIds = [
     ...new Set(assets.slice(0, 32).flatMap((asset) => asset.tagIds ?? [])),
@@ -84,15 +80,7 @@ export async function refreshReferenceSearch(
         .withIndex("by_asset_id", (q) => q.eq("assetId", row.assetId))
         .unique(),
     ]);
-    if (
-      !asset ||
-      ![asset.previewStorageId, asset.originalStorageId].includes(
-        row.inputStorageId,
-      )
-    )
-      continue;
-    if ((row.originalContentHash ?? null) !== (asset.contentHash ?? null))
-      continue;
+    if (!asset || !visualResultCurrent(asset, row)) continue;
     visual.push({
       assetId: String(row.assetId),
       tags: row.tags,

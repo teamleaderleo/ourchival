@@ -44,7 +44,7 @@ export const rebuildPage = internalMutation({
       return null;
     const page = await ctx.db
       .query("references")
-      .paginate({ numItems: 8, cursor: args.cursor });
+      .paginate({ numItems: 4, cursor: args.cursor });
     for (const reference of page.page)
       await refreshReferenceSearch(ctx, reference._id);
     if (!page.isDone) {

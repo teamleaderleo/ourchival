@@ -51,7 +51,13 @@ export default defineSchema({
     .index("by_captured_at", ["capturedAt"])
     .searchIndex("search_references", {
       searchField: "title",
-      filterFields: ["platform", "favorite", "triageState", "archived", "deleted"],
+      filterFields: [
+        "platform",
+        "favorite",
+        "triageState",
+        "archived",
+        "deleted",
+      ],
     }),
 
   referenceStats: defineTable({
@@ -143,11 +149,7 @@ export default defineSchema({
     perceptualHash: v.optional(v.string()),
     dominantColors: v.array(v.string()),
     derivativeStatus: v.optional(
-      v.union(
-        v.literal("processing"),
-        v.literal("ready"),
-        v.literal("failed"),
-      ),
+      v.union(v.literal("processing"), v.literal("ready"), v.literal("failed")),
     ),
   })
     .index("by_reference", ["referenceId"])
@@ -277,6 +279,15 @@ export default defineSchema({
   }).index("by_slug", ["slug"]),
 
   sourceSnapshots: defineTable({
+    inheritedFields: v.optional(
+      v.record(
+        v.string(),
+        v.object({
+          snapshotId: v.id("sourceSnapshots"),
+          capturedAt: v.number(),
+        }),
+      ),
+    ),
     referenceId: v.id("references"),
     pageTitle: v.optional(v.string()),
     postText: v.optional(v.string()),

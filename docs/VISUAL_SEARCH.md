@@ -7,13 +7,12 @@ Match explanations label machine-generated fields. Ratings never change access,
 blur, collection placement, or ranking. Original media and source credit are not
 rewritten by the worker.
 
-The existing Convex adapter remains the catalog for this implementation, including
-local Convex deployments described in [Local-first vault](LOCAL_FIRST_VAULT.md).
+The existing Convex adapter remains the catalog for this implementation.
 Drive originals and Convex previews retain their existing roles. SQLite is a
 private, disposable worker cache and embedding index, not a replacement catalog.
 
 Browser search uses keywords. Semantic text-to-image search currently uses the
-worker CLI. Browser semantic search, a correction editor, a caption model adapter,
+worker CLI. Browser semantic search, a caption model adapter,
 and blur controls remain separate work.
 
 ## Install and validate
@@ -81,7 +80,7 @@ older matches beyond that window need further pagination. Once ready, new querie
 use the full-text index. An existing fallback pagination chain keeps its mode.
 The HTTP response includes `searchMode` (`browse`, `page_scan`, or `indexed`).
 
-Backfill processes eight references per scheduled mutation. Generations fence
+Backfill processes four references per scheduled mutation. Generations fence
 stale jobs; repeating `rebuild-search` restarts the generation. Board/project
 renames coalesce rebuild requests. Reference, source, tag, board/project membership,
 image metadata, and derivative writes refresh projections; machine submissions
@@ -128,7 +127,10 @@ assets of a reference may appear separately. A cosine score is not a probability
 `visualEnrichments` stores the latest result with model provenance, hashes,
 scores, and revision. Publication uses compare-and-swap revisions and idempotent
 retries. `visualCorrections` separately preserves human rejections across model
-reruns. The owner-authenticated mutation `visualEnrichment:correct` accepts:
+reruns. Open a reference's **Image metadata** disclosure to review predictions
+beside the image, exclude/restore terms, and control whether OCR or a generated
+description contributes to search. Missing or stale analysis is identified.
+The owner-authenticated mutation `visualEnrichment:correct` accepts:
 
 ```json
 {
@@ -136,11 +138,15 @@ reruns. The owner-authenticated mutation `visualEnrichment:correct` accepts:
   "assetId": "ACTUAL_ASSET_ID",
   "rejectedTags": ["blue_hair"],
   "hideOcr": false,
-  "hideCaption": false
+  "hideCaption": false,
+  "expectedRevision": 0
 }
 ```
 
-This replaces the complete correction set for that asset. Add confirmed terms
+This replaces the complete correction set for that asset. The browser supplies
+the revision returned by `visualEnrichment:inspect` so concurrent changes cannot
+silently replace one another. Legacy clients may omit this optional precondition.
+Add confirmed terms
 through the existing saved-tag editor. Predicted artist labels are excluded;
 ratings are stored separately. Projection origins distinguish source claims,
 editable catalog metadata, owner notes/corrections, and machine output. Existing

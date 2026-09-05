@@ -1,14 +1,13 @@
 # Visual search integration validation
 
-Validated September 5, 2026 on the Mac, starting from `4cb2332` on
-`codex/local-first-vault` (PR #101). The search work is a separate stacked branch.
-The supplied bundle was rebased; its replacement visual module was merged with
-the existing color/hash endpoints. No production archive or hosted deployment
-was used for validation.
+Validated September 5, 2026 on the Mac. The archive branch is based directly on
+`main` (`99a1e01`), independently of the extension/local-first-vault branch.
+The supplied visual module was merged with the existing color/hash endpoints.
+No production archive was used for validation.
 
 ## Repository checks
 
-- `pnpm test`: 131 Vitest tests and 3 Node tests pass.
+- `pnpm test`: 129 Vitest tests pass on the independent archive branch.
 - `python -m unittest discover -s workers/visual/tests -v`: 33 tests pass under
   Python 3.14.6. A Linux-specific temporary-path assertion was corrected for macOS.
 - `pnpm typecheck`: passes, with the new backend entry points included.
@@ -16,10 +15,13 @@ was used for validation.
 - `pnpm build`: web and extension builds pass; pre-existing React hook warnings
   remain in unrelated UI components.
 
-Five native `convex-test` integration tests cover old-reference retrieval,
+Ten native `convex-test` integration tests cover old-reference retrieval,
 collection/favorite restrictions, pre-backfill cursors, indexed pagination,
 revision conflicts/replay, human corrections, unchanged storage bytes, existing
 color/hash endpoints, owner authentication, image metadata, and source refresh.
+The metadata tests additionally cover sparse source refreshes and field origins,
+historical first/latest recovery, duplicate prediction normalization, stale
+analysis, correction concurrency and preservation across new model results.
 These are backend emulation tests; the separate local-server exercise below used
 an actual Convex backend and search index.
 
@@ -33,7 +35,8 @@ change does not make that older bootstrap an unlimited background migration.
 
 ## Actual local-server exercise
 
-An isolated local Convex instance used 440 synthetic references and one generated
+The initial integration, before separating from the extension branch, used an
+isolated local Convex instance with 440 synthetic references and one generated
 256 × 256 blue rectangle PNG. Temporary internal fixture functions were removed
 before publication of the branch.
 
@@ -56,6 +59,17 @@ found the old reference, and `border` displayed its real preview with the
 “Visual tags · machine” match badge.
 
 ![Local gallery machine-tag lookup](validation/visual-search-mac.png)
+
+On the independent archive branch, a fresh local Convex deployment and browser
+session tested the new metadata panel using a blue square and explicitly
+synthetic predictions. The image appeared beside its terms. Excluding `blue_hair`
+changed the control to “Excluded”; a subsequent gallery search for `hair` returned
+zero results while the reference remained in the library. The OCR inclusion
+control also saved successfully. This fixture tests correction behavior, not
+model accuracy. Missing/stale states and concurrent edits have backend test
+coverage; their browser presentation has not received a separate manual check.
+
+![Image metadata correction panel](validation/metadata-review-mac.png)
 
 ## Real-model runtime
 

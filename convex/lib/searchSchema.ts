@@ -68,6 +68,7 @@ export const searchTables = {
     .index("by_asset_id", ["assetId"])
     .index("by_reference_id", ["referenceId"]),
   visualCorrections: defineTable({
+    revision: v.optional(v.number()),
     assetId: v.id("assets"),
     rejectedTags: v.array(v.string()),
     hideOcr: v.boolean(),
