@@ -16,6 +16,8 @@ export function ReferenceQuickLook({
   onClose,
   onOpen,
   onToggleFavorite,
+  onInspect,
+  onMove,
 }: {
   reference: SavedReference;
   references: SavedReference[];
@@ -23,7 +25,20 @@ export function ReferenceQuickLook({
   onClose: () => void;
   onOpen: (reference: SavedReference) => Promise<void>;
   onToggleFavorite: (reference: SavedReference) => void;
+  onInspect: () => void;
+  onMove: (action: "keep" | "later" | "trash") => Promise<boolean>;
 }) {
+  const [assetIndex, setAssetIndex] = useState(0);
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState("");
+  useEffect(() => { setAssetIndex(0); setMoveError(""); }, [reference._id]);
+  async function move(action: "keep" | "later" | "trash") {
+    if (moving) return;
+    setMoving(true);
+    setMoveError("");
+    try { if (!await onMove(action)) setMoveError("Could not move this reference. Try again."); }
+    finally { setMoving(false); }
+  }
   const [imageFailed, setImageFailed] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -31,7 +46,7 @@ export function ReferenceQuickLook({
     () => references.findIndex((item) => item._id === reference._id),
     [reference._id, references],
   );
-  const imageSource = referencePreviewSource(reference);
+  const imageSource = referencePreviewSource(reference, assetIndex);
   const {
     resolvedUrl: imageUrl,
     loading: imageLoading,
@@ -74,6 +89,12 @@ export function ReferenceQuickLook({
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
+      if (event.key.toLowerCase() === "k" || event.key.toLowerCase() === "l" || event.key === "Delete") {
+        event.preventDefault();
+        event.stopPropagation();
+        void move(event.key === "Delete" ? "trash" : event.key.toLowerCase() === "k" ? "keep" : "later");
+        return;
+      }
       if (event.key === "Tab") {
         const focusable = Array.from(
           panelRef.current?.querySelectorAll<HTMLElement>(
@@ -128,7 +149,7 @@ export function ReferenceQuickLook({
 
     document.addEventListener("keydown", handleKey, true);
     return () => document.removeEventListener("keydown", handleKey, true);
-  }, [next, onClose, onOpen, onSelect, onToggleFavorite, previous, reference]);
+  }, [next, onClose, onOpen, onSelect, onToggleFavorite, previous, reference, onMove, moving]);
 
   return (
     <div
@@ -224,12 +245,18 @@ export function ReferenceQuickLook({
         </div>
 
         <footer className="quick-look-footer">
-          <div className="quick-look-shortcuts" aria-label="Quick look shortcuts">
-            <span><kbd>←</kbd><kbd>→</kbd> browse</span>
-            <span><kbd>F</kbd> favorite</span>
-            <span><kbd>O</kbd> source</span>
-            <span><kbd>Esc</kbd> close</span>
+          <div className="viewer-actions">
+            <button type="button" className="button primary" disabled={moving} onClick={() => void move("keep")} title="Keep (K)">Keep</button>
+            <button type="button" className="button ghost" disabled={moving} onClick={() => void move("later")} title="Later (L)">Later</button>
+            <button type="button" className="button ghost" disabled={moving} onClick={onInspect}>Organize</button>
+            <button type="button" className="button ghost" disabled={moving} onClick={() => void move("trash")} title="Trash and block recapture (Delete)">Trash</button>
           </div>
+          {reference.assets.length > 1 ? <div className="viewer-assets" aria-label="Images in this reference">
+            <button type="button" className="button ghost" disabled={assetIndex === 0} onClick={() => setAssetIndex((value) => value - 1)} aria-label="Previous image">‹</button>
+            <span>{assetIndex + 1} / {reference.assets.length} images</span>
+            <button type="button" className="button ghost" disabled={assetIndex >= reference.assets.length - 1} onClick={() => setAssetIndex((value) => value + 1)} aria-label="Next image">›</button>
+          </div> : null}
+          {moveError ? <p role="alert">{moveError}</p> : null}
           <a
             className="button secondary"
             href={reference.sourceUrl}
@@ -245,8 +272,8 @@ export function ReferenceQuickLook({
   );
 }
 
-function referencePreviewSource(reference: SavedReference) {
-  const asset = reference.assets[0];
+function referencePreviewSource(reference: SavedReference, assetIndex = 0) {
+  const asset = reference.assets[assetIndex] ?? reference.assets[0];
   return (
     asset?.previewUrl ??
     asset?.thumbUrl ??

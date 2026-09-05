@@ -1,6 +1,8 @@
 "use client";
 
 import { BrandMark } from "./BrandMark";
+import { ArchiveSearch } from "./ArchiveSearch";
+import { ProjectPanel } from "./ProjectPanel";
 
 import { useEffect, useState } from "react";
 import { InspectorOrganization } from "./InspectorOrganization";
@@ -59,12 +61,10 @@ export function ReferenceVault() {
   }, [quickLookReference, vault.selectedReference]);
 
   function openQuickLook(referenceId: string) {
-    vault.setSelectedId(referenceId);
     setQuickLookId(referenceId);
   }
 
   function selectQuickLookReference(referenceId: string) {
-    vault.setSelectedId(referenceId);
     setQuickLookId(referenceId);
   }
 
@@ -107,7 +107,12 @@ export function ReferenceVault() {
             <p className="brand-name">Ourchival</p>
           </div>
         </div>
+        <ArchiveSearch query={vault.query} onChange={vault.setQuery} />
         <div className="header-actions">
+          <details className="project-menu">
+            <summary className="button ghost">Projects</summary>
+            <div className="project-menu-content"><ProjectPanel query={vault.query} onChange={vault.setQuery} /></div>
+          </details>
           {vault.status ? (
             <div
               className={`sync-status status-${vault.statusTone}`}
@@ -213,27 +218,7 @@ export function ReferenceVault() {
             </p>
           </div>
           <div className="vault-toolbar">
-            <label className="search-field">
-              <span className="sr-only">Search Ourchival</span>
-              <span className="search-icon" aria-hidden="true">
-                ⌕
-              </span>
-              <input
-                type="search"
-                value={vault.query}
-                onChange={(event) => vault.setQuery(event.target.value)}
-                placeholder="Find something…"
-              />
-              {vault.query ? (
-                <button
-                  type="button"
-                  className="clear-search"
-                  onClick={() => vault.setQuery("")}
-                >
-                  Clear
-                </button>
-              ) : null}
-            </label>
+            {vault.activeView !== "links" ? <button type="button" className={`button ${vault.imagesOnly ? "secondary" : "ghost"}`} aria-pressed={vault.imagesOnly} onClick={() => vault.setImagesOnly((value) => !value)}>Images only</button> : null}
             <SavedSearchPanel
               activeView={vault.activeView}
               query={vault.query}
@@ -386,10 +371,11 @@ export function ReferenceVault() {
                 </p>
               </article>
             ) : (
-              vault.filteredReferences.map((reference) => (
+              vault.filteredReferences.map((reference, index) => (
                 <ReferenceCard
                   key={reference._id}
                   reference={reference}
+                  priority={index < 4}
                   selected={reference._id === vault.selectedReference?._id}
                   onSelect={() => vault.setSelectedId(reference._id)}
                   onQuickLook={() => openQuickLook(reference._id)}
@@ -470,6 +456,15 @@ export function ReferenceVault() {
           onClose={() => setQuickLookId(null)}
           onOpen={vault.markReferenceOpened}
           onToggleFavorite={vault.toggleFavorite}
+          onInspect={() => { vault.setSelectedId(quickLookReference._id); setQuickLookId(null); }}
+          onMove={async (action) => {
+            const index = vault.filteredReferences.findIndex((item) => item._id === quickLookReference._id);
+            const next = vault.filteredReferences[index + 1] ?? vault.filteredReferences[index - 1];
+            if (!await vault.moveReference(quickLookReference._id, action)) return false;
+            vault.setSelectedId(null);
+            setQuickLookId(next?._id ?? null);
+            return true;
+          }}
         />
       ) : null}
     </div>

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { BatchOrganizationBar } from "./BatchOrganizationBar";
 import { BoardPanel } from "./BoardPanel";
 import { EnrichmentQueuePanel } from "./EnrichmentQueuePanel";
-import { ProjectPanel } from "./ProjectPanel";
 import { PersonalTagPanel } from "./PersonalTagPanel";
 import { useAllReferenceTags } from "./useReferenceTags";
 
@@ -122,7 +121,6 @@ export function TagFilterBar({
         ) : null}
         <PersonalTagPanel />
         <BoardPanel query={query} onChange={onChange} />
-        <ProjectPanel query={query} onChange={onChange} />
         <BatchOrganizationBar />
         <EnrichmentQueuePanel />
       </div>
