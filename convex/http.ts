@@ -1,7 +1,11 @@
 import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
-import { fetchDriveFile, uploadBlobToDrive } from "./lib/drive";
+import {
+  fetchDriveFile,
+  uploadBlobToDrive,
+  uploadStreamToDrive,
+} from "./lib/drive";
 import {
   fetchPublicResponse,
   fetchLinkMetadata,
@@ -26,8 +30,9 @@ import { readLinkBatch } from "./lib/linkIntake";
 import { normalizeSourceUrl } from "./lib/urls";
 
 const http = httpRouter();
-const maxRemoteAssetBytes = 25 * 1024 * 1024;
+const maxBufferedRemoteAssetBytes = 25 * 1024 * 1024;
 const remoteAssetTimeoutMs = 15_000;
+const remoteAssetStreamTimeoutMs = 8 * 60 * 1000;
 const pairingLifetimeMs = 10 * 60 * 1000;
 
 type CaptureBody = {
@@ -1353,7 +1358,7 @@ async function fetchAndStoreRemoteAsset(
   args: { assetUrl: string; sourceUrl: string; title?: string },
 ): Promise<StoredRemoteAsset> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), remoteAssetTimeoutMs);
+  let timer = setTimeout(() => controller.abort(), remoteAssetTimeoutMs);
   try {
     const { response } = await fetchPublicResponse(args.assetUrl, {
       signal: controller.signal,
@@ -1371,9 +1376,6 @@ async function fetchAndStoreRemoteAsset(
 
     const mimeType = response.headers.get("Content-Type") ?? undefined;
     const contentLength = Number(response.headers.get("Content-Length") ?? 0);
-    if (contentLength > maxRemoteAssetBytes) {
-      return { status: "remote asset too large", storageProvider: "linked" };
-    }
     if (!mimeType?.toLowerCase().startsWith("image/")) {
       return {
         status: `remote asset is ${mimeType ?? "an unknown type"}`,
@@ -1381,9 +1383,49 @@ async function fetchAndStoreRemoteAsset(
       };
     }
 
-    const blob = await readBoundedBlob(response, mimeType, maxRemoteAssetBytes);
+    if (
+      contentLength > maxBufferedRemoteAssetBytes &&
+      response.body
+    ) {
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => controller.abort(),
+        remoteAssetStreamTimeoutMs,
+      );
+      const driveUpload = await uploadStreamToDrive({
+        stream: response.body,
+        size: contentLength,
+        sourceUrl: args.sourceUrl,
+        title: args.title,
+        mimeType,
+      });
+      if (driveUpload.ok && driveUpload.file?.id) {
+        return {
+          status: driveUpload.status,
+          storageProvider: "google_drive",
+          mimeType,
+          fileSize: contentLength,
+          driveFileId: driveUpload.file.id,
+          driveFolderId: driveUpload.file.parents?.[0],
+          driveWebViewLink: driveUpload.file.webViewLink,
+          driveWebContentLink: driveUpload.file.webContentLink,
+          driveThumbnailLink: driveUpload.file.thumbnailLink,
+          driveMimeType: driveUpload.file.mimeType,
+        };
+      }
+      return { status: driveUpload.status, storageProvider: "linked" };
+    }
+
+    const blob = await readBoundedBlob(
+      response,
+      mimeType,
+      maxBufferedRemoteAssetBytes,
+    );
     if (!blob) {
-      return { status: "remote asset too large", storageProvider: "linked" };
+      return {
+        status: "remote asset too large for buffered fallback",
+        storageProvider: "linked",
+      };
     }
 
     const driveUpload = await uploadBlobToDrive({
