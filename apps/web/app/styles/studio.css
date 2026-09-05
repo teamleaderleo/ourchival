@@ -182,3 +182,5 @@ body { background: var(--bg); }
 @media (max-width: 720px) { .masonry, .masonry-column { gap: 6px; } }
 
 .card-title-open { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+
+.copy-source { min-width: 92px; }

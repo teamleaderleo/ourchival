@@ -57,3 +57,5 @@ Private originals stay in Drive, and preview storage remains unchanged. This
 pass does not claim a measured cold-network latency improvement.
 
 The gallery canvas omits the repeated collection heading and total. New is the navigation label for unreviewed saves (the stored collection ID remains inbox). Image-card titles and source links appear on hover or keyboard focus as selectable overlays, without occupying grid space; the viewer remains the touch route to details. Desktop gutters are 8px, mobile gutters 6px.
+
+In the viewer, left/right moves between references and up/down moves between images in a post. Modified browser shortcuts pass through; held triage/favorite keys do not repeat changes. Copy link reports success without resizing its button. Closing restores keyboard focus without scrolling the gallery.
