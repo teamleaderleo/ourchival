@@ -1,0 +1,25 @@
+name: Retrieval workspace snapshot
+
+on:
+  push:
+    branches: [codex/retrieval-enrichment]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Package tracked application source only
+        run: git archive --format=tar --output=source.tar HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-source
+          path: source.tar
+          retention-days: 1
+          if-no-files-found: error
