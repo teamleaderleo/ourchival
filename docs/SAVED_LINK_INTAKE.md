@@ -171,10 +171,55 @@ verifying its URL representation and behavior when new bookmarks arrive. A
 total artwork count and final page remain unverified, so the adapter must not
 infer completion merely from the first visible pagination window.
 
+The second page URL was observed as
+`/en/users/{userId}/bookmarks/artworks?p=2&rest=show&mode=all`. Persist the
+integer page, visibility (`rest`) and work-mode filter as separate receipt
+fields rather than treating the full query string as an opaque cursor. New
+bookmarks can shift later pages, so resumable imports must overlap adjacent
+pages and reconcile artwork IDs instead of resuming from page number alone.
+
+A multi-image detail page exposed a stable `/en/artworks/{artworkId}` route,
+`1/2` position/count, a `Show all` control, title, creator display name, tags,
+engagement counts and publication time. These are source evidence; mutable
+engagement counts must be timestamped and must not participate in identity.
+Ordered assets belong to the one artwork record.
+
+The private-bookmark surface showed an `Illustrations and Manga` count, explicit
+Public/Private choices, R-18 badges, per-work page-count badges and unavailable
+`Deleted or private` placeholders. Preserve an unavailable occurrence as a
+tombstone with its ordinal when an artwork ID is observable; do not silently
+drop it or invent metadata when it is not.
+
 Treat filter state as part of the capture session identity and receipt. Public
 and private bookmarks must be separate bounded runs, while every artwork keeps
 one provider artwork identity with ordered child assets. Premium-only filters
 are optional discovery aids, not intake requirements.
+
+### Sensitive-media intake defaults
+
+Private bookmarks, provider-marked R-18 works and adult-oriented sources should
+default to a sealed intake lane. This is a presentation and review policy, not
+data loss or a second archive:
+
+- Preserve the original asset, source metadata and exact provider rating. Store
+  `unknown`, `general`, `suggestive` and `explicit` as reviewable sensitivity
+  states; provider assertions and classifier suggestions retain provenance.
+- Generate replaceable safe-preview derivatives (blur, neutral placeholder, or
+  an optional face-/composition-aware crop). Never overwrite or treat a crop as
+  the archived original.
+- Exclude sealed items from ordinary Inbox thumbnails, daily resurfacing,
+  notifications and default search previews. Counts and text metadata may still
+  appear without revealing the image.
+- Reveal one item, a bounded sample, or an explicit review session. Support a
+  configurable daily reveal budget so some sensitive reference review is
+  possible without flooding the normal workflow.
+- Default unknown material from adult-oriented sources to sealed. Provider
+  categories, gallery tags and page counts are evidence, not permission to
+  display every thumbnail.
+
+The same policy can cover future gallery-style providers without teaching the
+core archive about a specific site. Source adapters collect evidence; the vault
+owns sensitivity, preview, retrieval and review behavior.
 
 The initial task said “Pixabay” and asked whether that meant Pixiv. Repository
 platform/parser support names Pixiv, and on 2026-09-04 the coordinating task
