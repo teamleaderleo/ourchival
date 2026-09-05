@@ -233,6 +233,8 @@ async function dev() {
           NEXT_PUBLIC_CONVEX_URL: convexUrl,
           NEXT_PUBLIC_CONVEX_SITE_URL: convexSiteUrl,
           NEXT_PUBLIC_OURCHIVAL_APP_URL: localWebUrl,
+          OURCHIVAL_LOCAL_ORIGIN: localWebUrl,
+          OURCHIVAL_LOCAL_OWNER_KEY_FILE: localKeyPath,
         },
         stdio: "inherit",
       },
