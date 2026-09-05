@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.local.json
+*.sqlite
+*.sqlite-*
+models/
+.cache/
+pilot-private/
+
+requirements.local.txt

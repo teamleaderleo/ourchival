@@ -26,6 +26,8 @@ export function ProjectPanel({
   const [createName, setCreateName] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [editing, setEditing] = useState<{ id: string; name: string; description: string; status: ProjectStatus } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 
   function applyProject(projectId: string) {
     const text = stripProjectToken(query);
@@ -49,40 +51,33 @@ export function ProjectPanel({
     }
   }
 
-  async function editProject(
-    projectId: string,
-    currentName: string,
-    description: string | undefined,
-    currentStatus: ProjectStatus,
-  ) {
-    const name = window.prompt("Project name", currentName)?.trim();
-    if (!name) return;
-    const nextStatus = window.prompt(
-      "Status: active, paused, finished, or archived",
-      currentStatus,
-    )?.trim() as ProjectStatus | undefined;
-    if (!nextStatus || !isProjectStatus(nextStatus)) return;
+  function editProject(id: string, name: string, description: string | undefined, status: ProjectStatus) {
+    setEditing({ id, name, description: description ?? "", status });
+  }
 
+  async function saveProjectEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editing?.name.trim() || !isProjectStatus(editing.status)) return;
     setBusy(true);
-    setStatus("Updating project…");
     try {
-      await updateReferenceProject(projectId, { name, description, status: nextStatus });
-      setStatus(`Updated “${name}”.`);
+      await updateReferenceProject(editing.id, { name: editing.name.trim(), description: editing.description, status: editing.status });
+      setStatus("Project updated.");
+      setEditing(null);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not update project.");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
   async function deleteProject(projectId: string, name: string) {
-    if (!window.confirm(`Delete “${name}” and its reuse records? References stay in the vault.`)) {
+    if (pendingDelete?.id !== projectId) {
+      setPendingDelete({ id: projectId, name });
       return;
     }
     setBusy(true);
     setStatus("Deleting project…");
     try {
       const result = await removeReferenceProject(projectId);
+      setPendingDelete(null);
       if (activeProjectId === projectId) applyProject("");
       setStatus(
         result.removed
@@ -157,6 +152,20 @@ export function ProjectPanel({
           ))}
         </div>
       </div>
+
+      {editing ? <form className="project-edit-form" onSubmit={saveProjectEdit}>
+        <label>Name<input value={editing.name} maxLength={100} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
+        <label>Purpose<textarea value={editing.description} onChange={(event) => setEditing({ ...editing, description: event.target.value })} /></label>
+        <label>Status<select value={editing.status} onChange={(event) => setEditing({ ...editing, status: event.target.value as ProjectStatus })}>
+          <option value="active">Active</option><option value="paused">Paused</option><option value="finished">Finished</option><option value="archived">Archived</option>
+        </select></label>
+        <div className="viewer-actions"><button className="button primary" disabled={busy || !editing.name.trim()}>Save</button><button type="button" className="button ghost" onClick={() => setEditing(null)}>Cancel</button></div>
+      </form> : null}
+      {pendingDelete ? <div className="project-delete-confirm">
+        <p>Delete “{pendingDelete.name}” and its project-use records? The saved references will remain.</p>
+        <button type="button" className="button danger" disabled={busy} onClick={() => void deleteProject(pendingDelete.id, pendingDelete.name)}>Delete project</button>
+        <button type="button" className="button ghost" onClick={() => setPendingDelete(null)}>Cancel</button>
+      </div> : null}
 
       <details className="project-manager">
         <summary>Manage projects</summary>

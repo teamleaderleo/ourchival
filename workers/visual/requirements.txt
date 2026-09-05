@@ -1,0 +1,4 @@
+# Bootstrap ranges; freeze the resolved environment after the pilot.
+numpy>=1.26,<3
+Pillow>=11,<13
+onnxruntime>=1.20,<2

@@ -345,7 +345,7 @@ export function SelectedReference({
             className="button secondary full-width"
             onClick={() => void onMove(reference._id, "restore")}
           >
-            {collection === "trash" ? "Restore to Inbox" : "Restore to Library"}
+            {collection === "trash" ? "Restore to New" : "Restore to Library"}
           </button>
         ) : (
           <>

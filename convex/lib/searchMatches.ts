@@ -5,7 +5,7 @@ export type SearchMatch = {
 };
 
 export type ReferenceSearchContext = {
-  tags?: Array<{ name?: string; slug?: string }>;
+  tags?: Array<{ name?: string; slug?: string; aliases?: string[] }>;
   boards?: Array<{ name?: string; description?: string }>;
   projectUses?: Array<{
     reason?: string;
@@ -37,28 +37,61 @@ export function findReferenceSearchMatches(
     { field: "title", label: "Title", value: reference.title },
     { field: "notes", label: "Notes", value: reference.notes },
     { field: "sourceUrl", label: "Source URL", value: reference.sourceUrl },
-    { field: "canonicalUrl", label: "Canonical URL", value: reference.canonicalUrl },
+    {
+      field: "canonicalUrl",
+      label: "Canonical URL",
+      value: reference.canonicalUrl,
+    },
     { field: "platform", label: "Platform", value: reference.platform },
     { field: "kind", label: "Type", value: reference.kind },
     { field: "authorName", label: "Author", value: reference.authorName },
-    { field: "authorHandle", label: "Author handle", value: reference.authorHandle },
+    {
+      field: "authorHandle",
+      label: "Author handle",
+      value: reference.authorHandle,
+    },
     { field: "postId", label: "Post ID", value: reference.postId },
     { field: "pageTitle", label: "Page title", value: snapshot?.pageTitle },
     { field: "postText", label: "Post text", value: snapshot?.postText },
     { field: "altText", label: "Alt text", value: snapshot?.altText },
-    { field: "selectedText", label: "Selected text", value: snapshot?.selectedText },
-    { field: "description", label: "Description", value: snapshot?.description },
+    {
+      field: "selectedText",
+      label: "Selected text",
+      value: snapshot?.selectedText,
+    },
+    {
+      field: "description",
+      label: "Description",
+      value: snapshot?.description,
+    },
     { field: "siteName", label: "Site", value: snapshot?.siteName },
     { field: "pageAuthor", label: "Page author", value: snapshot?.pageAuthor },
-    { field: "snapshotCanonicalUrl", label: "Page canonical URL", value: snapshot?.canonicalUrl },
-    { field: "contentType", label: "Content type", value: snapshot?.contentType },
+    {
+      field: "snapshotCanonicalUrl",
+      label: "Page canonical URL",
+      value: snapshot?.canonicalUrl,
+    },
+    {
+      field: "contentType",
+      label: "Content type",
+      value: snapshot?.contentType,
+    },
     ...(context.tags ?? []).flatMap((tag) => [
       { field: "tag", label: "Tag", value: tag.name },
       { field: "tagSlug", label: "Tag slug", value: tag.slug },
+      {
+        field: "tagAlias",
+        label: "Previous tag name",
+        value: tag.aliases?.join(" "),
+      },
     ]),
     ...(context.boards ?? []).flatMap((board) => [
       { field: "board", label: "Board", value: board.name },
-      { field: "boardDescription", label: "Board description", value: board.description },
+      {
+        field: "boardDescription",
+        label: "Board description",
+        value: board.description,
+      },
     ]),
     ...(context.projectUses ?? []).flatMap((use) => [
       { field: "project", label: "Project", value: use.project?.name },
@@ -67,7 +100,11 @@ export function findReferenceSearchMatches(
         label: "Project description",
         value: use.project?.description,
       },
-      { field: "projectStatus", label: "Project status", value: use.project?.status },
+      {
+        field: "projectStatus",
+        label: "Project status",
+        value: use.project?.status,
+      },
       { field: "reuseReason", label: "Reuse reason", value: use.reason },
       { field: "projectNotes", label: "Project notes", value: use.notes },
     ]),

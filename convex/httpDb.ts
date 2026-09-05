@@ -8,7 +8,8 @@ import {
   sourceSnapshotPayload,
 } from "./lib/referenceCatalog";
 import { normalizeSourceUrl } from "./lib/urls";
-import { updateReferenceTags } from "./lib/tags";
+import { updateAssetTags, updateReferenceTags } from "./lib/tags";
+import { scheduleReferenceSearch } from "./lib/searchIndex";
 
 export const initializeReferenceStats = internalMutation({
   args: {},
@@ -269,6 +270,37 @@ export const updateReference = internalMutation({
   },
 });
 
+export const updateAssetMetadata = internalMutation({
+  args: {
+    assetId: v.string(),
+    patch: v.any(),
+    addTagNames: v.array(v.string()),
+    removeTagIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const assetId = ctx.db.normalizeId("assets", args.assetId);
+    if (!assetId) return null;
+    const asset = await ctx.db.get(assetId);
+    if (!asset) return null;
+    const patch = args.patch as Record<string, unknown>;
+    if (Object.keys(patch).length > 0) await ctx.db.patch(assetId, patch);
+    if (Object.keys(patch).length > 0) await scheduleReferenceSearch(ctx, asset.referenceId);
+    const tags =
+      args.addTagNames.length > 0 || args.removeTagIds.length > 0
+        ? await updateAssetTags(ctx, assetId, {
+            addNames: args.addTagNames,
+            removeIds: args.removeTagIds,
+          })
+        : await Promise.all(
+            (asset.tagIds ?? []).map((tagId: any) => ctx.db.get(tagId)),
+          );
+    return {
+      asset: { ...asset, ...patch },
+      tags: tags.filter(Boolean),
+    };
+  },
+});
+
 export const deleteReference = internalMutation({
   args: { referenceId: v.string(), deletedAt: v.number() },
   handler: async (ctx, args) => {
@@ -321,7 +353,7 @@ export const saveDuplicateCapture = internalMutation({
     const referenceId = ctx.db.normalizeId("references", args.referenceId);
     if (!referenceId) return null;
     const reference = await ctx.db.get(referenceId);
-    if (!reference) return null;
+    if (!reference || reference.deleted) return null;
     const details = args.details as Record<string, any>;
     const metadata = args.metadata as Record<string, any> | undefined;
     const body = args.body as Record<string, any>;
@@ -418,6 +450,7 @@ export const saveDuplicateCapture = internalMutation({
       });
     }
 
+    await scheduleReferenceSearch(ctx, referenceId);
     return { reference: { ...reference, ...referencePatch }, assetId };
   },
 });
@@ -464,7 +497,7 @@ async function findDuplicate(
       .collect();
     for (const asset of matchingAssets) {
       const reference = await ctx.db.get(asset.referenceId);
-      if (reference && !reference.deleted) {
+      if (reference) {
         return { reference, assetId: asset._id, reason: "asset_url" as const };
       }
     }
@@ -476,9 +509,7 @@ async function findDuplicate(
       q.eq("canonicalUrl", args.canonicalUrl),
     )
     .collect();
-  const canonicalReference = canonicalMatches.find(
-    (reference: any) => !reference.deleted,
-  );
+  const canonicalReference = canonicalMatches.find((reference: any) => reference.deleted) ?? canonicalMatches[0];
   if (canonicalReference) {
     return {
       reference: canonicalReference,
@@ -491,9 +522,7 @@ async function findDuplicate(
     .query("references")
     .withIndex("by_source_url", (q: any) => q.eq("sourceUrl", args.sourceUrl))
     .collect();
-  const sourceReference = sourceMatches.find(
-    (reference: any) => !reference.deleted,
-  );
+  const sourceReference = sourceMatches.find((reference: any) => reference.deleted) ?? sourceMatches[0];
   return sourceReference
     ? {
         reference: sourceReference,
@@ -552,7 +581,7 @@ async function insertSourceSnapshot(
     jsonMetadata?: unknown;
   },
 ) {
-  return await ctx.db.insert("sourceSnapshots", {
+  const snapshotId = await ctx.db.insert("sourceSnapshots", {
     referenceId: args.referenceId,
     ...(args.pageTitle ? { pageTitle: args.pageTitle } : {}),
     ...(args.postText ? { postText: args.postText } : {}),
@@ -589,6 +618,8 @@ async function insertSourceSnapshot(
       : {}),
     createdAt: Date.now(),
   });
+  await scheduleReferenceSearch(ctx, args.referenceId);
+  return snapshotId;
 }
 
 function isLinkKind(kind: string) {
