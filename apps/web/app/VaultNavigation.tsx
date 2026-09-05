@@ -1,3 +1,5 @@
+import { CatIcon } from "./CatIcon";
+
 export type VaultView =
   | "inbox"
   | "all"
@@ -36,7 +38,7 @@ export function VaultSidebar({
           count={counts.inbox}
           active={activeView === "inbox"}
           onClick={() => onChange("inbox")}
-          icon="↓"
+          icon="inbox"
         />
       </nav>
 
@@ -46,25 +48,28 @@ export function VaultSidebar({
           count={counts.all}
           active={activeView === "all"}
           onClick={() => onChange("all")}
+          icon="all"
         />
         <VaultNavButton
           label="Images"
           count={counts.images}
           active={activeView === "images"}
           onClick={() => onChange("images")}
+          icon="images"
         />
         <VaultNavButton
           label="Links"
           count={counts.links}
           active={activeView === "links"}
           onClick={() => onChange("links")}
+          icon="links"
         />
         <VaultNavButton
           label="Favorites"
           count={counts.favorites}
           active={activeView === "favorites"}
           onClick={() => onChange("favorites")}
-          icon="★"
+          icon="favorites"
         />
       </nav>
 
@@ -74,21 +79,21 @@ export function VaultSidebar({
           count={counts.later}
           active={activeView === "later"}
           onClick={() => onChange("later")}
-          icon="◷"
+          icon="later"
         />
         <VaultNavButton
           label="Archive"
           count={counts.archive}
           active={activeView === "archive"}
           onClick={() => onChange("archive")}
-          icon="□"
+          icon="archive"
         />
         <VaultNavButton
           label="Trash"
           count={counts.trash}
           active={activeView === "trash"}
           onClick={() => onChange("trash")}
-          icon="×"
+          icon="trash"
         />
       </nav>
     </aside>
@@ -106,7 +111,7 @@ function VaultNavButton({
   count: number;
   active: boolean;
   onClick: () => void;
-  icon?: string;
+  icon: VaultView;
 }) {
   return (
     <button
@@ -117,7 +122,7 @@ function VaultNavButton({
     >
       <span className="nav-button-label">
         <span className="nav-icon" aria-hidden="true">
-          {icon ?? "•"}
+          <CatIcon name={icon} />
         </span>
         {label}
       </span>

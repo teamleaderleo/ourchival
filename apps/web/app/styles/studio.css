@@ -194,3 +194,10 @@ body { background: var(--bg); }
 .quick-look-image-viewport.actual-size .quick-look-image { max-width: none; max-height: none; margin: auto; cursor: zoom-out; }
 .viewer-zoom { min-width: 62px; }
 @media (max-width: 720px) { .quick-look-image-viewport { inset: 10px 48px; } }
+
+/* Cat companions stay secondary to the artwork and navigation labels. */
+.nav-button .nav-icon { display: inline-flex; width: 22px; height: 22px; flex: none; }
+.cat-icon { display: block; width: 22px; height: 22px; flex: none; }
+.nav-button .cat-icon { color: var(--muted); }
+.nav-button.active .cat-icon, .nav-button:hover .cat-icon { color: var(--text); }
+.nav-button.active .cat-icon-warm { stroke: var(--accent); }
