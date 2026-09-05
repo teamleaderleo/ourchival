@@ -210,6 +210,9 @@ data loss or a second archive:
 - Exclude sealed items from ordinary Inbox thumbnails, daily resurfacing,
   notifications and default search previews. Counts and text metadata may still
   appear without revealing the image.
+- Give enrichment agents metadata or a safe-preview derivative by default.
+  Sending an original sealed asset to an external model requires an explicit
+  provider policy and user opt-in; local sensitivity detection may run earlier.
 - Reveal one item, a bounded sample, or an explicit review session. Support a
   configurable daily reveal budget so some sensitive reference review is
   possible without flooding the normal workflow.
