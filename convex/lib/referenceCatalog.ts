@@ -3,7 +3,9 @@ import {
   type ReferenceSearchContext,
   type SearchMatch,
 } from "./searchMatches";
+import type { QueryCtx } from "../_generated/server";
 import { slugifyTagName } from "./tags";
+import { indexedReferencePage, scheduleReferenceSearch } from "./searchIndex";
 
 type ReferenceCollection = "inbox" | "library" | "later" | "archive" | "trash";
 type ReferenceLane = "all" | "images" | "links";
@@ -77,7 +79,8 @@ export async function listReferencePage(ctx: any, request: Request | string) {
     snapshot: any | null | undefined;
     searchMatches: SearchMatch[];
   }> = [];
-  const page = await ctx.db
+  const indexedPage = options.query ? await indexedReferencePage(ctx, options) : null;
+  const page = indexedPage ?? await ctx.db
     .query("references")
     .withIndex("by_captured_at")
     .order("desc")
@@ -94,6 +97,11 @@ export async function listReferencePage(ctx: any, request: Request | string) {
         searchMatches: [],
       })),
     );
+  } else if (indexedPage) {
+    references.push(...candidates.map((reference: any) => ({
+      reference, snapshot: undefined,
+      searchMatches: indexedPage.matches.get(String(reference._id)) ?? [],
+    })));
   } else {
     const searchable = await Promise.all(
       candidates.map(async (reference: any) => {
@@ -130,6 +138,7 @@ export async function listReferencePage(ctx: any, request: Request | string) {
     references: hydrated,
     continueCursor: page.isDone ? null : page.continueCursor,
     hasMore: !page.isDone,
+    searchMode: options.query ? (indexedPage ? "indexed" : "page_scan") : "browse",
     scanned: page.page.length,
     counts: {
       inbox: counts.inbox,
@@ -149,6 +158,8 @@ export async function applyReferenceStatsDelta(
   before: any | null | undefined,
   after: any | null | undefined,
 ) {
+  const referenceId = (after ?? before)?._id;
+  if (referenceId) await scheduleReferenceSearch(ctx, referenceId);
   const stats = await getReferenceStatsDocument(ctx);
   if (!stats) {
     await rebuildReferenceStats(ctx);
@@ -310,23 +321,12 @@ async function rebuildReferenceStats(ctx: any): Promise<ReferenceCounts> {
   return counts;
 }
 
-async function scanReferenceCounts(ctx: any): Promise<ReferenceCounts> {
+async function scanReferenceCounts(ctx: QueryCtx): Promise<ReferenceCounts> {
   const counts = emptyCounts();
-  let cursor: string | null = null;
-  let isDone = false;
-
-  while (!isDone) {
-    const page = await ctx.db
-      .query("references")
-      .withIndex("by_captured_at")
-      .order("desc")
-      .paginate({ numItems: 256, cursor });
-
-    cursor = page.continueCursor;
-    isDone = page.isDone;
-    for (const reference of page.page) {
-      for (const key of referenceFacetKeys(reference)) counts[key] += 1;
-    }
+  // Bootstrap the existing counters in one query. Convex forbids calling
+  // paginate more than once in a transaction, even with successive cursors.
+  for await (const reference of ctx.db.query("references").withIndex("by_captured_at")) {
+    for (const key of referenceFacetKeys(reference)) counts[key] += 1;
   }
 
   return counts;

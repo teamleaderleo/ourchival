@@ -1,3 +1,5 @@
+import { scheduleReferenceSearch } from "./searchIndex";
+
 export type TagRecord = {
   _id: any;
   name: string;
@@ -59,6 +61,33 @@ export async function updateReferenceTags(
   );
 
   await ctx.db.patch(reference._id, { tagIds: nextTagIds });
+  await scheduleReferenceSearch(ctx, reference._id);
+  return await getTagsByIds(ctx, nextTagIds);
+}
+
+export async function updateAssetTags(
+  ctx: any,
+  assetId: any,
+  args: { addNames?: string[]; removeIds?: string[] },
+) {
+  const asset = await ctx.db.get(assetId);
+  if (!asset) throw new Error("Asset not found.");
+
+  const additions = await Promise.all(
+    uniqueNames(args.addNames ?? []).map((name) => ensureTag(ctx, name)),
+  );
+  const removed = new Set(args.removeIds ?? []);
+  const nextTagIds = Array.from(
+    new Set([
+      ...(asset.tagIds ?? []).filter(
+        (tagId: any) => !removed.has(String(tagId)),
+      ),
+      ...additions.map((tag) => tag._id),
+    ]),
+  );
+
+  await ctx.db.patch(asset._id, { tagIds: nextTagIds });
+  await scheduleReferenceSearch(ctx, asset.referenceId);
   return await getTagsByIds(ctx, nextTagIds);
 }
 

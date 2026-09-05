@@ -1,5 +1,6 @@
 import type { LinkMetadata } from "./linkMetadata";
 import { normalizeSourceUrl } from "./urls";
+import { scheduleReferenceSearch } from "./searchIndex";
 
 export async function applySourceMetadata(
   ctx: any,
@@ -67,6 +68,7 @@ export async function applySourceMetadata(
     await ctx.db.patch(args.reference._id, patch);
   }
 
+  await scheduleReferenceSearch(ctx, args.reference._id);
   return {
     patch,
     snapshotId,

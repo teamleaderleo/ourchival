@@ -1,7 +1,9 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { searchTables } from "./lib/searchSchema";
 
 export default defineSchema({
+  ...searchTables,
   references: defineTable({
     kind: v.union(
       v.literal("image"),
@@ -123,6 +125,9 @@ export default defineSchema({
     previewStorageId: v.optional(v.id("_storage")),
     thumbStorageId: v.optional(v.id("_storage")),
     originalUrl: v.optional(v.string()),
+    altText: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    tagIds: v.optional(v.array(v.id("tags"))),
     driveFileId: v.optional(v.string()),
     driveFolderId: v.optional(v.string()),
     driveWebViewLink: v.optional(v.string()),

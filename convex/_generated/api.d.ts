@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as archiveSearch from "../archiveSearch.js";
 import type * as boards from "../boards.js";
 import type * as captureSessions from "../captureSessions.js";
 import type * as crons from "../crons.js";
@@ -15,6 +16,7 @@ import type * as enrichmentBatch from "../enrichmentBatch.js";
 import type * as enrichmentJobs from "../enrichmentJobs.js";
 import type * as http from "../http.js";
 import type * as httpDb from "../httpDb.js";
+import type * as lib_captureSessions from "../lib/captureSessions.js";
 import type * as lib_drive from "../lib/drive.js";
 import type * as lib_enrichmentJobState from "../lib/enrichmentJobState.js";
 import type * as lib_imageAnalysis from "../lib/imageAnalysis.js";
@@ -25,11 +27,15 @@ import type * as lib_privateAccess from "../lib/privateAccess.js";
 import type * as lib_referenceCatalog from "../lib/referenceCatalog.js";
 import type * as lib_relatedReferences from "../lib/relatedReferences.js";
 import type * as lib_reviewPreferences from "../lib/reviewPreferences.js";
+import type * as lib_searchDocument from "../lib/searchDocument.js";
+import type * as lib_searchIndex from "../lib/searchIndex.js";
 import type * as lib_searchMatches from "../lib/searchMatches.js";
+import type * as lib_searchSchema from "../lib/searchSchema.js";
 import type * as lib_sourceMetadata from "../lib/sourceMetadata.js";
 import type * as lib_suggestedTags from "../lib/suggestedTags.js";
 import type * as lib_tags from "../lib/tags.js";
 import type * as lib_urls from "../lib/urls.js";
+import type * as lib_visualValidation from "../lib/visualValidation.js";
 import type * as mediaDerivatives from "../mediaDerivatives.js";
 import type * as mediaDerivativesNode from "../mediaDerivativesNode.js";
 import type * as preferenceExport from "../preferenceExport.js";
@@ -48,6 +54,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  archiveSearch: typeof archiveSearch;
   boards: typeof boards;
   captureSessions: typeof captureSessions;
   crons: typeof crons;
@@ -55,6 +62,7 @@ declare const fullApi: ApiFromModules<{
   enrichmentJobs: typeof enrichmentJobs;
   http: typeof http;
   httpDb: typeof httpDb;
+  "lib/captureSessions": typeof lib_captureSessions;
   "lib/drive": typeof lib_drive;
   "lib/enrichmentJobState": typeof lib_enrichmentJobState;
   "lib/imageAnalysis": typeof lib_imageAnalysis;
@@ -65,11 +73,15 @@ declare const fullApi: ApiFromModules<{
   "lib/referenceCatalog": typeof lib_referenceCatalog;
   "lib/relatedReferences": typeof lib_relatedReferences;
   "lib/reviewPreferences": typeof lib_reviewPreferences;
+  "lib/searchDocument": typeof lib_searchDocument;
+  "lib/searchIndex": typeof lib_searchIndex;
   "lib/searchMatches": typeof lib_searchMatches;
+  "lib/searchSchema": typeof lib_searchSchema;
   "lib/sourceMetadata": typeof lib_sourceMetadata;
   "lib/suggestedTags": typeof lib_suggestedTags;
   "lib/tags": typeof lib_tags;
   "lib/urls": typeof lib_urls;
+  "lib/visualValidation": typeof lib_visualValidation;
   mediaDerivatives: typeof mediaDerivatives;
   mediaDerivativesNode: typeof mediaDerivativesNode;
   preferenceExport: typeof preferenceExport;
