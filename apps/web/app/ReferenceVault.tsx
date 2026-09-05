@@ -22,8 +22,8 @@ export function ReferenceVault() {
   const isReviewView =
     vault.activeView === "inbox" || vault.activeView === "later";
   const displayedCount = vault.query
-    ? `${vault.filteredReferences.length}${vault.hasMore ? "+" : ""}`
-    : String(vault.activeCount);
+    ? `${vault.filteredReferences.length.toLocaleString("en-US")}${vault.hasMore ? "+" : ""}`
+    : vault.activeCount.toLocaleString("en-US");
   const displayedCountLabel = vault.query
     ? vault.filteredReferences.length === 1 && !vault.hasMore
       ? "result"
@@ -208,7 +208,7 @@ export function ReferenceVault() {
           <div className="vault-heading">
             <h1>{currentViewLabel}</h1>
             <p className="vault-count">
-              <strong>{displayedCount.toLocaleString("en-US")}</strong>
+              <strong>{displayedCount}</strong>
               <span>{displayedCountLabel}</span>
             </p>
           </div>
