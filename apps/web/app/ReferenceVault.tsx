@@ -1,5 +1,7 @@
 "use client";
 
+import { BrandMark } from "./BrandMark";
+
 import { useEffect, useState } from "react";
 import { InspectorOrganization } from "./InspectorOrganization";
 import { ReferenceCard } from "./ReferenceCards";
@@ -100,12 +102,9 @@ export function ReferenceVault() {
     <div className="app-frame">
       <header className="app-header">
         <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
-            O
-          </div>
+          <BrandMark />
           <div>
             <p className="brand-name">Ourchival</p>
-            <p className="brand-subtitle">Visual archive</p>
           </div>
         </div>
         <div className="header-actions">
@@ -223,7 +222,7 @@ export function ReferenceVault() {
                 type="search"
                 value={vault.query}
                 onChange={(event) => vault.setQuery(event.target.value)}
-                placeholder="Search artist, source, lighting, notes, domain…"
+                placeholder="Find something…"
               />
               {vault.query ? (
                 <button

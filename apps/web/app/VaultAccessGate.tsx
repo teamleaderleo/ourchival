@@ -1,5 +1,7 @@
 "use client";
 
+import { BrandMark } from "./BrandMark";
+
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleOwnerSignIn } from "./GoogleOwnerSignIn";
 import {
@@ -157,9 +159,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   return (
     <main className="access-screen">
       <section className="access-card" aria-busy={checking}>
-        <div className="brand-mark" aria-hidden="true">
-          O
-        </div>
+        <BrandMark />
         <p className="eyebrow">Private archive</p>
         <h1>Sign in to Ourchival</h1>
         <p>
@@ -223,9 +223,7 @@ function AccessStatusCard({
   return (
     <main className="access-screen">
       <section className="access-card access-status-card" aria-busy={busy}>
-        <div className="brand-mark" aria-hidden="true">
-          O
-        </div>
+        <BrandMark />
         <p className="eyebrow">Private archive</p>
         <h1>{title}</h1>
         <p>{message}</p>

@@ -40,10 +40,9 @@ export function TagFilterBar({
       <summary>
         <span>
           <strong>Tools</strong>
-          <small>Filters, batches, enrichment</small>
         </span>
         <span>
-          {activeFilterCount ? `${activeFilterCount} active` : "Optional"}
+          {activeFilterCount ? `${activeFilterCount} active` : <span aria-hidden="true">+</span>}
         </span>
       </summary>
       <div className="vault-tools-content">
