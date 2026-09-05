@@ -95,6 +95,7 @@ export function ReferenceCard({
             </span>
           ) : null}
         </div>
+      </button>
         <div className="card-copy">
           {mode === "links" ? (
             <p className="link-source-row">
@@ -107,7 +108,8 @@ export function ReferenceCard({
               />
             </p>
           ) : null}
-          <h2>{title}</h2>
+          <h2>{mode === "links" ? <button type="button" className="card-title-open" onClick={onQuickLook ?? onSelect}>{title}</button> : title}</h2>
+          {mode !== "links" ? <a className="card-source-link" href={reference.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a> : null}
           {mode === "links" && snapshot?.description ? (
             <p className="card-description">{snapshot.description}</p>
           ) : mode !== "links" && !title.includes(sourceLabel) ? (
@@ -139,7 +141,6 @@ export function ReferenceCard({
             </p>
           ) : null}
         </div>
-      </button>
       <button
         type="button"
         className={`batch-select-toggle ${batch.selected ? "active" : ""}`}
