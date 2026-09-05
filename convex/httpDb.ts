@@ -440,7 +440,7 @@ export const saveDuplicateCapture = internalMutation({
         );
       } else if (assetId) {
         await ctx.db.patch(assetId, {
-          ...(args.storedAsset?.storageProvider !== "linked"
+          ...(args.storedAsset && args.storedAsset.storageProvider !== "linked"
             ? storedAssetFields(args.storedAsset)
             : {}),
           ...(typeof details.assetIndex === "number"

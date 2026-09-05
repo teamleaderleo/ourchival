@@ -1182,14 +1182,25 @@ async function persistDuplicateCapture(
     }),
     ...(args.metadata ? { metadata: serializableValue(args.metadata) } : {}),
   });
+  const assetReceipt = duplicateAssetReceipt(
+    storedAsset,
+    duplicate.storedAsset,
+  );
   return saved
     ? {
         reference: saved.reference,
         assetId: saved.assetId,
         reason: duplicate.reason,
-        ...(storedAsset ? { storedAsset } : {}),
+        ...(assetReceipt ? { storedAsset: assetReceipt } : {}),
       }
     : null;
+}
+
+export function duplicateAssetReceipt<T>(
+  fetched: T | undefined,
+  existing: T | undefined,
+) {
+  return fetched ?? existing;
 }
 
 function cleanTagNames(value: unknown) {
