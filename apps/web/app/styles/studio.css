@@ -187,3 +187,10 @@ body { background: var(--bg); }
 
 .saved-search-inline { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
 .saved-search-inline input { flex: 1; min-width: 120px; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--line); }
+
+.quick-look-image-viewport { position: absolute; inset: 18px 64px; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; overflow: auto; overscroll-behavior: contain; }
+.quick-look-image-viewport .quick-look-image { cursor: zoom-in; }
+.quick-look-image-viewport.actual-size { display: block; }
+.quick-look-image-viewport.actual-size .quick-look-image { max-width: none; max-height: none; margin: auto; cursor: zoom-out; }
+.viewer-zoom { min-width: 62px; }
+@media (max-width: 720px) { .quick-look-image-viewport { inset: 10px 48px; } }
