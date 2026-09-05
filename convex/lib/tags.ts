@@ -1,10 +1,16 @@
 import { scheduleReferenceSearch } from "./searchIndex";
+import { allocateTagCode } from "./tagIdentity";
 
 export type TagRecord = {
   _id: any;
   name: string;
   slug: string;
   createdAt: number;
+  code?: number;
+  aliases?: string[];
+  definition?: string;
+  definitionVersion?: number;
+  revision?: number;
 };
 
 export async function listTags(ctx: any): Promise<TagRecord[]> {
@@ -14,7 +20,10 @@ export async function listTags(ctx: any): Promise<TagRecord[]> {
   );
 }
 
-export async function getTagsByIds(ctx: any, tagIds: any[]): Promise<TagRecord[]> {
+export async function getTagsByIds(
+  ctx: any,
+  tagIds: any[],
+): Promise<TagRecord[]> {
   const tags = await Promise.all(tagIds.map((tagId) => ctx.db.get(tagId)));
   return tags
     .filter((tag): tag is TagRecord => Boolean(tag))
@@ -33,9 +42,20 @@ export async function ensureTag(ctx: any, rawName: string): Promise<TagRecord> {
     .unique();
   if (existing) return existing;
 
+  // Renaming retains the original slug. Resolve new names and previous names
+  // through the shared catalog instead of creating a duplicate identity.
+  const renamed = (await listTags(ctx)).find((tag) =>
+    [tag.name, ...(tag.aliases ?? [])].some(
+      (alias) => slugifyTagName(alias) === slug,
+    ),
+  );
+  if (renamed) return renamed;
+
   const tagId = await ctx.db.insert("tags", {
     name,
     slug,
+    code: await allocateTagCode(ctx),
+    revision: 0,
     createdAt: Date.now(),
   });
   return await ctx.db.get(tagId);
@@ -49,9 +69,9 @@ export async function updateReferenceTags(
   const reference = await ctx.db.get(referenceId);
   if (!reference) throw new Error("Reference not found.");
 
-  const additions = await Promise.all(
-    uniqueNames(args.addNames ?? []).map((name) => ensureTag(ctx, name)),
-  );
+  const additions: TagRecord[] = [];
+  for (const name of uniqueNames(args.addNames ?? []))
+    additions.push(await ensureTag(ctx, name));
   const removed = new Set(args.removeIds ?? []);
   const nextTagIds = Array.from(
     new Set([
@@ -73,9 +93,9 @@ export async function updateAssetTags(
   const asset = await ctx.db.get(assetId);
   if (!asset) throw new Error("Asset not found.");
 
-  const additions = await Promise.all(
-    uniqueNames(args.addNames ?? []).map((name) => ensureTag(ctx, name)),
-  );
+  const additions: TagRecord[] = [];
+  for (const name of uniqueNames(args.addNames ?? []))
+    additions.push(await ensureTag(ctx, name));
   const removed = new Set(args.removeIds ?? []);
   const nextTagIds = Array.from(
     new Set([

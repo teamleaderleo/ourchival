@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { ReferenceVisualMetadata } from "./ReferenceVisualMetadata";
+import { PersonalTagExamples } from "./PersonalTagExamples";
 
 import { ReferenceBoardAssignment } from "./BoardPanel";
 import { ReferenceEnrichmentPanel } from "./ReferenceEnrichmentPanel";
@@ -15,6 +16,7 @@ export function InspectorOrganization({
   reference: SavedReference;
 }) {
   const [metadataOpen, setMetadataOpen] = useState(false);
+  const [examplesOpen, setExamplesOpen] = useState(false);
   const linkLike = referenceMode(reference.kind) === "links";
 
   return (
@@ -38,6 +40,18 @@ export function InspectorOrganization({
           ) : null}
         </details>
       ) : null}
+      {reference.assets.length > 0 && (
+        <details
+          onToggle={(event) => setExamplesOpen(event.currentTarget.open)}
+        >
+          <summary>
+            <span>Teach a personal tag</span>
+          </summary>
+          {examplesOpen && (
+            <PersonalTagExamples key={reference._id} reference={reference} />
+          )}
+        </details>
+      )}
       <details open>
         <summary>
           <span>Organize</span>

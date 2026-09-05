@@ -20,9 +20,9 @@ export type SearchContext = {
     assetId: string;
     notes?: string;
     altText?: string;
-    tags: Array<{ name: string; slug: string }>;
+    tags: Array<{ name: string; slug: string; aliases?: string[] }>;
   }>;
-  tags: Array<{ name: string; slug: string }>;
+  tags: Array<{ name: string; slug: string; aliases?: string[] }>;
   boards: Array<{ name: string; description?: string }>;
   uses: Array<{
     reason?: string;
@@ -92,7 +92,9 @@ export function buildSearchDocument(
   add(
     "tag",
     "Saved tags",
-    context.tags.map((t) => `${t.name} ${t.slug}`).join(" "),
+    context.tags
+      .map((t) => `${t.name} ${t.slug} ${(t.aliases ?? []).join(" ")}`)
+      .join(" "),
     "catalog",
     4_000,
   );
@@ -142,7 +144,9 @@ export function buildSearchDocument(
     add(
       `asset.${asset.assetId}.tags`,
       "Saved image tags",
-      asset.tags.map((t) => `${t.name} ${t.slug}`).join(" "),
+      asset.tags
+        .map((t) => `${t.name} ${t.slug} ${(t.aliases ?? []).join(" ")}`)
+        .join(" "),
       "catalog",
       4_000,
     );

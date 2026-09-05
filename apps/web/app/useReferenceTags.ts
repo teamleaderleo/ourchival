@@ -19,9 +19,11 @@ type UpdateReferencesTagsArgs = AccessArgs & {
   removeIds: string[];
 };
 
-const listTagsReference = makeFunctionReference<"query", AccessArgs, ReferenceTag[]>(
-  "tags:list",
-);
+const listTagsReference = makeFunctionReference<
+  "query",
+  AccessArgs,
+  ReferenceTag[]
+>("tags:list");
 const updateReferenceTagsReference = makeFunctionReference<
   "mutation",
   UpdateReferenceTagsArgs,
@@ -43,7 +45,9 @@ export function useAllReferenceTags() {
 
   useEffect(() => {
     tagListeners.add(setTags);
-    void loadAllTags().then(setTags).catch(() => undefined);
+    void loadAllTags()
+      .then(setTags)
+      .catch(() => undefined);
     return () => {
       tagListeners.delete(setTags);
     };
@@ -61,9 +65,16 @@ export function useReferenceTags(
 
   useEffect(() => {
     let cancelled = false;
+    const update = (allTags: ReferenceTag[]) => {
+      const ids = new Set(tagIds ?? []);
+      setTags(allTags.filter((tag) => ids.has(String(tag._id))));
+    };
+    tagListeners.add(update);
     if (!tagIds?.length) {
       setTags(initialTags);
-      return;
+      return () => {
+        tagListeners.delete(update);
+      };
     }
 
     void loadAllTags()
@@ -78,6 +89,7 @@ export function useReferenceTags(
 
     return () => {
       cancelled = true;
+      tagListeners.delete(update);
     };
   }, [key]);
 
@@ -124,6 +136,42 @@ export async function refreshReferenceTagCatalog() {
   return tags;
 }
 
+export async function saveTagDefinition(args: {
+  tagId?: string;
+  expectedRevision: number;
+  name: string;
+  definition: string;
+}) {
+  const tagId = args.tagId;
+  if (!tagId) {
+    const tag = await getClient().mutation(
+      makeFunctionReference<
+        "mutation",
+        AccessArgs & { name: string; definition: string },
+        ReferenceTag
+      >("tags:createDefinition"),
+      withOwnerAccess({ name: args.name, definition: args.definition }),
+    );
+    await refreshReferenceTagCatalog();
+    return tag._id;
+  }
+  await getClient().mutation(
+    makeFunctionReference<
+      "mutation",
+      AccessArgs & {
+        tagId: string;
+        expectedRevision: number;
+        name: string;
+        definition: string;
+      },
+      ReferenceTag
+    >("tags:editDefinition"),
+    withOwnerAccess({ ...args, tagId }),
+  );
+  await refreshReferenceTagCatalog();
+  return tagId;
+}
+
 async function loadAllTags() {
   if (allTagsCache) return allTagsCache;
   if (!allTagsPromise) {
@@ -132,6 +180,10 @@ async function loadAllTags() {
       .then((tags) => {
         allTagsCache = tags;
         return tags;
+      })
+      .catch((error) => {
+        allTagsPromise = undefined;
+        throw error;
       });
   }
   return await allTagsPromise;

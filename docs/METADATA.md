@@ -1,5 +1,10 @@
 # Archive metadata
 
+[Personal tag definitions and teaching examples](PERSONAL_TAGS.md) extend the
+shared saved-tag catalog with stable numeric codes, rename aliases and versioned
+meanings. The compact payload codec is evaluated privately; automatic personal
+tag propagation and live binary-storage migration remain subsequent work.
+
 Metadata should help you find an image and judge where a claim came from. Missing
 information stays missing; model predictions are not confirmed facts.
 

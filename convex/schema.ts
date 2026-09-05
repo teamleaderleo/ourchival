@@ -275,8 +275,29 @@ export default defineSchema({
   tags: defineTable({
     name: v.string(),
     slug: v.string(),
+    code: v.optional(v.number()),
+    aliases: v.optional(v.array(v.string())),
+    definition: v.optional(v.string()),
+    definitionVersion: v.optional(v.number()),
+    revision: v.optional(v.number()),
     createdAt: v.number(),
-  }).index("by_slug", ["slug"]),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_code", ["code"]),
+  tagCodeSequence: defineTable({ next: v.number() }),
+  tagDefinitions: defineTable({
+    tagId: v.id("tags"),
+    version: v.number(),
+    definition: v.string(),
+    createdAt: v.number(),
+  }).index("by_tagId_and_version", ["tagId", "version"]),
+  tagExamples: defineTable({
+    tagId: v.id("tags"),
+    assetId: v.id("assets"),
+    definitionVersion: v.number(),
+    positive: v.boolean(),
+    updatedAt: v.number(),
+  }).index("by_tagId_and_assetId", ["tagId", "assetId"]),
 
   sourceSnapshots: defineTable({
     inheritedFields: v.optional(

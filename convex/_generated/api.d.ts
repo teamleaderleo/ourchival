@@ -33,6 +33,7 @@ import type * as lib_searchSchema from "../lib/searchSchema.js";
 import type * as lib_sourceContext from "../lib/sourceContext.js";
 import type * as lib_sourceMetadata from "../lib/sourceMetadata.js";
 import type * as lib_suggestedTags from "../lib/suggestedTags.js";
+import type * as lib_tagIdentity from "../lib/tagIdentity.js";
 import type * as lib_tags from "../lib/tags.js";
 import type * as lib_urls from "../lib/urls.js";
 import type * as lib_visualMetadata from "../lib/visualMetadata.js";
@@ -80,6 +81,7 @@ declare const fullApi: ApiFromModules<{
   "lib/sourceContext": typeof lib_sourceContext;
   "lib/sourceMetadata": typeof lib_sourceMetadata;
   "lib/suggestedTags": typeof lib_suggestedTags;
+  "lib/tagIdentity": typeof lib_tagIdentity;
   "lib/tags": typeof lib_tags;
   "lib/urls": typeof lib_urls;
   "lib/visualMetadata": typeof lib_visualMetadata;

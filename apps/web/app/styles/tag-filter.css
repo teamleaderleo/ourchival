@@ -1,5 +1,8 @@
 .tag-filter-bar.searchable {
-  grid-template-columns: minmax(145px, 0.34fr) minmax(190px, 0.46fr) minmax(0, 1fr);
+  grid-template-columns: minmax(145px, 0.34fr) minmax(190px, 0.46fr) minmax(
+      0,
+      1fr
+    );
 }
 
 .tag-filter-search > div {
@@ -77,4 +80,82 @@
   .tag-filter-status {
     grid-column: 1;
   }
+}
+
+.personal-tag-form {
+  display: grid;
+  gap: 12px;
+  max-width: 560px;
+}
+.personal-tag-form label {
+  display: grid;
+  gap: 6px;
+}
+.personal-tag-form input,
+.personal-tag-form textarea {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+}
+.personal-tag-form p,
+.personal-tag-example p {
+  font-size: 13px;
+}
+.personal-tag-example {
+  margin-block: 16px;
+}
+.personal-tag-example img {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  margin-bottom: 10px;
+}
+.personal-tag-form input,
+.personal-tag-form textarea,
+.personal-tag-catalog select,
+.personal-tag-teaching select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 9px 10px;
+  min-height: 38px;
+  font-size: 13px;
+}
+.personal-tag-catalog select,
+.personal-tag-teaching select {
+  max-width: 100%;
+}
+.personal-tag-form button,
+.personal-tag-example button {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 9px 12px;
+  min-height: 38px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.personal-tag-form p,
+.personal-tag-teaching p {
+  color: var(--muted-strong);
+  line-height: 1.5;
+}
+.personal-tag-catalog {
+  margin-block: 12px;
+}
+
+.personal-tag-teaching > p {
+  font-size: 13px;
+  margin-block: 8px;
+}
+.personal-tag-teaching > label {
+  font-size: 13px;
+}
+.personal-tag-example > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
