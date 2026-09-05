@@ -195,4 +195,3 @@ function describeSearch(search: SavedSearch) {
   const view = viewLabels[search.view];
   return search.query ? `${view} · ${search.query}` : view;
 }
-
