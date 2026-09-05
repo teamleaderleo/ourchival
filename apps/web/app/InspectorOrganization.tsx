@@ -42,7 +42,15 @@ export function InspectorOrganization({
       ) : null}
       {reference.assets.length > 0 && (
         <details
-          onToggle={(event) => setExamplesOpen(event.currentTarget.open)}
+          className="personal-tag-disclosure"
+          onToggle={(event) => {
+            const details = event.currentTarget;
+            setExamplesOpen(details.open);
+            if (details.open)
+              requestAnimationFrame(() =>
+                details.scrollIntoView({ block: "start" }),
+              );
+          }}
         >
           <summary>
             <span>Teach a personal tag</span>

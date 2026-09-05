@@ -159,3 +159,49 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+.personal-tag-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 10px;
+}
+.personal-tag-actions button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 7px 10px;
+  font-size: 13px;
+  min-height: 36px;
+  cursor: pointer;
+}
+.personal-tag-apply {
+  display: flex;
+  flex-basis: 100%;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-strong);
+  margin-bottom: 4px;
+}
+.personal-tag-catalog input[type="search"] {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px;
+  margin: 8px;
+  max-width: 100%;
+}
+.personal-tag-disclosure {
+  scroll-margin-top: 8px;
+}
+@media (max-height: 760px) {
+  .personal-tag-example img {
+    max-height: 160px;
+  }
+  .personal-tag-example {
+    margin-block: 10px;
+  }
+}

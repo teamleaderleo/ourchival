@@ -6,7 +6,9 @@ export function tagKey(name: string) {
 }
 
 /** Alias spellings are one prediction, not independent corroboration. */
-export function normalizedVisualTags(tags: Doc<"visualEnrichments">["tags"]) {
+export function normalizedVisualTags(
+  tags: NonNullable<Doc<"visualEnrichments">["tags"]>,
+) {
   const unique = new Map<string, (typeof tags)[number]>();
   for (const tag of tags) {
     const name = tagKey(tag.name);

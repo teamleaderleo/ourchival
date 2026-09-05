@@ -5,6 +5,8 @@ import { makeFunctionReference } from "convex/server";
 import { withOwnerAccess } from "./privateAccess";
 import { useAllReferenceTags } from "./useReferenceTags";
 import { usePrivateImageUrl } from "./usePrivateImageUrl";
+import { TagDefinitionForm } from "./PersonalTagPanel";
+import { usePersonalTagSelection } from "./usePersonalTagSelection";
 import type {
   ReferenceAsset,
   ReferenceTag,
@@ -25,6 +27,7 @@ const save = makeFunctionReference<
     assetId: string;
     definitionVersion: number;
     positive: boolean | null;
+    applyTag?: boolean;
   },
   null
 >("tags:setExample");
@@ -39,20 +42,25 @@ export function PersonalTagExamples({
 }: {
   reference: SavedReference;
 }) {
-  const tags = useAllReferenceTags().filter((tag) => tag.definition);
-  const [selected, setSelected] = useState("");
+  const tags = useAllReferenceTags();
+  const [selected, setSelected] = usePersonalTagSelection();
+  const [editing, setEditing] = useState(false);
+  const [imageIndex, setImageIndex] = useState(0);
   const tag = tags.find((item) => item._id === selected);
   return (
     <div className="inspector-organization-body personal-tag-teaching">
-      <p>Show what you mean with examples and counterexamples.</p>
+      {!tag && <p>Show what you mean with examples and counterexamples.</p>}
       {!tags.length ? (
-        <p>Create a definition in Tools → My tag definitions first.</p>
+        <p>Define what you want to find, then mark an image as an example.</p>
       ) : (
         <label>
           Teach a tag
           <select
             value={selected}
-            onChange={(event) => setSelected(event.target.value)}
+            onChange={(event) => {
+              setSelected(event.target.value);
+              setEditing(false);
+            }}
           >
             <option value="">Choose a tag</option>
             {tags.map((item) => (
@@ -63,10 +71,58 @@ export function PersonalTagExamples({
           </select>
         </label>
       )}
-      {tag && (
+      <div className="personal-tag-actions">
+        <button
+          onClick={() => {
+            setSelected("");
+            setEditing(true);
+          }}
+        >
+          New personal tag
+        </button>
+        {tag && (
+          <button onClick={() => setEditing(!editing)}>
+            {editing ? "Close editor" : "Edit definition"}
+          </button>
+        )}
+      </div>
+      {(editing || (tag && !tag.definition)) && (
+        <TagDefinitionForm
+          requireDefinition
+          key={selected}
+          tag={tag}
+          onSaved={(id) => {
+            setSelected(id);
+            setEditing(false);
+          }}
+        />
+      )}
+      {tag?.definition && (
         <>
           <p>{tag.definition}</p>
-          {reference.assets.map((asset) => (
+          {reference.assets.length > 1 && (
+            <nav
+              className="personal-tag-actions"
+              aria-label="Choose an image to teach"
+            >
+              <button
+                disabled={imageIndex === 0}
+                onClick={() => setImageIndex(imageIndex - 1)}
+              >
+                Previous image
+              </button>
+              <span>
+                {imageIndex + 1} / {reference.assets.length}
+              </span>
+              <button
+                disabled={imageIndex === reference.assets.length - 1}
+                onClick={() => setImageIndex(imageIndex + 1)}
+              >
+                Next image
+              </button>
+            </nav>
+          )}
+          {reference.assets.slice(imageIndex, imageIndex + 1).map((asset) => (
             <ExampleImage
               key={`${asset._id}:${tag._id}:${tag.definitionVersion}`}
               asset={asset}
@@ -93,6 +149,7 @@ function ExampleImage({
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState("");
   const [failedImage, setFailedImage] = useState(false);
+  const [applyTag, setApplyTag] = useState(false);
   useEffect(() => {
     let active = true;
     client()
@@ -123,6 +180,7 @@ function ExampleImage({
           assetId: asset._id,
           definitionVersion: tag.definitionVersion!,
           positive,
+          applyTag: positive === true && applyTag,
         }),
       );
       setExample(
@@ -130,7 +188,13 @@ function ExampleImage({
           ? null
           : { positive, definitionVersion: tag.definitionVersion! },
       );
-      setMessage(positive === null ? "Example cleared." : "Example saved.");
+      setMessage(
+        positive === null
+          ? "Example cleared. Saved tags are unchanged."
+          : positive && applyTag
+            ? "Example saved and tag applied to this image."
+            : "Example saved.",
+      );
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Could not save. Try again.",
@@ -163,6 +227,14 @@ function ExampleImage({
       )}
       {image.resolvedUrl && !failedImage && (
         <div>
+          <label className="personal-tag-apply">
+            <input
+              type="checkbox"
+              checked={applyTag}
+              onChange={(event) => setApplyTag(event.target.checked)}
+            />
+            Also apply the tag when choosing “Shows this”
+          </label>
           <button disabled={busy} onClick={() => void choose(true)}>
             Shows this
           </button>{" "}

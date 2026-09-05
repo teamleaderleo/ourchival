@@ -13,6 +13,29 @@ export const visualModel = v.object({
   task: v.string(),
 });
 export const searchTables = {
+  visualTerms: defineTable({
+    name: v.string(),
+    category: v.union(v.literal("general"), v.literal("character")),
+    code: v.number(),
+  })
+    .index("by_category_and_name", ["category", "name"])
+    .index("by_code", ["code"]),
+  visualRecipes: defineTable({
+    fingerprint: v.string(),
+    models: v.array(visualModel),
+  }).index("by_fingerprint", ["fingerprint"]),
+  metadataMigration: defineTable({
+    key: v.string(),
+    generation: v.number(),
+    phase: v.union(
+      v.literal("tags"),
+      v.literal("results"),
+      v.literal("complete"),
+    ),
+    cursor: v.union(v.string(), v.null()),
+    processed: v.number(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
   referenceSearchDocuments: defineTable({
     referenceId: v.id("references"),
     text: v.string(),
@@ -56,8 +79,10 @@ export const searchTables = {
     inputSha256: v.string(),
     originalContentHash: v.optional(v.string()),
     pipelineFingerprint: v.string(),
-    models: v.array(visualModel),
-    tags: v.array(visualTag),
+    models: v.optional(v.array(visualModel)),
+    tags: v.optional(v.array(visualTag)),
+    recipeId: v.optional(v.id("visualRecipes")),
+    tagPayload: v.optional(v.bytes()),
     ratings: v.array(v.object({ label: v.string(), confidence: v.number() })),
     ocrText: v.optional(v.string()),
     caption: v.optional(v.string()),

@@ -203,6 +203,10 @@ test("meaning versions preserve history and invalidate earlier examples", async 
     assetId,
     definitionVersion: 2,
     positive: true,
+    applyTag: true,
+  });
+  await t.run(async (ctx) => {
+    expect((await ctx.db.get(assetId))!.tagIds).toEqual([tag._id]);
   });
   expect(
     (
@@ -220,6 +224,9 @@ test("meaning versions preserve history and invalidate earlier examples", async 
     assetId,
     definitionVersion: 2,
     positive: null,
+  });
+  await t.run(async (ctx) => {
+    expect((await ctx.db.get(assetId))!.tagIds).toEqual([tag._id]);
   });
   expect(
     await t.query(api.tags.examplesForAsset, {

@@ -1,9 +1,5 @@
 import { paginationOptsValidator } from "convex/server";
-import {
-  normalizedVisualTags,
-  tagKey,
-  visualResultCurrent,
-} from "./lib/visualMetadata";
+import { tagKey, visualResultCurrent } from "./lib/visualMetadata";
 import { visualModel, visualTag } from "./lib/searchSchema";
 import { validateVisualResult } from "./lib/visualValidation";
 import { refreshReferenceSearch } from "./lib/searchIndex";
@@ -12,6 +8,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireOwnerAccess } from "./lib/privateAccess";
 import { hammingDistanceHex, sharedPaletteColors } from "./lib/perceptualHash";
+import { compactVisual, expandVisual } from "./lib/compactVisual";
 
 const visualJobTypes = ["dominant_colors", "perceptual_hash"] as const;
 
@@ -484,8 +481,12 @@ export const submit = mutation({
       ...(args.originalContentHash
         ? { originalContentHash: args.originalContentHash }
         : {}),
-      models: args.models,
-      tags: normalizedVisualTags(args.tags),
+      ...(await compactVisual(
+        ctx,
+        args.tags,
+        args.models,
+        args.pipelineFingerprint,
+      )),
       ratings: args.ratings,
       ...(args.ocrText !== undefined ? { ocrText: args.ocrText } : {}),
       ...(args.caption !== undefined ? { caption: args.caption } : {}),
@@ -568,6 +569,7 @@ export const inspect = query({
             .unique(),
         ]);
         const rejectedTags = (correction?.rejectedTags ?? []).map(tagKey);
+        const expanded = result ? await expandVisual(ctx, result) : null;
         return {
           assetId: asset._id,
           state: !result
@@ -577,7 +579,7 @@ export const inspect = query({
               : ("stale" as const),
           generatedAt: result?.updatedAt ?? null,
           tags: result
-            ? normalizedVisualTags(result.tags).map((tag) => ({
+            ? expanded!.tags.map((tag) => ({
                 ...tag,
                 rejected: rejectedTags.includes(tag.name),
               }))
@@ -585,7 +587,7 @@ export const inspect = query({
           ocrText: result?.ocrText ?? "",
           caption: result?.caption ?? "",
           models:
-            result?.models.map((model) => ({
+            expanded?.models.map((model) => ({
               id: model.id,
               revision: model.revision,
               task: model.task,

@@ -6,6 +6,7 @@ import {
   getTagsByIds,
   listTags,
   updateReferenceTags,
+  updateAssetTags,
   normalizeTagName,
   slugifyTagName,
 } from "./lib/tags";
@@ -119,6 +120,7 @@ export const setExample = mutation({
     assetId: v.id("assets"),
     definitionVersion: v.number(),
     positive: v.union(v.boolean(), v.null()),
+    applyTag: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await requireOwnerAccess(args.accessKey);
@@ -152,6 +154,8 @@ export const setExample = mutation({
     };
     if (existing) await ctx.db.replace(existing._id, payload);
     else await ctx.db.insert("tagExamples", payload);
+    if (args.positive && args.applyTag)
+      await updateAssetTags(ctx, asset._id, { addNames: [tag.name] });
     return null;
   },
 });

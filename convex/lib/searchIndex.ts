@@ -1,4 +1,5 @@
 import { visualResultCurrent } from "./visualMetadata";
+import { expandVisual } from "./compactVisual";
 import { getSourceContext } from "./sourceContext";
 import { internal } from "../_generated/api";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
@@ -83,7 +84,7 @@ export async function refreshReferenceSearch(
     if (!asset || !visualResultCurrent(asset, row)) continue;
     visual.push({
       assetId: String(row.assetId),
-      tags: row.tags,
+      tags: (await expandVisual(ctx, row)).tags,
       ocrText: row.ocrText,
       caption: row.caption,
       rejectedTags: correction?.rejectedTags,
