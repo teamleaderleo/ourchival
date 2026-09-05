@@ -176,6 +176,29 @@ type SearchOptions = {
   pageSize: number;
   cursor: string | null;
 };
+/** Preserve full-text matching (including machine terms) during a chronological scan. */
+export async function chronologicalSearchMatches(
+  ctx: QueryCtx,
+  referenceId: Id<"references">,
+  query: string,
+): Promise<SearchMatch[] | null> {
+  const text = indexQuery(query);
+  if (!text) return [];
+  const rows = await ctx.db
+    .query("referenceSearchDocuments")
+    .withSearchIndex("search_text", (q) =>
+      q.search("text", text).eq("referenceId", referenceId),
+    )
+    .take(1);
+  if (rows[0]) return searchMatchReasons(rows[0].fields, text);
+  const existing = await ctx.db
+    .query("referenceSearchDocuments")
+    .withIndex("by_reference_id", (q) => q.eq("referenceId", referenceId))
+    .unique();
+  // Legacy rows not yet indexed retain the existing source-text fallback.
+  return existing ? [] : null;
+}
+
 export async function indexedReferencePage(
   ctx: QueryCtx,
   options: SearchOptions,

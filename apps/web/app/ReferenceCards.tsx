@@ -19,6 +19,7 @@ export function ReferenceCard({
   onQuickLook,
   onToggleFavorite,
   priority = false,
+  dateBasis,
 }: {
   reference: SavedReference;
   selected: boolean;
@@ -26,6 +27,7 @@ export function ReferenceCard({
   onQuickLook?: () => void;
   onToggleFavorite: () => void;
   priority?: boolean;
+  dateBasis?: "saved" | "published";
 }) {
   const cardRef = useRef<HTMLElement>(null);
   const [nearViewport, setNearViewport] = useState(priority);
@@ -66,6 +68,7 @@ export function ReferenceCard({
   return (
     <article
       ref={cardRef}
+      data-reference-id={reference._id}
       className={`reference-card ${mode === "links" ? "link-card" : ""} ${selected ? "selected" : ""} ${batch.selected ? "batch-selected" : ""}`}
     >
       <button
@@ -110,6 +113,9 @@ export function ReferenceCard({
             </p>
           ) : null}
           <h2>{mode === "links" ? <button type="button" className="card-title-open" onClick={onQuickLook ?? onSelect}>{title}</button> : title}</h2>
+          {dateBasis ? <p className="card-domain">{dateBasis === "published"
+            ? reference.publishedAt == null ? "Publication date unknown" : `Published ${formatCaptureDate(reference.publishedAt)}`
+            : `Saved ${formatCaptureDate(reference.capturedAt)}`}</p> : null}
           {mode !== "links" ? <a className="card-source-link" href={reference.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a> : null}
           {mode === "links" && snapshot?.description ? (
             <p className="card-description">{snapshot.description}</p>

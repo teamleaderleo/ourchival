@@ -1,4 +1,8 @@
 "use client";
+import {
+  archiveSorts,
+  isArchiveSort,
+} from "../../../packages/shared/src/archiveSort";
 
 import { BrandMark } from "./BrandMark";
 import { ArchiveSearch } from "./ArchiveSearch";
@@ -102,7 +106,9 @@ export function ReferenceVault() {
         </div>
         <ArchiveSearch query={vault.query} onChange={vault.setQuery} />
         <div className="header-actions">
-          <Popover className="project-menu" label="Projects"><ProjectPanel query={vault.query} onChange={vault.setQuery} /></Popover>
+          <Popover className="project-menu" label="Projects">
+            <ProjectPanel query={vault.query} onChange={vault.setQuery} />
+          </Popover>
           {vault.status ? (
             <div
               className={`sync-status status-${vault.statusTone}`}
@@ -202,12 +208,54 @@ export function ReferenceVault() {
         <main className="vault-main">
           <h1 className="sr-only">{currentViewLabel}</h1>
           <div className="vault-toolbar">
+            <label>
+              Sort
+              <select
+                aria-label="Sort archive"
+                value={vault.sort}
+                onChange={(event) => {
+                  if (isArchiveSort(event.target.value))
+                    vault.changeSort(event.target.value);
+                }}
+              >
+                {archiveSorts.map((sort) => (
+                  <option key={sort.value} value={sort.value}>
+                    {sort.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <SavedSearchPanel
               activeView={vault.activeView}
               query={vault.query}
               onApply={applySavedSearch}
             />
-            <TagFilterBar query={vault.query} onChange={vault.setQuery} imagesOnly={vault.imagesOnly} onImagesOnly={vault.setImagesOnly} onRefresh={vault.retryLoad} />
+            <TagFilterBar
+              query={vault.query}
+              onChange={vault.setQuery}
+              imagesOnly={vault.imagesOnly}
+              onImagesOnly={vault.setImagesOnly}
+            />
+          </div>
+
+          <div className="browse-position" aria-label="Browsing position">
+            <span>
+              {vault.filteredReferences.length} loaded ·{" "}
+              {vault.sort.startsWith("published")
+                ? "Undated posts appear last. "
+                : ""}
+              New imports appear when you refresh.
+            </span>
+            <button
+              className="button ghost"
+              type="button"
+              onClick={vault.retryLoad}
+            >
+              Refresh from beginning
+            </button>
+            {vault.positionNotice ? (
+              <p role="status">{vault.positionNotice}</p>
+            ) : null}
           </div>
 
           {vault.activeView === "links" ? (
@@ -251,7 +299,6 @@ export function ReferenceVault() {
               </button>
             </form>
           ) : null}
-
 
           {isReviewView && vault.selectedReference ? (
             <div className="review-strip">
@@ -309,7 +356,17 @@ export function ReferenceVault() {
             className={`reference-grid ${vault.activeView === "links" ? "link-grid" : ""} ${vault.filteredReferences.length === 0 ? "empty-grid" : ""}`}
           >
             {vault.isLoading && vault.filteredReferences.length === 0 ? (
-              <div aria-label="Opening archive" aria-busy="true"><Masonry>{Array.from({ length: 8 }, (_, index) => <div key={index} className="masonry-skeleton" style={{ height: 180 + (index % 3) * 65 }} />)}</Masonry></div>
+              <div aria-label="Opening archive" aria-busy="true">
+                <Masonry>
+                  {Array.from({ length: 8 }, (_, index) => (
+                    <div
+                      key={index}
+                      className="masonry-skeleton"
+                      style={{ height: 180 + (index % 3) * 65 }}
+                    />
+                  ))}
+                </Masonry>
+              </div>
             ) : vault.loadFailed ? (
               <article className="empty-card load-error-card" role="alert">
                 <span className="empty-mark" aria-hidden="true">
@@ -336,34 +393,47 @@ export function ReferenceVault() {
                 <h2>
                   {vault.query
                     ? vault.hasMore
-                      ? "No matches on this page"
+                      ? "No matches yet"
                       : "No matching saves"
                     : emptyHeading(vault.activeView, currentViewLabel)}
                 </h2>
                 <p>
                   {vault.query
                     ? vault.hasMore
-                      ? "Move to the next older page to continue this search."
+                      ? "Searching farther through this view in the selected order."
                       : "Try a source domain, artist name, title, note, tag, board, project, or reuse reason."
                     : emptyMessage(vault.activeView)}
                 </p>
               </article>
             ) : (
-              <Masonry>{vault.filteredReferences.map((reference, index) => (
-                <ReferenceCard
-                  key={reference._id}
-                  reference={reference}
-                  priority={index < 4}
-                  selected={reference._id === vault.selectedReference?._id}
-                  onSelect={() => vault.setSelectedId(reference._id)}
-                  onQuickLook={() => openQuickLook(reference._id)}
-                  onToggleFavorite={() => void vault.toggleFavorite(reference)}
-                />
-              ))}</Masonry>
+              <Masonry restoreId={vault.restoreReferenceId}>
+                {vault.filteredReferences.map((reference, index) => (
+                  <ReferenceCard
+                    key={reference._id}
+                    reference={reference}
+                    dateBasis={
+                      vault.sort.startsWith("published") ? "published" : "saved"
+                    }
+                    priority={index < 4}
+                    selected={reference._id === vault.selectedReference?._id}
+                    onSelect={() => vault.setSelectedId(reference._id)}
+                    onQuickLook={() => openQuickLook(reference._id)}
+                    onToggleFavorite={() =>
+                      void vault.toggleFavorite(reference)
+                    }
+                  />
+                ))}
+              </Masonry>
             )}
           </section>
 
-          {!vault.isLoading && vault.hasMore ? <LoadMore busy={vault.isLoadingPage} auto={vault.statusTone !== "error"} onLoad={vault.loadOlderPage} /> : null}
+          {!vault.isLoading && vault.hasMore ? (
+            <LoadMore
+              busy={vault.isLoadingPage}
+              auto={vault.statusTone !== "error" && !vault.restoreReferenceId}
+              onLoad={vault.loadOlderPage}
+            />
+          ) : null}
         </main>
         {vault.selectedReference ? (
           <aside
@@ -409,11 +479,19 @@ export function ReferenceVault() {
           onClose={() => setQuickLookId(null)}
           onOpen={vault.markReferenceOpened}
           onToggleFavorite={vault.toggleFavorite}
-          onInspect={() => { vault.setSelectedId(quickLookReference._id); setQuickLookId(null); }}
+          onInspect={() => {
+            vault.setSelectedId(quickLookReference._id);
+            setQuickLookId(null);
+          }}
           onMove={async (action) => {
-            const index = vault.filteredReferences.findIndex((item) => item._id === quickLookReference._id);
-            const next = vault.filteredReferences[index + 1] ?? vault.filteredReferences[index - 1];
-            if (!await vault.moveReference(quickLookReference._id, action)) return false;
+            const index = vault.filteredReferences.findIndex(
+              (item) => item._id === quickLookReference._id,
+            );
+            const next =
+              vault.filteredReferences[index + 1] ??
+              vault.filteredReferences[index - 1];
+            if (!(await vault.moveReference(quickLookReference._id, action)))
+              return false;
             vault.setSelectedId(null);
             setQuickLookId(next?._id ?? null);
             return true;

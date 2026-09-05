@@ -65,5 +65,7 @@ Next acceptance criteria:
   archive-scale performance. Test resize, new imports, filter changes, restart,
   missing anchors and multi-image reference cards.
 
-These gallery improvements are outstanding; this audit does not claim they were
-implemented during the tagging launch.
+Sorting, per-view browser position markers, explicit refresh and windowed cards
+were implemented in the subsequent browsing pass; see `ARCHIVE_BROWSING.md` for
+the supported behavior and validation. Large-archive frame-rate benchmarks and
+cross-device position synchronization remain separate work.
