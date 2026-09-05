@@ -5,6 +5,7 @@ No browser state is accessed. Restore assembles an ordinary Convex import ZIP;
 it never imports into or overwrites a deployment itself.
 """
 import argparse
+from contextlib import ExitStack
 import fcntl
 import hashlib
 import json
@@ -86,12 +87,13 @@ def assemble(parts, destination):
                         storage[name] = part
         if any(name not in storage for name in manifest["requiredStorage"]):
             raise ValueError("Required stored image is missing")
-        with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as output:
+        with ExitStack() as handles, zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as output:
+            archives = {part: handles.enter_context(zipfile.ZipFile(part)) for part in set(storage.values())}
             for name in latest.namelist():
                 if name != MANIFEST and not is_storage(name):
                     output.writestr(name, latest.read(name))
             for name in manifest["requiredStorage"]:
-                with zipfile.ZipFile(storage[name]) as archive, archive.open(name) as incoming, output.open(name, "w") as outgoing:
+                with archives[storage[name]].open(name) as incoming, output.open(name, "w") as outgoing:
                     for chunk in iter(lambda: incoming.read(CHUNK), b""):
                         outgoing.write(chunk)
     destination.chmod(0o600)

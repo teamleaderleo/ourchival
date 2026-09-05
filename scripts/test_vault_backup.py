@@ -63,6 +63,14 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(result["id"], "file")
         self.assertEqual(request.call_count, 2)
 
+    def test_restore_opens_each_backup_part_once_for_file_copying(self):
+        source = self.snapshot("many.zip", {f"{i}.png": b"image" for i in range(100)}, "many")
+        part = self.root / "part.zip"
+        backup.pack(source, part, {})
+        with patch.object(backup.zipfile, "ZipFile", wraps=zipfile.ZipFile) as opened:
+            backup.assemble([part], self.root / "restored.zip")
+        self.assertLessEqual(opened.call_count, 4)
+
     def test_upload_resumes_from_server_acknowledged_offset(self):
         path = self.root / "part.zip"
         path.write_bytes(b"payload")
