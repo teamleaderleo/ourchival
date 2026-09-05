@@ -31,7 +31,7 @@ export const referenceStatuses = internalQuery({
         .query("references")
         .withIndex("by_source_url", (q) => q.eq("sourceUrl", sourceUrl))
         .collect();
-      if (matches.some((reference) => !reference.deleted)) {
+      if (matches.length > 0) {
         indexedSourceUrls.push(sourceUrl);
       }
     }
