@@ -13,3 +13,4 @@ pnpm-debug.log*
 *.tsbuildinfo
 .vercel
 .models/
+__pycache__/

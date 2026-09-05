@@ -1,4 +1,5 @@
 import { BrandMark } from "./BrandMark";
+import Link from "next/link";
 
 export function VaultLauncher() {
   return (
@@ -25,7 +26,7 @@ export function VaultLauncher() {
             backup is a recovery copy; it does not run the archive while the Mac
             is off.
           </p>
-          <a href="/hosted">Open the separate earlier hosted catalog</a>
+          <Link href="/hosted" prefetch={false}>Open the separate earlier hosted catalog</Link>
         </details>
       </section>
     </main>

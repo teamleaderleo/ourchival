@@ -24,6 +24,10 @@ CHUNK = 8 * 1024 * 1024
 
 
 def save(path, value):
+    if path.name == "progress.json":
+        state_file = path.parent / "state.json"
+        if state_file.exists():
+            value = {"lastVerifiedAt": json.loads(state_file.read_text()).get("lastVerifiedAt"), **value}
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(value, sort_keys=True) + "\n")
     temporary.chmod(0o600)
@@ -279,6 +283,7 @@ if __name__ == "__main__":
             backup(args.snapshot)
     except Exception as exc:
         STATE.mkdir(parents=True, exist_ok=True)
-        save(STATE / "progress.json", {"phase": "interrupted", "errorType": type(exc).__name__, "updatedAt": time.time()})
+        if not args.restore_latest and not args.assemble:
+            save(STATE / "progress.json", {"phase": "interrupted", "errorType": type(exc).__name__, "updatedAt": time.time()})
         print("Backup interrupted; last verified backup and resume checkpoint preserved.")
         raise SystemExit(1)
