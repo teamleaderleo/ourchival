@@ -51,6 +51,14 @@ current catalog fields, not every original source snapshot or repeated save.
 The legacy capture-session field cannot enumerate later duplicate occurrences;
 occurrence-aware import exports must integrate with the intake lane separately.
 
+Integration target: PR #102 (`fadbf79`) now preserves each accepted occurrence
+in `sourceSnapshots.jsonMetadata` with `intakeVersion: 1`, session key, source,
+zero-based ordinal and original URL/title. Its import key is
+`saved-links-v1:<manifest SHA-256>`. Do not reinterpret `catalog:find.sessionKey`
+as a complete occurrence filter: #102 deliberately retains a reference's first
+capture session. Add an indexed session/ordinal provenance view before exposing
+all import occurrences; avoid scanning snapshot JSON across the archive.
+
 Text is limited to 1,024 Unicode code points per field and marked in
 `truncatedFields`. The 13-field allowlist and 50-row ceiling bound output size
 even if source titles are huge. Original documents are never changed. Credentials,
