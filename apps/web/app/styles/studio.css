@@ -25,16 +25,29 @@ body { background: var(--bg); }
   font-weight: 400;
 }
 .brand-name { font-weight: 550; }
+.brand-name {
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: 23px;
+  letter-spacing: -0.035em;
+}
+.brand-mark.archive-mascot {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  background: transparent;
+  border-radius: 0;
+}
+.archive-mascot img { width: 100%; height: 100%; object-fit: contain; }
 .brand-subtitle { font-size: 12px; letter-spacing: 0.08em; }
 .vault-heading h1 {
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(34px, 3.5vw, 44px);
+  font-size: clamp(40px, 4.4vw, 58px);
   font-weight: 400;
   letter-spacing: -0.025em;
   line-height: 1.15;
 }
 .vault-heading { padding-bottom: 4px; }
-.sidebar-section { border-top: 0; margin-top: 22px; padding-top: 0; }
+.sidebar-section { border-top: 0; margin-top: 24px; padding-top: 0; }
 .nav-label { color: var(--muted); font-size: 12px; letter-spacing: 0.08em; }
 .nav-button { border-radius: 5px; padding-inline: 12px; }
 .nav-button.active {
@@ -43,22 +56,52 @@ body { background: var(--bg); }
   color: var(--text);
 }
 .nav-button.active .nav-count { color: var(--accent-strong); }
+.nav-count { font-size: 12px; opacity: 0.75; }
+.nav-icon { display: none; }
+.vault-sidebar { padding-top: 18px; }
+.vault-count { padding-bottom: 7px; }
 .button { border-radius: 6px; font-weight: 550; }
 .button.primary { color: var(--bg); box-shadow: none; }
 .button.ghost { background: transparent; }
 .search-field input { border-radius: 6px; background: var(--panel); }
 .search-field input::placeholder { color: var(--muted); }
-.saved-search-panel { border-radius: 6px; background: transparent; }
+.saved-search-panel { border: 0; border-radius: 6px; background: transparent; }
+.saved-search-panel summary { font-weight: 500; }
 .saved-search-panel summary span:last-child { border: 0; }
-.vault-tools { border-radius: 0; border-inline: 0; background: transparent; box-shadow: none; }
-.vault-tools > summary { padding-inline: 0; }
-.reference-card { border-radius: 7px; background: var(--panel); }
+.vault-tools { margin-block: 6px 12px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.vault-tools > summary { width: fit-content; min-height: 34px; margin-left: auto; gap: 12px; padding: 4px 2px 4px 14px; }
+.vault-tools > summary strong { color: var(--muted); font-weight: 500; }
+.vault-tools > summary > span:last-child { border: 0; padding: 0; }
+.vault-tools[open] > summary { border: 0; }
+.vault-tools[open] { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.reference-card { border: 0; border-radius: 5px; background: transparent; }
 .reference-card:hover { background: var(--panel-raised); transform: none; }
-.card-copy { padding: 12px 13px 14px; }
-.card-copy h2 { font-weight: 500; }
+.card-copy { padding: 10px 4px 14px; }
+.card-copy h2 { font-size: 13px; font-weight: 500; -webkit-line-clamp: 1; }
+.card-domain { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.reference-card .thumb-wrap { border-radius: 5px; overflow: hidden; }
+.reference-card.selected { box-shadow: 0 0 0 2px var(--accent); }
 .card-meta { color: var(--muted); }
 .batch-select-toggle, .favorite-toggle { border-radius: 5px; }
 .inspector { border-radius: 8px; box-shadow: none; }
+@media (hover: hover) and (pointer: fine) {
+  .reference-card .batch-select-toggle:not(.active),
+  .reference-card .favorite-toggle:not(.active) { opacity: 0; }
+  .reference-card:hover .batch-select-toggle,
+  .reference-card:hover .favorite-toggle,
+  .reference-card:focus-within .batch-select-toggle,
+  .reference-card:focus-within .favorite-toggle { opacity: 1; }
+}
+@media (max-width: 720px) {
+  .vault-sidebar { display: flex; gap: 14px; overflow-x: auto; padding: 8px 2px; margin-bottom: 6px; }
+  .vault-sidebar nav { display: flex; flex: none; gap: 4px; margin: 0; padding: 0; }
+  .vault-sidebar .nav-button { display: flex; width: auto; flex: none; gap: 8px; min-height: 40px; padding: 8px 12px; white-space: nowrap; }
+  .nav-button-label { display: block; font-size: 13px; }
+  .nav-count { font-size: 12px; }
+  .vault-main { padding: 8px 2px 24px; }
+  .brand-mark.archive-mascot { width: 46px; height: 46px; }
+  .brand-name { font-size: 21px; }
+}
 :where(button, a, input, textarea, select, summary):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;

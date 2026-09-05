@@ -30,8 +30,7 @@ export function VaultSidebar({
 }) {
   return (
     <aside className="vault-sidebar" aria-label="Vault navigation">
-      <nav>
-        <p className="nav-label">Review</p>
+      <nav aria-label="Review">
         <VaultNavButton
           label="Inbox"
           count={counts.inbox}
@@ -41,10 +40,9 @@ export function VaultSidebar({
         />
       </nav>
 
-      <nav className="sidebar-section">
-        <p className="nav-label">Library</p>
+      <nav className="sidebar-section" aria-label="Library">
         <VaultNavButton
-          label="Kept"
+          label="Library"
           count={counts.all}
           active={activeView === "all"}
           onClick={() => onChange("all")}
@@ -70,8 +68,7 @@ export function VaultSidebar({
         />
       </nav>
 
-      <nav className="sidebar-section">
-        <p className="nav-label">Workflow</p>
+      <nav className="sidebar-section" aria-label="Workflow">
         <VaultNavButton
           label="Later"
           count={counts.later}
@@ -115,6 +112,7 @@ function VaultNavButton({
     <button
       type="button"
       className={`nav-button ${active ? "active" : ""}`}
+      aria-current={active ? "page" : undefined}
       onClick={onClick}
     >
       <span className="nav-button-label">
@@ -123,7 +121,7 @@ function VaultNavButton({
         </span>
         {label}
       </span>
-      <span className="nav-count">{count}</span>
+      {count > 0 ? <span className="nav-count">{count}</span> : null}
     </button>
   );
 }

@@ -101,7 +101,7 @@ export function SavedSearchPanel({
     <details className="saved-search-panel">
       <summary>
         <span>Saved searches</span>
-        <span>{searches.length}</span>
+        {searches.length > 0 ? <span>{searches.length}</span> : null}
       </summary>
       <form className="saved-search-create" onSubmit={saveCurrent}>
         <input

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useBatchSelectionItem } from "./batchSelection";
 import {
   referenceDisplayTitle,
-  referenceKindLabel,
   referenceMetadataLabel,
   referenceMode,
   type SavedReference,
@@ -68,9 +67,11 @@ export function ReferenceCard({
             kind={reference.kind}
             priority={selected}
           />
-          <span className="kind-badge">
-            {referenceKindLabel(reference.kind)}
-          </span>
+          {reference.assets.length > 1 ? (
+            <span className="kind-badge" aria-label={`${reference.assets.length} images`}>
+              {reference.assets.length}
+            </span>
+          ) : null}
         </div>
         <div className="card-copy">
           {mode === "links" ? (
@@ -109,16 +110,12 @@ export function ReferenceCard({
               {hiddenMatchCount > 0 ? <span>+{hiddenMatchCount}</span> : null}
             </div>
           ) : null}
-          <p className="card-meta">
-            <span>
-              {mode === "links"
-                ? reference.lastOpenedAt
-                  ? "Opened"
-                  : "Unread"
-                : reference.platform}
-            </span>
-            <span>{formatCaptureDate(reference.capturedAt)}</span>
-          </p>
+          {mode === "links" ? (
+            <p className="card-meta">
+              <span>{reference.lastOpenedAt ? "Opened" : "Unread"}</span>
+              <span>{formatCaptureDate(reference.capturedAt)}</span>
+            </p>
+          ) : null}
         </div>
       </button>
       <button
