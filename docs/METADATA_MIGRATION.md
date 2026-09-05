@@ -55,3 +55,22 @@ Validation includes legacy-to-compact reconstruction, shared dictionary and
 recipe reuse, stale migration generation fencing, uint32 boundary handling,
 malformed payload rejection, preservation of corrections/assignments, and the
 separate semantics of clearing an example versus removing a saved tag.
+
+## Air Blue rollout, September 5, 2026
+
+The integrated local-vault build passed 144 Vitest tests, three launcher tests,
+full typechecking and production build. The local backend was deployed and the
+metadata migration completed, assigning one existing saved tag a stable code.
+The archive had no visual-enrichment rows to convert; future submissions use
+the compact representation. A private pre-migration export is retained.
+
+Before/after exports preserve all 18,398 reference records and 20,759 source
+snapshots exactly. The asset count remains 16,582. The existing media pipeline
+completed derivatives for 128 assets during the rollout, adding preview/thumb
+IDs, dimensions and hashes without changing original storage or source locations.
+The local UI is served at http://127.0.0.1:3000 from the integrated production
+build. Cloud deployment is unchanged.
+
+The typography pass changes the archive heading tracking from -0.06em to
+-0.018em and uses a shared 12/13/14px scale for captions, controls and body text,
+with less dense card titles and navigation.

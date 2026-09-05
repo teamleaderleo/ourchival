@@ -1,6 +1,6 @@
 # Personal tags and shared identities
 
-Implemented on the search-first branch; not deployed to the live archive.
+Implemented on the search-first branch and integrated into the Air Blue local vault. See [rollout details](METADATA_MIGRATION.md).
 
 In **Tools → My tag definitions**, create a tag or select an existing tag to
 rename it and describe its meaning. Existing reference and image assignments
@@ -11,9 +11,8 @@ browser's tag catalog update immediately after saving. Other browser sessions
 refresh their catalog on reload.
 
 In an image's inspector, open **Teach a personal tag**, choose a definition, and
-mark each displayed image as an example or counterexample. Clear an accidental
-choice with **Clear example**. Teaching does not silently assign the tag to the
-reference: use the existing saved-tag editor or batch tools for assignments.
+mark each displayed image as an example or counterexample. You can create or edit its definition in this panel, and the selected tag stays with you as you move between images. Clear an accidental
+choice with **Clear example**. Teaching only assigns a saved image tag when you explicitly check the option beside the positive-example button. The existing saved-tag editor and batch tools remain available.
 
 Definitions have versions separate from edit revisions. Renaming alone preserves
 the meaning version. Changing the definition records its new version and keeps
@@ -33,8 +32,7 @@ explicit format upgrade rather than wrapping an ID.
 
 Current reference/image links continue using native Convex IDs. Definitions and
 examples are separate linked records. Names and meanings are not repeated on
-each example. No bulk migration, existing machine-result rewrite, full model
-recipe normalization, or live database compaction has been performed.
+each example. The resumable metadata migration assigns missing codes and converts legacy machine results. New machine results now use a shared term dictionary and shared model records; see the migration guide for compatibility details.
 
 `workers/visual/tag_codec.py` supplies a tested opt-in binary format for sparse
 code/score payloads: a versioned header, count, sorted uint32 IDs and float64
@@ -78,7 +76,7 @@ are made by these interfaces.
 
 ## Validation
 
-134 repository tests, 45 Python tests, full typechecking and the production build
+137 archive-branch repository tests, 45 Python tests, full typechecking and the production build
 passed. Integration coverage includes
 rename/assignment preservation, aliases in search, collision rejection, stale
 edit rejection, definition history, stale-example exclusion, clearing examples,
