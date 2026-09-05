@@ -71,6 +71,15 @@ IDs, dimensions and hashes without changing original storage or source locations
 The local UI is served at http://127.0.0.1:3000 from the integrated production
 build. Cloud deployment is unchanged.
 
+Archive-wide search backfill completed and reports ready. The signed-in live
+gallery loaded 48 cards with no alert state during verification.
+
 The typography pass changes the archive heading tracking from -0.06em to
 -0.018em and uses a shared 12/13/14px scale for captions, controls and body text,
 with less dense card titles and navigation.
+
+The following studio pass introduces warm charcoal surfaces, ivory serif archive
+headings, a clay accent, flatter tools, and simpler navigation and card outlines.
+It keeps functional labels at least 12px and adds consistent keyboard focus.
+See [the storage ledger](METADATA_STORAGE.md) for measured payload savings and
+the separate live migration baseline.
