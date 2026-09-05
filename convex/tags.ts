@@ -5,8 +5,8 @@ import {
   ensureTag,
   getTagsByIds,
   listTags,
-  updateReferenceTags,
   updateAssetTags,
+  updateReferenceTags,
   normalizeTagName,
   slugifyTagName,
 } from "./lib/tags";
@@ -292,5 +292,34 @@ export const updateReferences = mutation({
     }
 
     return { updated };
+  },
+});
+
+export const listForAsset = query({
+  args: {
+    accessKey: v.string(),
+    assetId: v.id("assets"),
+  },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    const asset = await ctx.db.get(args.assetId);
+    if (!asset) return [];
+    return await getTagsByIds(ctx, asset.tagIds ?? []);
+  },
+});
+
+export const updateAsset = mutation({
+  args: {
+    accessKey: v.string(),
+    assetId: v.id("assets"),
+    addNames: v.array(v.string()),
+    removeIds: v.array(v.id("tags")),
+  },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    return await updateAssetTags(ctx, args.assetId, {
+      addNames: args.addNames,
+      removeIds: args.removeIds.map(String),
+    });
   },
 });

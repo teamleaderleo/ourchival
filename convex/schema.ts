@@ -131,9 +131,12 @@ export default defineSchema({
     previewStorageId: v.optional(v.id("_storage")),
     thumbStorageId: v.optional(v.id("_storage")),
     originalUrl: v.optional(v.string()),
+    sourceIndex: v.optional(v.number()),
+    sourceCount: v.optional(v.number()),
     altText: v.optional(v.string()),
     notes: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
+    jsonMetadata: v.optional(v.string()),
     driveFileId: v.optional(v.string()),
     driveFolderId: v.optional(v.string()),
     driveWebViewLink: v.optional(v.string()),
@@ -342,6 +345,9 @@ export default defineSchema({
     duplicateCount: v.number(),
     skippedCount: v.number(),
     failedCount: v.number(),
+    discoveredCount: v.optional(v.number()),
+    renderedCount: v.optional(v.number()),
+    archivedCount: v.optional(v.number()),
     status: v.union(
       v.literal("running"),
       v.literal("completed"),
@@ -360,6 +366,27 @@ export default defineSchema({
   })
     .index("by_session_key", ["sessionKey"])
     .index("by_updated_at", ["updatedAt"]),
+
+  captureObservations: defineTable({
+    sessionKey: v.string(),
+    source: v.string(),
+    providerId: v.string(),
+    sourceUrl: v.optional(v.string()),
+    status: v.union(
+      v.literal("discovered"),
+      v.literal("rendered"),
+      v.literal("archived"),
+      v.literal("failed"),
+    ),
+    error: v.optional(v.string()),
+    discoveredAt: v.number(),
+    renderedAt: v.optional(v.number()),
+    archivedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_session_key_and_provider_id", ["sessionKey", "providerId"])
+    .index("by_session_key_and_status", ["sessionKey", "status"])
+    .index("by_source_and_provider_id", ["source", "providerId"]),
 
   clipperPairingGrants: defineTable({
     codeHash: v.string(),

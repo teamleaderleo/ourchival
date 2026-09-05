@@ -4,6 +4,13 @@ import {
   type XDomSnapshot,
 } from "@ourchival/parsers";
 import type { PageSnapshot } from "@ourchival/shared";
+import {
+  detectSourceIntakeContext,
+  type SourceIntakeChunk,
+  type SourceIntakeItem,
+  type SourceIntakeProvider,
+} from "./sourceIntake";
+import { xTimelineAuditChannel } from "./xTimelineAudit";
 
 type ContextCapture = {
   pageTitle: string;
@@ -20,10 +27,187 @@ let stopXLikesImport = false;
 let positionedXLikesCursor: string | undefined;
 let positionedXLikesImportId: string | undefined;
 const observedXLikesSources = new Set<string>();
+const networkXLikesPostIds = new Set<string>();
+const unparseableXLikesArticles = new Set<string>();
+let networkXLikesPages = 0;
+let activeXLikesIdentity: { importId: string; profileUrl: string } | undefined;
+const pendingXLikesObservations = new Map<
+  string,
+  {
+    providerId: string;
+    sourceUrl?: string;
+    stage: "discovered" | "rendered" | "archived";
+  }
+>();
+let xLikesObservationTimer: number | undefined;
+let xLikesObservationFlush = Promise.resolve();
 
-const xLikesChunkSize = 12;
-const xLikesIdleRoundLimit = 12;
+const xLikesChunkSize = 24;
+const xLikesIdleRoundLimit = 80;
 const xLikesRoundLimit = 5_000;
+const xKnownBoundarySize = 24;
+const archiveBadgeSelector = "[data-ourchival-archive-badge]";
+const pendingLiveLikes = new Set<string>();
+let archiveBadgeTimer: number | undefined;
+let activeSourceIntake: Promise<void> | undefined;
+let stopSourceIntake = false;
+
+window.addEventListener("message", (event) => {
+  if (
+    event.source !== window ||
+    event.origin !== location.origin ||
+    event.data?.channel !== xTimelineAuditChannel ||
+    event.data?.kind !== "timeline_page" ||
+    !Array.isArray(event.data.postIds)
+  ) {
+    return;
+  }
+  networkXLikesPages += 1;
+  for (const postId of event.data.postIds.slice(0, 200)) {
+    if (typeof postId === "string" && /^\d+$/.test(postId)) {
+      networkXLikesPostIds.add(postId);
+      queueXLikesObservation({ providerId: postId, stage: "discovered" });
+    }
+  }
+});
+
+function queueXLikesObservation(observation: {
+  providerId: string;
+  sourceUrl?: string;
+  stage: "discovered" | "rendered" | "archived";
+}) {
+  if (!activeXLikesIdentity) return;
+  const existing = pendingXLikesObservations.get(observation.providerId);
+  const rank = { discovered: 0, rendered: 1, archived: 2 } as const;
+  if (!existing || rank[observation.stage] >= rank[existing.stage]) {
+    pendingXLikesObservations.set(observation.providerId, {
+      ...existing,
+      ...observation,
+      sourceUrl: observation.sourceUrl ?? existing?.sourceUrl,
+    });
+  }
+  if (xLikesObservationTimer !== undefined) return;
+  xLikesObservationTimer = window.setTimeout(() => {
+    xLikesObservationTimer = undefined;
+    void flushXLikesObservations();
+  }, 350);
+}
+
+async function flushXLikesObservations() {
+  xLikesObservationFlush = xLikesObservationFlush
+    .catch(() => undefined)
+    .then(async () => {
+      while (activeXLikesIdentity && pendingXLikesObservations.size > 0) {
+        const observations = Array.from(
+          pendingXLikesObservations.values(),
+        ).slice(0, 200);
+        for (const observation of observations) {
+          pendingXLikesObservations.delete(observation.providerId);
+        }
+        const response = (await chrome.runtime
+          .sendMessage({
+            type: "OURCHIVAL_X_LIKES_OBSERVED",
+            ...activeXLikesIdentity,
+            observations,
+          })
+          .catch(() => undefined)) as { ok?: boolean } | undefined;
+        if (!response?.ok) {
+          for (const observation of observations) {
+            queueXLikesObservation(observation);
+          }
+          break;
+        }
+      }
+    });
+  await xLikesObservationFlush;
+}
+
+if (isXPage()) {
+  const observer = new MutationObserver(() => scheduleArchiveBadgeRefresh());
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+  scheduleArchiveBadgeRefresh();
+}
+
+function scheduleArchiveBadgeRefresh() {
+  if (activeXLikesImport) return;
+  if (archiveBadgeTimer !== undefined) window.clearTimeout(archiveBadgeTimer);
+  archiveBadgeTimer = window.setTimeout(() => {
+    archiveBadgeTimer = undefined;
+    void refreshArchiveBadges();
+  }, 250);
+}
+
+async function refreshArchiveBadges() {
+  if (activeXLikesImport) return;
+  const articles = Array.from(
+    document.querySelectorAll<HTMLElement>("article"),
+  );
+  const articlesBySource = new Map<string, HTMLElement[]>();
+  for (const article of articles) {
+    const parsed = parseXSnapshot(snapshotXArticle(article, undefined));
+    if (!parsed.postId || !/\/status\/\d+$/i.test(parsed.sourceUrl)) continue;
+    if (article.dataset.ourchivalSourceUrl !== parsed.sourceUrl) {
+      article.querySelector(archiveBadgeSelector)?.remove();
+      article.dataset.ourchivalSourceUrl = parsed.sourceUrl;
+      delete article.dataset.ourchivalArchiveStatus;
+    }
+    if (article.dataset.ourchivalArchiveStatus) continue;
+    const matching = articlesBySource.get(parsed.sourceUrl) ?? [];
+    matching.push(article);
+    articlesBySource.set(parsed.sourceUrl, matching);
+  }
+  if (articlesBySource.size === 0) return;
+
+  const response = (await chrome.runtime
+    .sendMessage({
+      type: "OURCHIVAL_REFERENCE_STATUS",
+      sourceUrls: Array.from(articlesBySource.keys()).slice(0, 80),
+    })
+    .catch(() => undefined)) as
+    { ok?: boolean; indexedSourceUrls?: string[] } | undefined;
+  if (!response?.ok) return;
+  const indexed = new Set(response.indexedSourceUrls ?? []);
+  for (const [sourceUrl, matchingArticles] of articlesBySource) {
+    for (const article of matchingArticles) {
+      if (article.dataset.ourchivalSourceUrl !== sourceUrl) continue;
+      const isIndexed = indexed.has(sourceUrl);
+      article.dataset.ourchivalArchiveStatus = isIndexed
+        ? "indexed"
+        : "missing";
+      if (isIndexed) ensureArchiveBadge(article);
+    }
+  }
+}
+
+function ensureArchiveBadge(article: HTMLElement) {
+  if (article.querySelector(archiveBadgeSelector)) return;
+  const anchor = article.querySelector<HTMLElement>(
+    '[data-testid="User-Name"]',
+  );
+  if (!anchor) return;
+  const badge = document.createElement("span");
+  badge.dataset.ourchivalArchiveBadge = "true";
+  badge.textContent = "✦ Archived";
+  badge.title = "This post is saved in Ourchival";
+  badge.style.cssText = [
+    "display:inline-flex",
+    "align-items:center",
+    "margin-left:6px",
+    "padding:1px 6px",
+    "border:1px solid rgba(196,181,253,.62)",
+    "border-radius:999px",
+    "background:rgba(139,92,246,.16)",
+    "color:rgb(216,205,255)",
+    "font:600 11px/16px system-ui,sans-serif",
+    "letter-spacing:.01em",
+    "white-space:nowrap",
+    "pointer-events:none",
+  ].join(";");
+  anchor.append(badge);
+}
 
 function snapshotPage(): PageSnapshot {
   const images = Array.from(document.images).map((image) => ({
@@ -155,7 +339,17 @@ document.addEventListener(
             ? { clickedAssetUrl: parsedSource.clickedAssetUrl }
             : {}),
           parsedSource,
-          rawMetadata: JSON.stringify(snapshot),
+          rawMetadata: JSON.stringify({
+            provenance: "ourchival-clipper:x-context",
+            sourceKind: "x_post",
+            ...(parsedSource.textLanguage
+              ? { textLanguage: parsedSource.textLanguage }
+              : {}),
+            ...(parsedSource.engagement
+              ? { engagement: parsedSource.engagement }
+              : {}),
+            snapshot,
+          }),
         };
         return;
       }
@@ -173,7 +367,71 @@ document.addEventListener(
   true,
 );
 
+document.addEventListener(
+  "click",
+  (event) => {
+    if (!isXPage() || !(event.target instanceof Element)) return;
+    const likeButton = event.target.closest<HTMLElement>(
+      '[data-testid="like"]',
+    );
+    const article = likeButton?.closest<HTMLElement>("article");
+    if (!likeButton || !article) return;
+    const snapshot = snapshotXArticle(article, undefined);
+    const parsed = parseXSnapshot(snapshot);
+    if (!parsed.postId || pendingLiveLikes.has(parsed.sourceUrl)) return;
+    pendingLiveLikes.add(parsed.sourceUrl);
+    window.setTimeout(() => {
+      void (async () => {
+        try {
+          if (!article.querySelector('[data-testid="unlike"]')) return;
+          const response = (await chrome.runtime.sendMessage({
+            type: "OURCHIVAL_CAPTURE_X_LIKE",
+            snapshot,
+          })) as { ok?: boolean; sourceUrl?: string } | undefined;
+          if (!response?.ok) return;
+          article.dataset.ourchivalSourceUrl = parsed.sourceUrl;
+          article.dataset.ourchivalArchiveStatus = "indexed";
+          ensureArchiveBadge(article);
+        } catch {
+          delete article.dataset.ourchivalArchiveStatus;
+          scheduleArchiveBadgeRefresh();
+        } finally {
+          pendingLiveLikes.delete(parsed.sourceUrl);
+        }
+      })();
+    }, 450);
+  },
+  true,
+);
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "OURCHIVAL_START_SOURCE_INTAKE") {
+    if (activeSourceIntake) {
+      sendResponse({ ok: true, alreadyRunning: true });
+      return;
+    }
+    const provider = message.provider as SourceIntakeProvider;
+    if (provider !== "pixiv_bookmarks" && provider !== "pinterest_board") {
+      sendResponse({ ok: false, error: "Unsupported source intake." });
+      return;
+    }
+    stopSourceIntake = false;
+    activeSourceIntake = runSourceIntake(
+      String(message.importId ?? ""),
+      provider,
+    ).finally(() => {
+      activeSourceIntake = undefined;
+    });
+    sendResponse({ ok: true, started: true });
+    return;
+  }
+
+  if (message?.type === "OURCHIVAL_STOP_SOURCE_INTAKE") {
+    stopSourceIntake = true;
+    sendResponse({ ok: true });
+    return;
+  }
+
   if (message?.type === "OURCHIVAL_SNAPSHOT_PAGE") {
     sendResponse(snapshotPage());
     return;
@@ -195,20 +453,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       positionedXLikesImportId = importId;
       positionedXLikesCursor = undefined;
       observedXLikesSources.clear();
+      unparseableXLikesArticles.clear();
     }
     activeXLikesImport = runXLikesImport({
       importId,
       profileUrl: String(message.profileUrl ?? ""),
+      stopAtKnownBoundary: message.stopAtKnownBoundary === true,
       resumeAfterSourceUrl:
         typeof message.resumeAfterSourceUrl === "string"
           ? message.resumeAfterSourceUrl
           : undefined,
+      resumeFromCurrentPosition: message.resumeFromCurrentPosition === true,
     })
       .catch(() => {
         // runXLikesImport reports its own bounded error state to the worker.
       })
       .finally(() => {
         activeXLikesImport = undefined;
+        scheduleArchiveBadgeRefresh();
       });
     sendResponse({ ok: true, started: true });
     return;
@@ -221,28 +483,270 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
+async function runSourceIntake(
+  importId: string,
+  provider: SourceIntakeProvider,
+) {
+  if (!importId) return;
+  while (!stopSourceIntake) {
+    const chunk =
+      provider === "pixiv_bookmarks"
+        ? await scanPixivBookmarksPage()
+        : await scanPinterestBoardChunk();
+    const response = (await chrome.runtime.sendMessage({
+      type: "OURCHIVAL_SOURCE_INTAKE_CHUNK",
+      importId,
+      chunk,
+    })) as
+      | { ok?: boolean; continue?: boolean; nextUrl?: string; error?: string }
+      | undefined;
+    if (!response?.ok || !response.continue || stopSourceIntake) return;
+    if (response.nextUrl && response.nextUrl !== location.href) {
+      location.assign(response.nextUrl);
+      return;
+    }
+    if (provider === "pixiv_bookmarks") return;
+    await wait(200);
+  }
+}
+
+async function scanPixivBookmarksPage(): Promise<SourceIntakeChunk> {
+  const context = detectSourceIntakeContext(location.href);
+  if (context?.provider !== "pixiv_bookmarks") {
+    throw new Error("Open a Pixiv artwork-bookmarks page before importing.");
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (document.querySelector('a[href*="/artworks/"]')) break;
+    await wait(250);
+  }
+
+  const page = Number(context.cursor.replace("page:", "")) || 1;
+  const items = new Map<string, SourceIntakeItem>();
+  const scope = document.querySelector("main") ?? document.body;
+  for (const anchor of Array.from(
+    scope.querySelectorAll<HTMLAnchorElement>('a[href*="/artworks/"]'),
+  )) {
+    const url = absoluteHttpUrl(anchor.href);
+    const providerId = url?.match(/\/artworks\/(\d+)/)?.[1];
+    if (!url || !providerId || items.has(providerId)) continue;
+    const card = closestArtworkCard(anchor);
+    const sameWorkLinks = Array.from(
+      card.querySelectorAll<HTMLAnchorElement>(
+        `a[href*="/artworks/${providerId}"]`,
+      ),
+    );
+    const image = card.querySelector<HTMLImageElement>("img");
+    const title = firstText(
+      image?.alt,
+      ...sameWorkLinks.map((link) => link.textContent?.trim()),
+      anchor.getAttribute("aria-label") ?? undefined,
+    );
+    const author = card.querySelector<HTMLAnchorElement>('a[href*="/users/"]');
+    const pageCount = confidentPageCount(card);
+    const authorName = firstText(author?.textContent?.trim());
+    const authorUrl = absoluteHttpUrl(author?.href);
+    const previewImageUrl = absoluteHttpUrl(image?.currentSrc || image?.src);
+    items.set(providerId, {
+      providerId,
+      sourceUrl: `https://www.pixiv.net/en/artworks/${providerId}`,
+      ...(title ? { title } : {}),
+      ...(authorName ? { authorName } : {}),
+      ...(authorUrl ? { authorUrl } : {}),
+      ...(previewImageUrl ? { previewImageUrl } : {}),
+      ...(pageCount ? { pageCount } : {}),
+      sensitive: isExplicitArtworkCard(card) ? "explicit" : "general",
+      metadata: {
+        page,
+        rest: new URL(location.href).searchParams.get("rest") ?? "show",
+        mode: new URL(location.href).searchParams.get("mode") ?? "all",
+      },
+    });
+  }
+
+  const nextUrl = pixivNextPageUrl(context.sourceUrl, page + 1);
+  const hasNext = Array.from(
+    document.querySelectorAll<HTMLAnchorElement>("a[href]"),
+  ).some((anchor) => sameUrlIgnoringOrder(anchor.href, nextUrl));
+  const reportedCount = reportedPixivCount(document.body.innerText);
+  return {
+    provider: "pixiv_bookmarks",
+    sourceUrl: context.sourceUrl,
+    currentUrl: location.href,
+    cursor: context.cursor,
+    items: Array.from(items.values()),
+    ...(hasNext ? { nextUrl } : {}),
+    ...(reportedCount ? { reportedCount } : {}),
+    exhausted: !hasNext,
+  };
+}
+
+async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
+  const context = detectSourceIntakeContext(location.href);
+  if (context?.provider !== "pinterest_board") {
+    throw new Error("Open one Pinterest board before importing.");
+  }
+  const items = new Map<string, SourceIntakeItem>();
+  let stagnantBottomRounds = 0;
+  for (let round = 0; round < 10 && !stopSourceIntake; round += 1) {
+    const before = items.size;
+    for (const anchor of Array.from(
+      document.querySelectorAll<HTMLAnchorElement>('a[href*="/pin/"]'),
+    )) {
+      const providerId = anchor.href.match(/\/pin\/(\d+)/)?.[1];
+      if (!providerId || items.has(providerId)) continue;
+      const card = closestPinterestCard(anchor);
+      const image = card.querySelector<HTMLImageElement>("img");
+      const title = firstText(
+        anchor.getAttribute("aria-label")?.replace(/\s+pin page$/i, ""),
+        image?.alt,
+      );
+      const previewImageUrl = absoluteHttpUrl(image?.currentSrc || image?.src);
+      items.set(providerId, {
+        providerId,
+        sourceUrl: `${location.origin}/pin/${providerId}/`,
+        ...(title ? { title } : {}),
+        ...(previewImageUrl ? { previewImageUrl } : {}),
+        sensitive: "unknown",
+        metadata: { boardUrl: context.sourceUrl },
+      });
+    }
+    const atBottom =
+      window.scrollY + window.innerHeight >=
+      document.documentElement.scrollHeight - 4;
+    stagnantBottomRounds =
+      atBottom && items.size === before ? stagnantBottomRounds + 1 : 0;
+    if (stagnantBottomRounds >= 2) break;
+    window.scrollBy(0, Math.max(480, Math.floor(window.innerHeight * 0.8)));
+    await wait(500);
+  }
+  const exhausted =
+    window.scrollY + window.innerHeight >=
+      document.documentElement.scrollHeight - 4 && stagnantBottomRounds >= 2;
+  const countMatch = document.body.innerText.match(/([\d,]+)\s+Pins\b/i);
+  const reportedCount = countMatch?.[1]
+    ? Number(countMatch[1].replaceAll(",", ""))
+    : undefined;
+  return {
+    provider: "pinterest_board",
+    sourceUrl: context.sourceUrl,
+    currentUrl: location.href,
+    cursor: `scroll:${Math.round(window.scrollY)}`,
+    items: Array.from(items.values()),
+    ...(reportedCount ? { reportedCount } : {}),
+    exhausted,
+  };
+}
+
+function closestArtworkCard(anchor: HTMLAnchorElement) {
+  return (
+    anchor.closest<HTMLElement>("li") ??
+    anchor.closest<HTMLElement>('div[role="listitem"]') ??
+    anchor.parentElement?.parentElement?.parentElement ??
+    anchor.parentElement ??
+    anchor
+  );
+}
+
+function closestPinterestCard(anchor: HTMLAnchorElement) {
+  return (
+    anchor.closest<HTMLElement>('[data-grid-item="true"]') ??
+    anchor.closest<HTMLElement>('div[role="listitem"]') ??
+    anchor.parentElement?.parentElement?.parentElement ??
+    anchor.parentElement ??
+    anchor
+  );
+}
+
+function confidentPageCount(card: Element) {
+  const labelled = Array.from(
+    card.querySelectorAll<HTMLElement>("[aria-label], [title]"),
+  )
+    .map((element) =>
+      firstText(element.getAttribute("aria-label") ?? undefined, element.title),
+    )
+    .find((value) => /\b\d+\s+(pages?|images?)\b/i.test(value ?? ""));
+  const match = labelled?.match(/\b(\d+)\s+(?:pages?|images?)\b/i);
+  const count = match?.[1] ? Number(match[1]) : undefined;
+  return count && Number.isSafeInteger(count) && count > 1 ? count : undefined;
+}
+
+function isExplicitArtworkCard(card: Element) {
+  if (/\bR-18\b/i.test(card.textContent ?? "")) return true;
+  return Array.from(
+    card.querySelectorAll<HTMLElement>("[aria-label], [title], img[alt]"),
+  )
+    .map((element) =>
+      firstText(
+        element.getAttribute("aria-label") ?? undefined,
+        element.getAttribute("title") ?? undefined,
+        element.getAttribute("alt") ?? undefined,
+      ),
+    )
+    .some((value) => /\bR-18\b/i.test(value ?? ""));
+}
+
+function pixivNextPageUrl(sourceUrl: string, page: number) {
+  const next = new URL(sourceUrl);
+  next.searchParams.set("p", String(page));
+  return next.toString();
+}
+
+function sameUrlIgnoringOrder(left: string, right: string) {
+  try {
+    const a = new URL(left);
+    const b = new URL(right);
+    if (a.origin !== b.origin || a.pathname !== b.pathname) return false;
+    return (
+      Array.from(a.searchParams.entries()).sort().toString() ===
+      Array.from(b.searchParams.entries()).sort().toString()
+    );
+  } catch {
+    return false;
+  }
+}
+
+function reportedPixivCount(text: string) {
+  const match = text.match(/Illustrations and Manga\s+([\d,]+)/i);
+  const count = match?.[1] ? Number(match[1].replaceAll(",", "")) : undefined;
+  return count && Number.isSafeInteger(count) ? count : undefined;
+}
+
 async function runXLikesImport(args: {
   importId: string;
   profileUrl: string;
+  stopAtKnownBoundary?: boolean;
   resumeAfterSourceUrl?: string;
+  resumeFromCurrentPosition?: boolean;
 }) {
   const seen = new Set(observedXLikesSources);
   let pending: XDomSnapshot[] = [];
   let idleRounds = 0;
+  let consecutiveKnown = 0;
+  let lastBottomSourceUrl: string | undefined;
+  let lastScrollHeight = 0;
   let lastSourceUrl = args.resumeAfterSourceUrl;
   let seekingCursor = Boolean(
     args.resumeAfterSourceUrl &&
+    !args.resumeFromCurrentPosition &&
     positionedXLikesCursor !== args.resumeAfterSourceUrl,
   );
   let stopReason:
-    "paused" | "timeline_end" | "round_limit" | "cursor_not_found" | "error" =
-    "round_limit";
+    | "paused"
+    | "known_boundary"
+    | "stalled"
+    | "timeline_end"
+    | "round_limit"
+    | "cursor_not_found"
+    | "error" = "round_limit";
   let finishMessage: string | undefined;
 
   try {
     if (
       !isXPage() ||
-      !/^\/[A-Za-z0-9_]{1,15}\/likes\/?$/i.test(location.pathname)
+      !(
+        /^\/[A-Za-z0-9_]{1,15}\/likes\/?$/i.test(location.pathname) ||
+        /^\/i\/history\/likes\/?$/i.test(location.pathname)
+      )
     ) {
       throw new Error("Open your X profile Likes page before importing.");
     }
@@ -254,6 +758,10 @@ async function runXLikesImport(args: {
         "The X Likes import checkpoint does not match this page.",
       );
     }
+    activeXLikesIdentity = {
+      importId: args.importId,
+      profileUrl: args.profileUrl,
+    };
     if (!args.resumeAfterSourceUrl) {
       window.scrollTo({ top: 0 });
       await wait(400);
@@ -265,13 +773,31 @@ async function runXLikesImport(args: {
         break;
       }
 
-      let discoveredThisRound = 0;
-      const articles = Array.from(document.querySelectorAll("article"));
+      let visibleBottomSourceUrl: string | undefined;
+      const candidates: Array<{
+        article: HTMLElement;
+        snapshot: XDomSnapshot;
+        parsed: ParsedXSource;
+      }> = [];
+      const articles = Array.from(
+        document.querySelectorAll<HTMLElement>("article"),
+      );
       for (const article of articles) {
         const snapshot = snapshotXArticle(article, undefined);
         const parsed = parseXSnapshot(snapshot);
-        if (!parsed.postId || !/\/status\/\d+$/i.test(parsed.sourceUrl))
+        if (!parsed.postId || !/\/status\/\d+$/i.test(parsed.sourceUrl)) {
+          if (article.querySelector('[data-testid="User-Name"]')) {
+            unparseableXLikesArticles.add(articleFingerprint(article));
+          }
           continue;
+        }
+        visibleBottomSourceUrl = parsed.sourceUrl;
+        observedXLikesSources.add(parsed.sourceUrl);
+        queueXLikesObservation({
+          providerId: parsed.postId,
+          sourceUrl: parsed.sourceUrl,
+          stage: "rendered",
+        });
 
         if (seekingCursor) {
           if (parsed.sourceUrl === args.resumeAfterSourceUrl) {
@@ -283,11 +809,38 @@ async function runXLikesImport(args: {
         if (parsed.sourceUrl === args.resumeAfterSourceUrl) continue;
         if (seen.has(parsed.sourceUrl)) continue;
         seen.add(parsed.sourceUrl);
-        observedXLikesSources.add(parsed.sourceUrl);
-        pending.push(snapshot);
-        discoveredThisRound += 1;
-        lastSourceUrl = parsed.sourceUrl;
+        candidates.push({ article, snapshot, parsed });
+      }
 
+      const indexed = await queryIndexedSourceUrls(
+        candidates.map(({ parsed }) => parsed.sourceUrl),
+      );
+      for (const { parsed } of candidates) {
+        if (indexed.has(parsed.sourceUrl)) {
+          queueXLikesObservation({
+            providerId: parsed.postId!,
+            sourceUrl: parsed.sourceUrl,
+            stage: "archived",
+          });
+        }
+      }
+      const knownOnlyRound =
+        candidates.length > 0 && indexed.size === candidates.length;
+      for (const { article, snapshot, parsed } of candidates) {
+        if (article.isConnected) {
+          article.dataset.ourchivalSourceUrl = parsed.sourceUrl;
+          article.dataset.ourchivalArchiveStatus = indexed.has(parsed.sourceUrl)
+            ? "indexed"
+            : "missing";
+          if (indexed.has(parsed.sourceUrl)) ensureArchiveBadge(article);
+        }
+        lastSourceUrl = parsed.sourceUrl;
+        if (indexed.has(parsed.sourceUrl)) {
+          consecutiveKnown += 1;
+          continue;
+        }
+        consecutiveKnown = 0;
+        pending.push(snapshot);
         if (pending.length >= xLikesChunkSize) {
           await sendXLikesChunk(args, pending, lastSourceUrl);
           positionedXLikesCursor = lastSourceUrl;
@@ -295,18 +848,64 @@ async function runXLikesImport(args: {
         }
       }
 
-      idleRounds = discoveredThisRound === 0 ? idleRounds + 1 : 0;
-      if (!seekingCursor && idleRounds >= xLikesIdleRoundLimit) {
-        stopReason = "timeline_end";
+      if (args.stopAtKnownBoundary && consecutiveKnown >= xKnownBoundarySize) {
+        stopReason = "known_boundary";
+        finishMessage = "Caught up at posts already archived in Ourchival.";
         break;
       }
-      window.scrollBy({
-        top: Math.max(520, Math.floor(window.innerHeight * 0.82)),
-      });
-      await wait(700);
+
+      const scrollHeight = document.documentElement.scrollHeight;
+      const stableBottom =
+        visibleBottomSourceUrl === lastBottomSourceUrl &&
+        scrollHeight === lastScrollHeight;
+      idleRounds = candidates.length === 0 && stableBottom ? idleRounds + 1 : 0;
+      lastBottomSourceUrl = visibleBottomSourceUrl;
+      lastScrollHeight = scrollHeight;
+      const nearBottom =
+        window.scrollY + window.innerHeight >= scrollHeight - 240;
+      const loading = Boolean(document.querySelector('[role="progressbar"]'));
+      if (
+        !seekingCursor &&
+        idleRounds >= xLikesIdleRoundLimit &&
+        nearBottom &&
+        !loading
+      ) {
+        stopReason = "stalled";
+        finishMessage =
+          "X stopped yielding new Likes after repeated recovery probes. Your checkpoint is safe; continue from this position to look for older posts.";
+        break;
+      }
+      if (idleRounds >= 4 && idleRounds % 8 === 0) {
+        // X virtualizes its timeline and can stop responding when repeatedly
+        // assigned the exact same bottom position. Pulse upward, then cross the
+        // old boundary again so its intersection observers request more rows.
+        window.scrollBy({ top: -Math.max(360, window.innerHeight * 0.45) });
+        await wait(220);
+        window.scrollBy({ top: Math.max(900, window.innerHeight * 1.15) });
+      } else if (idleRounds >= 4 && idleRounds % 4 === 0) {
+        const lastArticle = articles.at(-1);
+        lastArticle?.scrollIntoView({ block: "end" });
+        window.scrollBy({ top: Math.max(480, window.innerHeight * 0.6) });
+      } else if (idleRounds >= 4) {
+        window.scrollTo({ top: document.documentElement.scrollHeight });
+      } else {
+        window.scrollBy({
+          top: Math.max(
+            620,
+            Math.floor(window.innerHeight * (seekingCursor ? 1.2 : 0.82)),
+          ),
+        });
+      }
+      await wait(
+        seekingCursor
+          ? 350
+          : knownOnlyRound && idleRounds === 0
+            ? 300
+            : Math.min(1_600, 600 + idleRounds * 20),
+      );
     }
 
-    if (seekingCursor) {
+    if (seekingCursor && stopReason !== "paused") {
       stopReason = "cursor_not_found";
       finishMessage =
         "The saved Likes cursor was not found. Leave the Likes page at the last imported position and continue again.";
@@ -320,6 +919,11 @@ async function runXLikesImport(args: {
     finishMessage =
       error instanceof Error ? error.message : "The X Likes import stopped.";
   } finally {
+    if (xLikesObservationTimer !== undefined) {
+      window.clearTimeout(xLikesObservationTimer);
+      xLikesObservationTimer = undefined;
+    }
+    await flushXLikesObservations();
     await chrome.runtime.sendMessage({
       type: "OURCHIVAL_X_LIKES_FINISHED",
       importId: args.importId,
@@ -327,8 +931,28 @@ async function runXLikesImport(args: {
       stopReason,
       ...(lastSourceUrl ? { lastSourceUrl } : {}),
       ...(finishMessage ? { message: finishMessage } : {}),
+      audit: {
+        networkPages: networkXLikesPages,
+        networkPostIds: Array.from(networkXLikesPostIds).slice(0, 20_000),
+        observedSourceUrls: Array.from(observedXLikesSources).slice(0, 20_000),
+        unparseableArticles: unparseableXLikesArticles.size,
+        truncated:
+          networkXLikesPostIds.size > 20_000 ||
+          observedXLikesSources.size > 20_000,
+      },
     });
+    activeXLikesIdentity = undefined;
   }
+}
+
+function articleFingerprint(article: Element) {
+  const value = `${article.textContent ?? ""}|${article.querySelector("a")?.getAttribute("href") ?? ""}`;
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 async function sendXLikesChunk(
@@ -348,6 +972,20 @@ async function sendXLikesChunk(
       response?.error || "Ourchival could not save this Likes chunk.",
     );
   }
+}
+
+async function queryIndexedSourceUrls(sourceUrls: string[]) {
+  if (sourceUrls.length === 0) return new Set<string>();
+  const response = (await chrome.runtime
+    .sendMessage({
+      type: "OURCHIVAL_REFERENCE_STATUS",
+      sourceUrls: sourceUrls.slice(0, 80),
+    })
+    .catch(() => undefined)) as
+    { ok?: boolean; indexedSourceUrls?: string[] } | undefined;
+  return response?.ok
+    ? new Set(response.indexedSourceUrls ?? [])
+    : new Set<string>();
 }
 
 function wait(milliseconds: number) {
@@ -376,18 +1014,38 @@ function snapshotXArticle(
   const articleText = article
     .querySelector<HTMLElement>('[data-testid="tweetText"]')
     ?.innerText.trim();
+  const textLanguage = article
+    .querySelector<HTMLElement>('[data-testid="tweetText"]')
+    ?.getAttribute("lang")
+    ?.trim();
   const timestamp =
     article.querySelector<HTMLTimeElement>("time[datetime]")?.dateTime;
+  const engagementLabels = Array.from(
+    article.querySelectorAll<HTMLElement>("[aria-label]"),
+  )
+    .map((element) => element.getAttribute("aria-label")?.trim())
+    .filter((label): label is string =>
+      Boolean(
+        label &&
+        /\d[\d,.]*\s*[KMB]?\s+(?:repl(?:y|ies)|reposts?|retweets?|quotes?|likes?|bookmarks?|views?)\b/i.test(
+          label,
+        ),
+      ),
+    )
+    .filter((label, index, labels) => labels.indexOf(label) === index)
+    .slice(0, 24);
 
   return {
     pageUrl: location.href,
     pageTitle: document.title,
     ...(articleText ? { articleText } : {}),
+    ...(textLanguage ? { textLanguage } : {}),
     ...(userNameText ? { userNameText } : {}),
     ...(clickedImage
       ? { clickedImageUrl: clickedImage.currentSrc || clickedImage.src }
       : {}),
     ...(timestamp ? { timestamp } : {}),
+    ...(engagementLabels.length > 0 ? { engagementLabels } : {}),
     links,
     images,
   };

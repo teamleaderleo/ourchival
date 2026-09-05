@@ -44,7 +44,31 @@ Right-click page  → page/link reference
 X profile Likes   → bounded, sourced post/image batch
 ```
 
-Link saves are metadata-only. X Likes imports preserve the canonical post, author/handle, text, timestamp, and provenance; when media is present, the first normalized original image enters the existing private Drive pipeline. Imports are tagged `X Likes` and deduplicated by the existing source, canonical URL, asset URL, and hash mechanisms.
+Link saves are metadata-only. X Likes imports preserve the canonical post,
+author/handle, text, language, posted timestamp, engagement counts visible at
+capture time, and provenance. Engagement is optional and records replies,
+reposts, quotes, likes, bookmarks, and views when X exposes them in the feed;
+it is a point-in-time observation, not a live counter. When media is present,
+every normalized original image enters the existing private Drive pipeline.
+Imports are tagged `X Likes` and deduplicated by the existing source, canonical
+URL, asset URL, and hash mechanisms.
+
+On X, the Clipper checks visible canonical status URLs against the vault and
+adds a compact lavender `✦ Archived` marker to posts already stored. Backlog
+continuation seeks the last checkpoint, skips indexed posts, and captures the
+next unknown post. A caught-up scan stops after a stable run of known posts;
+temporary virtual-list stalls are retried and are not treated as the end of the
+timeline. Capture requests use a four-item bounded concurrency window, while
+checkpoint results are committed in source order. Confirmed Like clicks are
+captured immediately; unliking on X does not delete the archival copy.
+
+A post is the parent reference. Every image in a gallery is a separate asset
+linked to that parent, with its own source index/count, alt text, notes, tags,
+and bounded classifier metadata. Post-wide text, author, URL, published time,
+and engagement stay on the parent/source snapshot. This lets classifiers or
+reviewers describe one picture without duplicating the post or losing the
+gallery relationship. Owner tools can update an asset with `PATCH /asset?id=`
+using `notes`, `addTags`, `removeTagIds`, and `metadata`.
 
 ## Data model
 

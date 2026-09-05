@@ -6,10 +6,7 @@ import { makeFunctionReference } from "convex/server";
 import { withOwnerAccess } from "./privateAccess";
 
 export type CaptureSessionReviewState =
-  | "unreviewed"
-  | "reviewing"
-  | "completed"
-  | "deferred";
+  "unreviewed" | "reviewing" | "completed" | "deferred";
 
 export type CaptureSession = {
   _id: string;
@@ -24,6 +21,9 @@ export type CaptureSession = {
   duplicateCount: number;
   skippedCount: number;
   failedCount: number;
+  discoveredCount?: number;
+  renderedCount?: number;
+  archivedCount?: number;
   status: "running" | "completed" | "interrupted";
   reviewState: CaptureSessionReviewState;
   startedAt: number;
@@ -96,7 +96,9 @@ export function useCaptureSessions(limit = 24) {
       setSessions(next);
       return next;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load sessions.");
+      setError(
+        caught instanceof Error ? caught.message : "Could not load sessions.",
+      );
       return [];
     } finally {
       setLoading(false);
@@ -139,7 +141,9 @@ export function useCaptureSessionReferences(sessionKey?: string) {
       return next;
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Could not load session references.",
+        caught instanceof Error
+          ? caught.message
+          : "Could not load session references.",
       );
       return [];
     } finally {
@@ -167,7 +171,8 @@ export async function setCaptureSessionReviewState(
 function getClient() {
   if (client) return client;
   const url = process.env.NEXT_PUBLIC_CONVEX_URL?.trim();
-  if (!url) throw new Error("Add NEXT_PUBLIC_CONVEX_URL before browsing sessions.");
+  if (!url)
+    throw new Error("Add NEXT_PUBLIC_CONVEX_URL before browsing sessions.");
   client = new ConvexHttpClient(url);
   return client;
 }
