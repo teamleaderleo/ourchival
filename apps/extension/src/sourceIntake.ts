@@ -15,6 +15,7 @@ export type SourceIntakeContext = {
 export type SourceIntakeItem = {
   providerId: string;
   sourceUrl: string;
+  assetUrl?: string;
   title?: string;
   authorName?: string;
   authorUrl?: string;
@@ -206,6 +207,9 @@ export function sourceIntakePayload(
     kind: "post",
     sourceUrl: item.sourceUrl,
     canonicalUrl: item.sourceUrl,
+    ...(item.assetUrl
+      ? { assetUrl: item.assetUrl, assetIndex: 0, assetCount: 1 }
+      : {}),
     ...(item.title ? { pageTitle: item.title } : {}),
     ...(item.authorName ? { authorName: item.authorName } : {}),
     ...(item.authorUrl ? { authorUrl: item.authorUrl } : {}),
@@ -219,6 +223,32 @@ export function sourceIntakePayload(
     captureSessionId: args.importId,
     capturedAt: new Date().toISOString(),
   };
+}
+
+export function pinterestOriginalImageUrl(value: string | undefined) {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      !/(^|\.)pinimg\.com$/i.test(url.hostname)
+    ) {
+      return undefined;
+    }
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) return undefined;
+    if (/^(?:\d+x|originals)$/i.test(parts[0] ?? "")) {
+      parts[0] = "originals";
+    } else {
+      return undefined;
+    }
+    url.pathname = `/${parts.join("/")}`;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 export function sourceIntakeItemKey(

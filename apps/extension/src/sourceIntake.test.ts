@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   detectSourceIntakeContext,
+  pinterestOriginalImageUrl,
   reconcilePinterestQueue,
   selectSourceIntakeState,
   sourceIntakeItemKey,
@@ -115,6 +116,30 @@ describe("sourceIntakeItemKey", () => {
   });
 });
 
+describe("pinterestOriginalImageUrl", () => {
+  it("turns Pinterest CDN renditions into stable original candidates", () => {
+    expect(
+      pinterestOriginalImageUrl(
+        "https://i.pinimg.com/736x/aa/bb/cc/example.jpg?download=1",
+      ),
+    ).toBe("https://i.pinimg.com/originals/aa/bb/cc/example.jpg");
+    expect(
+      pinterestOriginalImageUrl(
+        "https://i.pinimg.com/originals/aa/bb/cc/example.png",
+      ),
+    ).toBe("https://i.pinimg.com/originals/aa/bb/cc/example.png");
+  });
+
+  it("does not upgrade unrelated or structurally unknown URLs", () => {
+    expect(
+      pinterestOriginalImageUrl("https://example.com/736x/example.jpg"),
+    ).toBeUndefined();
+    expect(
+      pinterestOriginalImageUrl("https://i.pinimg.com/videos/example.mp4"),
+    ).toBeUndefined();
+  });
+});
+
 describe("selectSourceIntakeState", () => {
   it("does not hide the current source behind another running import", () => {
     const pixiv = {
@@ -216,6 +241,7 @@ describe("sourceIntakePayload", () => {
       {
         providerId: "987",
         sourceUrl: "https://ca.pinterest.com/pin/987/",
+        assetUrl: "https://i.pinimg.com/originals/a/b/c/pin.jpg",
         metadata: {
           provenance: {
             platform: "pinterest",
@@ -244,6 +270,11 @@ describe("sourceIntakePayload", () => {
           containerName: "Anime art",
         },
       },
+    });
+    expect(payload).toMatchObject({
+      assetUrl: "https://i.pinimg.com/originals/a/b/c/pin.jpg",
+      assetIndex: 0,
+      assetCount: 1,
     });
   });
 });
