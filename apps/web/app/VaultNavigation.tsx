@@ -121,7 +121,7 @@ function VaultNavButton({
         </span>
         {label}
       </span>
-      {count > 0 ? <span className="nav-count">{count}</span> : null}
+      {count > 0 && !active ? <span className="nav-count">{count.toLocaleString("en-US")}</span> : null}
     </button>
   );
 }

@@ -208,7 +208,7 @@ export function ReferenceVault() {
           <div className="vault-heading">
             <h1>{currentViewLabel}</h1>
             <p className="vault-count">
-              <strong>{displayedCount}</strong>
+              <strong>{displayedCount.toLocaleString("en-US")}</strong>
               <span>{displayedCountLabel}</span>
             </p>
           </div>

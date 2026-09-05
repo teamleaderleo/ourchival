@@ -88,10 +88,10 @@ export function ReferenceCard({
           <h2>{title}</h2>
           {mode === "links" && snapshot?.description ? (
             <p className="card-description">{snapshot.description}</p>
-          ) : mode !== "links" ? (
+          ) : mode !== "links" && !title.includes(sourceLabel) ? (
             <p className="card-domain">{sourceLabel}</p>
           ) : null}
-          {visibleTags.length > 0 ? (
+          {mode === "links" && visibleTags.length > 0 ? (
             <div className="card-tags" aria-label="Reference tags">
               {visibleTags.map((tag) => (
                 <span key={tag._id}>#{tag.name}</span>
