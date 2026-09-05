@@ -4,8 +4,8 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "vite build --mode extension && vite build --mode content && (vite build --mode extension-watch --watch & vite build --mode content-watch --watch & wait)",
-    "build": "vite build --mode extension && vite build --mode content",
+    "dev": "node ../../scripts/build-extension-icons.mjs && vite build --mode extension && vite build --mode content && (vite build --mode extension-watch --watch & vite build --mode content-watch --watch & wait)",
+    "build": "node ../../scripts/build-extension-icons.mjs && vite build --mode extension && vite build --mode content && node ../../scripts/sync-installed-extension.mjs",
     "lint": "echo \"lint extension\"",
     "typecheck": "tsc --noEmit"
   },

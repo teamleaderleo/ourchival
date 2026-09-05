@@ -95,7 +95,7 @@ async function render() {
   root.innerHTML = `
     <main>
       <header class="popup-header">
-        <div class="brand-mark" aria-hidden="true">O</div>
+        <img class="brand-mark" src="icons/cat-48.png" alt="" aria-hidden="true" />
         <div>
           <p class="eyebrow">Ourchival Clipper</p>
           <h1>Import from this browser</h1>
@@ -332,7 +332,7 @@ function renderPairingState(settings: ExtensionSettings) {
   return `
     <main class="pairing-view">
       <header class="popup-header">
-        <div class="brand-mark" aria-hidden="true">O</div>
+        <img class="brand-mark" src="icons/cat-48.png" alt="" aria-hidden="true" />
         <div>
           <p class="eyebrow">Ourchival Clipper</p>
           <h1>Connect this browser</h1>
