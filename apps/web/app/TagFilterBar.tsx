@@ -1,4 +1,5 @@
 "use client";
+import { Popover } from "./Popover";
 
 import { useMemo, useState } from "react";
 import { BatchOrganizationBar } from "./BatchOrganizationBar";
@@ -10,9 +11,15 @@ import { useAllReferenceTags } from "./useReferenceTags";
 export function TagFilterBar({
   query,
   onChange,
+  imagesOnly,
+  onImagesOnly,
+  onRefresh,
 }: {
   query: string;
   onChange: (query: string) => void;
+  imagesOnly?: boolean;
+  onImagesOnly?: (value: boolean) => void;
+  onRefresh?: () => void;
 }) {
   const tags = useAllReferenceTags();
   const activeSlug = tagToken(query);
@@ -35,16 +42,17 @@ export function TagFilterBar({
   }
 
   return (
-    <details className="vault-tools">
-      <summary>
+    <Popover className="vault-tools" label={<>
         <span>
-          <strong>Tools</strong>
+          <strong>View & tools</strong>
         </span>
         <span>
           {activeFilterCount ? `${activeFilterCount} active` : <span aria-hidden="true">+</span>}
         </span>
-      </summary>
+      </>}>
       <div className="vault-tools-content">
+        {onImagesOnly ? <label className="media-preference"><input type="checkbox" checked={!imagesOnly} onChange={(event) => onImagesOnly(!event.target.checked)} />Include text posts</label> : null}
+        {onRefresh ? <button type="button" className="button ghost" onClick={onRefresh}>Refresh archive</button> : null}
         {tags.length > 0 ? (
           <div className="tag-filter-bar searchable" aria-label="Filter by tag">
             <label>
@@ -124,7 +132,7 @@ export function TagFilterBar({
         <BatchOrganizationBar />
         <EnrichmentQueuePanel />
       </div>
-    </details>
+    </Popover>
   );
 }
 

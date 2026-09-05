@@ -12,8 +12,10 @@ import {
   type SavedReference,
 } from "./referenceVaultModel";
 import { type VaultView } from "./VaultNavigation";
+import { appendPage } from "./viewPages";
 
 type VaultCounts = Record<VaultView, number>;
+type CachedView = { references: SavedReference[]; cursor: string | null; hasMore: boolean; scroll: number };
 
 type ReferencesResponse = {
   ok: boolean;
@@ -76,6 +78,9 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const [captureOpen, setCaptureOpen] = useState(false);
   const [undoMove, setUndoMove] = useState<UndoMove | null>(null);
   const requestSerial = useRef(0);
+  const viewCache = useRef(new Map<string, CachedView>());
+  const inFlight = useRef<string | null>(null);
+  const cacheKey = `${refreshKey}:${activeView}:${debouncedQuery}`;
 
   function report(message: string, tone: StatusTone = "info") {
     setStatus(message);
@@ -117,14 +122,24 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       return;
     }
 
-    setReferences([]);
+    requestSerial.current++;
+    const cached = viewCache.current.get(cacheKey);
+    if (cached) {
+      setReferences(cached.references);
+      setContinueCursor(cached.cursor);
+      setHasMore(cached.hasMore);
+      setIsLoading(false);
+      setIsLoadingPage(false);
+      report("", "success");
+      return;
+    }
     setCurrentCursor(null);
     setContinueCursor(null);
     setCursorHistory([]);
     setHasMore(false);
     setIsLoadingPage(false);
     void requestReferencePage(null, []);
-  }, [siteUrl, refreshKey, activeView, debouncedQuery]);
+  }, [siteUrl, refreshKey, activeView, debouncedQuery, cacheKey]);
 
   useEffect(() => {
     if (
@@ -200,10 +215,13 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     history: Array<string | null>,
   ) {
     if (!siteUrl) return;
+    const flightKey = `${cacheKey}:${cursor}`;
+    if (inFlight.current === flightKey) return;
+    inFlight.current = flightKey;
     const serial = requestSerial.current + 1;
     requestSerial.current = serial;
 
-    if (history.length === 0 && cursor === null) setIsLoading(true);
+    if (history.length === 0 && cursor === null) setIsLoading(references.length === 0);
     else setIsLoadingPage(true);
 
     try {
@@ -227,12 +245,17 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       }
 
       const incoming = body.references ?? [];
-      setReferences(incoming);
+      const combined = cursor
+        ? appendPage(references, incoming)
+        : incoming;
+      setReferences(combined);
+      viewCache.current.set(cacheKey, { references: combined, cursor: body.continueCursor ?? null, hasMore: Boolean(body.hasMore), scroll: window.scrollY });
+      if (viewCache.current.size > 10) viewCache.current.delete(viewCache.current.keys().next().value!);
       setCurrentCursor(cursor);
       setCursorHistory(history);
       setContinueCursor(body.continueCursor ?? null);
       setHasMore(Boolean(body.hasMore));
-      setSelectedId(null);
+      if (!cursor) setSelectedId(null);
       if (body.counts) setCounts(body.counts);
       report("", "success");
     } catch (error) {
@@ -245,6 +268,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
         );
       }
     } finally {
+      if (inFlight.current === flightKey) inFlight.current = null;
       if (serial === requestSerial.current) {
         setIsLoading(false);
         setIsLoadingPage(false);
@@ -350,6 +374,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
         return false;
       }
 
+      viewCache.current.clear();
       setReferences((items) =>
         items.map((item) =>
           item._id === referenceId ? { ...item, ...patch } : item,
@@ -475,6 +500,14 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   }
 
   function changeView(view: VaultView) {
+    if (view === activeView) return;
+    requestSerial.current++;
+    const current = viewCache.current.get(cacheKey);
+    if (current) current.scroll = window.scrollY;
+    const cached = viewCache.current.get(`${refreshKey}:${view}:${debouncedQuery}`);
+    setReferences(cached?.references ?? []);
+    setIsLoading(!cached);
+    requestAnimationFrame(() => window.scrollTo({ top: cached?.scroll ?? 0 }));
     setActiveView(view);
     setSelectedId(null);
     setUndoMove(null);

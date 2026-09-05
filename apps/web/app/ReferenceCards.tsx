@@ -6,11 +6,11 @@ import {
   referenceDisplayTitle,
   referenceMetadataLabel,
   referenceMode,
-  thumbnailRatio,
   type SavedReference,
 } from "./referenceVaultModel";
 import { usePrivateImageUrl } from "./usePrivateImageUrl";
 import { useReferenceTags } from "./useReferenceTags";
+import { rememberedDimensions, rememberDimensions } from "./imageDimensions";
 
 export function ReferenceCard({
   reference,
@@ -38,6 +38,8 @@ export function ReferenceCard({
     return () => observer.disconnect();
   }, [nearViewport]);
   const asset = reference.assets[0];
+  const [learned, setLearned] = useState(() => asset ? rememberedDimensions(asset._id) : undefined);
+  const dimensions = learned ?? (asset?.width && asset.height ? { width: asset.width, height: asset.height } : undefined);
   const mode = referenceMode(reference.kind);
   const snapshot = reference.sourceSnapshot;
   const [tags] = useReferenceTags(reference.tagIds, reference.tags);
@@ -73,12 +75,19 @@ export function ReferenceCard({
         onClick={onQuickLook ?? onSelect}
         title={onQuickLook ? "Open image" : undefined}
       >
-        <div className="thumb-wrap" style={{ aspectRatio: mode === "links" ? "2 / 1" : String(thumbnailRatio(asset)) }}>
+        <div className="thumb-wrap" style={dimensions ? { aspectRatio: `${dimensions.width} / ${dimensions.height}` } : undefined}>
           <ThumbImage
             imageUrl={nearViewport ? imageUrl : undefined}
             title={title}
             kind={reference.kind}
             priority={priority}
+            width={dimensions?.width}
+            height={dimensions?.height}
+            onDimensions={(width, height) => {
+              if (!asset) return;
+              rememberDimensions(asset._id, width, height);
+              if (dimensions?.width !== width || dimensions?.height !== height) setLearned({ width, height });
+            }}
           />
           {reference.assets.length > 1 ? (
             <span className="kind-badge" aria-label={`${reference.assets.length} images`}>
@@ -171,11 +180,17 @@ export function ThumbImage({
   title,
   kind,
   priority = false,
+  width,
+  height,
+  onDimensions,
 }: {
   imageUrl?: string | null;
   title?: string;
   kind: string;
   priority?: boolean;
+  width?: number;
+  height?: number;
+  onDimensions?: (width: number, height: number) => void;
 }) {
   const [failed, setFailed] = useState(false);
   const { resolvedUrl, loading } = usePrivateImageUrl(imageUrl);
@@ -201,11 +216,14 @@ export function ThumbImage({
     <img
       className="thumb"
       src={resolvedUrl}
+      width={width}
+      height={height}
       alt={title ?? "Saved reference"}
       loading={priority ? "eager" : "lazy"}
       decoding="async"
       fetchPriority={priority ? "high" : "auto"}
       onError={() => setFailed(true)}
+      onLoad={(event) => onDimensions?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
     />
   );
 }

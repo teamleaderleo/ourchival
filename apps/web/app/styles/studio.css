@@ -111,24 +111,16 @@ body { background: var(--bg); }
   .button:hover:not(:disabled) { transform: none; }
 }
 
-/* Stable rows: image decoding never rebalances the entire page. */
-.reference-grid, .reference-grid.link-grid {
-  columns: initial;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
-  gap: 16px;
-  align-items: start;
-}
-.reference-grid > .empty-card { grid-column: 1 / -1; }
-.reference-card { display: block; margin: 0; }
-.reference-card .thumb-wrap { width: 100%; }
-.reference-card .thumb,
-.reference-card .thumb.placeholder,
-.link-card .thumb,
-.link-card .thumb.placeholder {
-  width: 100%; height: 100%; min-height: 0; max-height: none;
-  object-fit: contain;
-}
+/* Column ownership stays stable as images load and older pages append. */
+.reference-grid, .reference-grid.link-grid { display: block; columns: initial; }
+.masonry { display: flex; gap: 16px; align-items: flex-start; }
+.masonry-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.reference-card { display: block; width: 100%; margin: 0; border-radius: 0; }
+.reference-card .thumb-wrap { width: 100%; border-radius: 0; }
+.reference-card .thumb, .link-card .thumb { display: block; width: 100%; height: auto; max-height: none; object-fit: initial; }
+.reference-card .thumb.placeholder { height: 100%; min-height: 170px; }
+.masonry-skeleton { background: var(--panel); }
+.load-more { min-height: 64px; display: grid; place-items: center; margin-top: 16px; }
 .header-search { flex: 1; max-width: 720px; min-width: 150px; margin-inline: 20px; }
 .header-search kbd { position: absolute; right: 14px; top: 12px; color: var(--muted); font-size: 13px; }
 .vault-toolbar { display: flex; justify-content: flex-end; align-items: center; margin-top: 8px; gap: 12px; }
@@ -149,7 +141,29 @@ body { background: var(--bg); }
   .header-search { order: 3; min-width: 100%; margin: 0; }
   .header-actions { margin-left: auto; }
   .header-actions .button.ghost { display: inline-flex; }
-  .reference-grid, .reference-grid.link-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .masonry, .masonry-column { gap: 10px; }
   .project-menu-content { position: fixed; top: 72px; right: 12px; }
   .quick-look-footer .button { padding: 8px 10px; }
+}
+
+/* Utility menus float over the canvas instead of pushing it down. */
+.popover { position: relative; }
+.popover > summary { display: flex; align-items: center; gap: 8px; list-style: none; padding: 9px 10px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted-strong); }
+.popover > summary::-webkit-details-marker { display: none; }
+.popover[open] { z-index: 35; }
+.popover-content { position: absolute; right: 0; top: calc(100% + 6px); z-index: 35; width: min(520px, calc(100vw - 24px)); max-height: min(70vh, 680px); overflow: auto; padding: 16px; border: 1px solid var(--line); background: var(--panel); box-shadow: 0 12px 32px #0005; }
+.popover.saved-search-panel, .popover.saved-search-panel[open], .popover.vault-tools, .popover.vault-tools[open] { width: auto; margin: 0; padding: 0; border: 0; grid-column: auto; }
+.popover.vault-tools > summary { margin: 0; width: auto; padding: 9px 10px; }
+.popover .vault-tools-content { padding: 0; }
+.media-preference { display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.media-preference input { width: auto; accent-color: var(--accent); }
+.button, .search-field input, .clear-search, .project-edit-form input, .project-edit-form textarea, .project-edit-form select { border-radius: 0; box-shadow: none; }
+.button.ghost { border-color: transparent; }
+.button.secondary { border-color: transparent; background: transparent; color: var(--accent); }
+.button:hover:not(:disabled) { transform: none; }
+.button.ghost:hover, .popover > summary:hover { background: var(--panel-hover); }
+.batch-select-toggle, .favorite-toggle, .quick-look-toggle { border-radius: 0; }
+.browser-connection > summary { padding-block: 14px; cursor: pointer; }
+@media (max-width: 720px) {
+  .popover-content { position: fixed; top: 126px; right: 12px; }
 }
