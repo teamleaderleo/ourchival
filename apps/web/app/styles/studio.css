@@ -132,6 +132,8 @@ body { background: var(--bg); }
 .header-search { flex: 1; max-width: 720px; min-width: 150px; margin-inline: 20px; }
 .header-search kbd { position: absolute; right: 14px; top: 12px; color: var(--muted); font-size: 13px; }
 .vault-toolbar { display: flex; justify-content: flex-end; align-items: center; margin-top: 8px; gap: 12px; }
+.vault-toolbar .saved-search-panel { width: auto; min-width: 0; }
+.vault-toolbar > .button { white-space: nowrap; flex: none; }
 .project-menu { position: relative; }
 .project-menu > summary { list-style: none; }
 .project-menu > summary::-webkit-details-marker { display: none; }
@@ -146,6 +148,7 @@ body { background: var(--bg); }
   .app-header { flex-wrap: wrap; padding-block: 8px; gap: 8px; }
   .header-search { order: 3; min-width: 100%; margin: 0; }
   .header-actions { margin-left: auto; }
+  .header-actions .button.ghost { display: inline-flex; }
   .reference-grid, .reference-grid.link-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .project-menu-content { position: fixed; top: 72px; right: 12px; }
   .quick-look-footer .button { padding: 8px 10px; }
