@@ -61,6 +61,7 @@ if (isXPage()) {
 }
 
 function scheduleArchiveBadgeRefresh() {
+  if (activeXLikesImport) return;
   if (archiveBadgeTimer !== undefined) window.clearTimeout(archiveBadgeTimer);
   archiveBadgeTimer = window.setTimeout(() => {
     archiveBadgeTimer = undefined;
@@ -69,6 +70,7 @@ function scheduleArchiveBadgeRefresh() {
 }
 
 async function refreshArchiveBadges() {
+  if (activeXLikesImport) return;
   const articles = Array.from(
     document.querySelectorAll<HTMLElement>("article"),
   );
@@ -370,6 +372,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       })
       .finally(() => {
         activeXLikesImport = undefined;
+        scheduleArchiveBadgeRefresh();
       });
     sendResponse({ ok: true, started: true });
     return;
@@ -442,10 +445,13 @@ async function runXLikesImport(args: {
 
       let visibleBottomSourceUrl: string | undefined;
       const candidates: Array<{
+        article: HTMLElement;
         snapshot: XDomSnapshot;
         parsed: ParsedXSource;
       }> = [];
-      const articles = Array.from(document.querySelectorAll("article"));
+      const articles = Array.from(
+        document.querySelectorAll<HTMLElement>("article"),
+      );
       for (const article of articles) {
         const snapshot = snapshotXArticle(article, undefined);
         const parsed = parseXSnapshot(snapshot);
@@ -468,13 +474,22 @@ async function runXLikesImport(args: {
         if (parsed.sourceUrl === args.resumeAfterSourceUrl) continue;
         if (seen.has(parsed.sourceUrl)) continue;
         seen.add(parsed.sourceUrl);
-        candidates.push({ snapshot, parsed });
+        candidates.push({ article, snapshot, parsed });
       }
 
       const indexed = await queryIndexedSourceUrls(
         candidates.map(({ parsed }) => parsed.sourceUrl),
       );
-      for (const { snapshot, parsed } of candidates) {
+      const knownOnlyRound =
+        candidates.length > 0 && indexed.size === candidates.length;
+      for (const { article, snapshot, parsed } of candidates) {
+        if (article.isConnected) {
+          article.dataset.ourchivalSourceUrl = parsed.sourceUrl;
+          article.dataset.ourchivalArchiveStatus = indexed.has(parsed.sourceUrl)
+            ? "indexed"
+            : "missing";
+          if (indexed.has(parsed.sourceUrl)) ensureArchiveBadge(article);
+        }
         lastSourceUrl = parsed.sourceUrl;
         if (indexed.has(parsed.sourceUrl)) {
           consecutiveKnown += 1;
@@ -537,7 +552,13 @@ async function runXLikesImport(args: {
           ),
         });
       }
-      await wait(seekingCursor ? 350 : Math.min(1_600, 600 + idleRounds * 20));
+      await wait(
+        seekingCursor
+          ? 350
+          : knownOnlyRound && idleRounds === 0
+            ? 300
+            : Math.min(1_600, 600 + idleRounds * 20),
+      );
     }
 
     if (seekingCursor && stopReason !== "paused") {
