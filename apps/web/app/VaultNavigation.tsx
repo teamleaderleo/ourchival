@@ -9,7 +9,7 @@ export type VaultView =
   | "trash";
 
 export const viewLabels: Record<VaultView, string> = {
-  inbox: "Inbox",
+  inbox: "New",
   all: "Library",
   images: "Images",
   links: "Links",
@@ -32,7 +32,7 @@ export function VaultSidebar({
     <aside className="vault-sidebar" aria-label="Vault navigation">
       <nav aria-label="Review">
         <VaultNavButton
-          label="Inbox"
+          label="New"
           count={counts.inbox}
           active={activeView === "inbox"}
           onClick={() => onChange("inbox")}

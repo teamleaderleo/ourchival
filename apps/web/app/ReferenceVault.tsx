@@ -26,16 +26,6 @@ export function ReferenceVault() {
   const currentViewLabel = viewLabels[vault.activeView];
   const isReviewView =
     vault.activeView === "inbox" || vault.activeView === "later";
-  const displayedCount = vault.query
-    ? `${vault.filteredReferences.length.toLocaleString("en-US")}${vault.hasMore ? "+" : ""}`
-    : vault.activeCount.toLocaleString("en-US");
-  const displayedCountLabel = vault.query
-    ? vault.filteredReferences.length === 1 && !vault.hasMore
-      ? "result"
-      : "results"
-    : vault.activeCount === 1
-      ? "reference"
-      : "references";
   const quickLookReference = quickLookId
     ? (vault.filteredReferences.find(
         (reference) => reference._id === quickLookId,
@@ -187,7 +177,7 @@ export function ReferenceVault() {
             className="button primary capture-submit"
             disabled={vault.isSaving}
           >
-            {vault.isSaving ? "Saving…" : "Save to Inbox"}
+            {vault.isSaving ? "Saving…" : "Save"}
           </button>
         </form>
       ) : null}
@@ -210,13 +200,7 @@ export function ReferenceVault() {
           onChange={vault.changeView}
         />
         <main className="vault-main">
-          <div className="vault-heading">
-            <h1>{currentViewLabel}</h1>
-            <p className="vault-count">
-              <strong>{displayedCount}</strong>
-              <span>{displayedCountLabel}</span>
-            </p>
-          </div>
+          <h1 className="sr-only">{currentViewLabel}</h1>
           <div className="vault-toolbar">
             <SavedSearchPanel
               activeView={vault.activeView}
@@ -459,7 +443,7 @@ function normalizeDomainToken(value: string) {
 }
 
 function emptyHeading(view: string, label: string) {
-  if (view === "inbox") return "Inbox cleared";
+  if (view === "inbox") return "All caught up";
   if (view === "later") return "Nothing waiting for later";
   if (view === "archive") return "Archive is empty";
   if (view === "trash") return "Trash is empty";
@@ -470,9 +454,9 @@ function emptyMessage(view: string) {
   if (view === "inbox")
     return "New captures will arrive here for a quick decision.";
   if (view === "later")
-    return "Defer an Inbox item when it deserves another look.";
+    return "Defer a new save when it deserves another look.";
   if (view === "archive")
     return "Archived references stay available without filling the Library.";
-  if (view === "trash") return "Items in Trash can be restored to Inbox.";
-  return "Keep an Inbox reference to add it to this collection.";
+  if (view === "trash") return "Items in Trash can be restored to New.";
+  return "Keep a new reference to add it to this collection.";
 }

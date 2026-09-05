@@ -178,7 +178,7 @@ export function referenceCollection(reference: SavedReference): ReferenceCollect
 
 export function referenceCollectionLabel(reference: SavedReference) {
   const collection = referenceCollection(reference);
-  if (collection === "inbox") return "Inbox";
+  if (collection === "inbox") return "New";
   if (collection === "later") return "Later";
   if (collection === "archive") return "Archived";
   if (collection === "trash") return "Trash";
