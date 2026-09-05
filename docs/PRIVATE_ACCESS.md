@@ -34,6 +34,8 @@ The owner key belongs only in the Convex environment and the owner's browser. Do
 
 Open the web app and choose **Continue with Google**. `/auth-check` verifies the short-lived Google credential, confirms the configured owner email and Drive owner match, and exchanges it for a signed Ourchival session. The session lasts for one year and renews on each successful vault open, so an actively used owner browser stays signed in until **Lock** is selected, browser storage is cleared, or the recovery key is rotated. The browser stores only that scoped session, not the Google credential or recovery key. Emergency recovery is available only by deliberately opening `/?recovery=1`; recovery controls are absent from normal sign-in. This changes presentation, not authorization.
 
+The canonical `pnpm local:vault` launcher enables the existing same-origin loopback bootstrap, so opening Air Blue's own vault does not require copying a recovery key. The bootstrap remains unavailable on hosted deployments and rejects cross-origin requests.
+
 The owner key protects the HTTP archive, private Drive proxy, organization panels, saved searches, enrichment controls, related-reference browsing, visual similarity, capture-session records, and owner-side Clipper management.
 
 ## Pair Ourchival Clipper
