@@ -3,7 +3,10 @@ export type ImportedUrl = {
   title?: string;
 };
 
-export function parseUrlList(value: string): ImportedUrl[] {
+export function parseUrlList(
+  value: string,
+  preserveOccurrences = false,
+): ImportedUrl[] {
   const seen = new Set<string>();
   const entries: ImportedUrl[] = [];
 
@@ -14,8 +17,11 @@ export function parseUrlList(value: string): ImportedUrl[] {
     const match = line.match(/https?:\/\/[^\s|]+/i);
     if (!match || match.index === undefined) continue;
 
-    const url = trimTrailingPunctuation(match[0]);
-    if (!isCapturableUrl(url) || seen.has(url)) continue;
+    const url = preserveOccurrences
+      ? match[0]
+      : trimTrailingPunctuation(match[0]);
+    if (!isCapturableUrl(url) || (!preserveOccurrences && seen.has(url)))
+      continue;
 
     const before = line
       .slice(0, match.index)
@@ -34,14 +40,18 @@ export function parseUrlList(value: string): ImportedUrl[] {
   return entries;
 }
 
-export function parseBookmarksHtml(value: string): ImportedUrl[] {
+export function parseBookmarksHtml(
+  value: string,
+  preserveOccurrences = false,
+): ImportedUrl[] {
   const seen = new Set<string>();
   const entries: ImportedUrl[] = [];
   const linkPattern = /<A\b[^>]*\bHREF=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/A>/gi;
 
   for (const match of value.matchAll(linkPattern)) {
     const url = decodeHtml(match[2] ?? "").trim();
-    if (!isCapturableUrl(url) || seen.has(url)) continue;
+    if (!isCapturableUrl(url) || (!preserveOccurrences && seen.has(url)))
+      continue;
 
     const title = decodeHtml(stripTags(match[3] ?? "")).trim() || undefined;
     seen.add(url);
@@ -80,13 +90,37 @@ function decodeHtml(value: string) {
     quot: '"',
   };
 
-  return value.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (_entity, code: string) => {
-    if (code.startsWith("#x") || code.startsWith("#X")) {
-      return String.fromCodePoint(Number.parseInt(code.slice(2), 16));
-    }
-    if (code.startsWith("#")) {
-      return String.fromCodePoint(Number.parseInt(code.slice(1), 10));
-    }
-    return namedEntities[code.toLowerCase()] ?? `&${code};`;
-  });
+  return value.replace(
+    /&(#x[\da-f]+|#\d+|[a-z]+);/gi,
+    (_entity, code: string) => {
+      if (code.startsWith("#x") || code.startsWith("#X")) {
+        return String.fromCodePoint(Number.parseInt(code.slice(2), 16));
+      }
+      if (code.startsWith("#")) {
+        return String.fromCodePoint(Number.parseInt(code.slice(1), 10));
+      }
+      return namedEntities[code.toLowerCase()] ?? `&${code};`;
+    },
+  );
+}
+
+export async function savedLinkSessionKey(
+  source: "url_list" | "bookmarks",
+  entries: ImportedUrl[],
+) {
+  const manifest = JSON.stringify([
+    1,
+    source,
+    entries.map((e) => [e.url, e.title ?? null]),
+  ]);
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(manifest),
+  );
+  return (
+    "saved-links-v1:" +
+    Array.from(new Uint8Array(digest), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("")
+  );
 }

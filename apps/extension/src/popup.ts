@@ -1,5 +1,10 @@
 import type { CapturePayload } from "@ourchival/shared";
-import { parseBookmarksHtml, parseUrlList } from "./imports";
+import {
+  parseBookmarksHtml,
+  parseUrlList,
+  savedLinkSessionKey,
+  type ImportedUrl,
+} from "./imports";
 import {
   getPopupState,
   LAST_BATCH_KEY,
@@ -57,8 +62,10 @@ async function render() {
 
   const batchRunning = Boolean(batch?.running);
   const xLikesRunning = Boolean(xLikesImport?.running);
-  const disabled = batchRunning || xLikesRunning ? "disabled" : "";
-  const xLikesDisabled = batchRunning ? "disabled" : "";
+  const disabled =
+    batchRunning || xLikesRunning || savedLinkImportActive ? "disabled" : "";
+  const xLikesDisabled =
+    batchRunning || savedLinkImportActive ? "disabled" : "";
 
   root.innerHTML = `
     <main>
@@ -139,7 +146,7 @@ async function render() {
                 <input id="bookmarks-file" type="file" accept=".html,.htm,text/html" ${disabled} />
               </label>
             </div>
-            <p id="import-feedback" class="hint">Duplicate lines and bookmark entries are removed before the job starts.</p>
+            <p id="import-feedback" class="hint">Already-saved links keep their original import context. Keep this popup open; re-submit the same list or file to resume.</p>
           </form>
         </div>
       </details>
@@ -189,6 +196,7 @@ async function render() {
       const form = event.currentTarget as HTMLFormElement;
       const entries = parseUrlList(
         String(new FormData(form).get("url-list") ?? ""),
+        true,
       );
       const feedback = document.getElementById("import-feedback");
       if (entries.length === 0) {
@@ -197,11 +205,7 @@ async function render() {
         return;
       }
       transientMessage = `Starting import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
-      void sendRuntimeMessage({
-        type: "OURCHIVAL_CAPTURE_URLS",
-        source: "url_list",
-        entries,
-      });
+      void importSavedLinks("url_list", entries);
     });
 
   document
@@ -212,7 +216,7 @@ async function render() {
       const feedback = document.getElementById("import-feedback");
       if (!file) return;
       try {
-        const entries = parseBookmarksHtml(await file.text());
+        const entries = parseBookmarksHtml(await file.text(), true);
         if (entries.length === 0) {
           if (feedback)
             feedback.textContent =
@@ -220,11 +224,7 @@ async function render() {
           return;
         }
         transientMessage = `Starting bookmark import of ${entries.length} ${entries.length === 1 ? "link" : "links"}…`;
-        void sendRuntimeMessage({
-          type: "OURCHIVAL_CAPTURE_URLS",
-          source: "bookmarks",
-          entries,
-        });
+        void importSavedLinks("bookmarks", entries);
       } catch (error) {
         if (feedback) {
           feedback.textContent =
@@ -554,3 +554,57 @@ chrome.storage.onChanged.addListener((_changes, areaName) => {
 });
 
 void render();
+
+let savedLinkImportActive = false;
+async function importSavedLinks(
+  source: "url_list" | "bookmarks",
+  entries: ImportedUrl[],
+) {
+  if (savedLinkImportActive) return;
+  savedLinkImportActive = true;
+  try {
+    const sessionKey = await savedLinkSessionKey(source, entries);
+    let offset = 0;
+    let endpoint: string | undefined;
+    // Empty first batch reads the existing session cursor after popup/worker restart.
+    let probe = true;
+    do {
+      const receipt = await chrome.runtime.sendMessage({
+        type: "OURCHIVAL_SAVED_LINK_BATCH",
+        expectedEndpoint: endpoint,
+        batch: {
+          sessionKey,
+          source,
+          total: entries.length,
+          offset,
+          entries: probe ? [] : entries.slice(offset, offset + 50),
+        },
+      });
+      if (!receipt?.ok)
+        throw new Error(receipt?.error || "Import was interrupted.");
+      if (
+        !Number.isSafeInteger(receipt.nextOffset) ||
+        receipt.nextOffset < offset ||
+        receipt.nextOffset > entries.length ||
+        (!probe && receipt.nextOffset === offset)
+      ) {
+        throw new Error("Import returned an invalid progress receipt.");
+      }
+      offset = receipt.nextOffset;
+      endpoint = receipt.endpoint;
+      probe = false;
+      transientMessage =
+        `${offset} / ${entries.length} links · ${receipt.saved} saved · ${receipt.duplicates} already saved. ` +
+        (receipt.complete
+          ? "Import complete. Review in Inbox."
+          : "Keep open to continue. Re-submit the same list to resume after closing.");
+      await render();
+    } while (offset < entries.length);
+  } catch (error) {
+    transientMessage = `${error instanceof Error ? error.message : "Import interrupted."} Committed links are safe. Re-submit the same list or file to resume.`;
+    await render();
+  } finally {
+    savedLinkImportActive = false;
+    await render();
+  }
+}

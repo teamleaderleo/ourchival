@@ -22,6 +22,7 @@ import {
   requireOwnerAccess,
   type AccessPrincipal,
 } from "./lib/privateAccess";
+import { readLinkBatch } from "./lib/linkIntake";
 import { normalizeSourceUrl } from "./lib/urls";
 
 const http = httpRouter();
@@ -121,6 +122,7 @@ for (const path of [
   "/auth-check",
   "/capture",
   "/capture-session",
+  "/capture-links",
   "/references",
   "/reference-status",
   "/reference",
@@ -593,6 +595,35 @@ http.route({
         404,
       );
     return jsonResponse(request, { ok: true });
+  }),
+});
+
+http.route({
+  path: "/capture-links",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+    try {
+      const body = await readLinkBatch(request);
+      const receipt = await ctx.runMutation(internal.httpDb.importLinkBatch, {
+        batch: body,
+      });
+      return jsonResponse(request, receipt);
+    } catch {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error:
+            "Batch was not acknowledged. Check the input limits, then submit the same list to resume.",
+        },
+        400,
+      );
+    }
   }),
 });
 

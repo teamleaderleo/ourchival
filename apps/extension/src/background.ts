@@ -67,6 +67,17 @@ type XLikesAuditInput = {
 };
 
 type ExtensionMessage =
+  | {
+      type: "OURCHIVAL_SAVED_LINK_BATCH";
+      batch: {
+        sessionKey: string;
+        source: "url_list" | "bookmarks";
+        total: number;
+        offset: number;
+        entries: ImportedUrl[];
+      };
+      expectedEndpoint?: string;
+    }
   | { type: "OURCHIVAL_CAPTURE_TABS"; mode: TabCaptureMode }
   | {
       type: "OURCHIVAL_CAPTURE_URLS";
@@ -190,6 +201,17 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, sender, sendResponse) => {
+    if (message?.type === "OURCHIVAL_SAVED_LINK_BATCH") {
+      void captureSavedLinkBatch(message.batch, message.expectedEndpoint)
+        .then(sendResponse)
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Saved-link batch failed."),
+          }),
+        );
+      return true;
+    }
     if (message?.type === "OURCHIVAL_CAPTURE_TABS") {
       void captureTabs(message.mode)
         .then((state) => sendResponse({ ok: true, state }))
@@ -1190,3 +1212,45 @@ async function markResult(result: CaptureResult) {
 }
 
 void resumeInterruptedBatch();
+
+async function captureSavedLinkBatch(
+  batch: {
+    sessionKey: string;
+    source: "url_list" | "bookmarks";
+    total: number;
+    offset: number;
+    entries: ImportedUrl[];
+  },
+  expectedEndpoint?: string,
+) {
+  if (batch.entries.length > 50)
+    throw new Error("Import batches are limited to 50 links.");
+  if (activeJobId || (await getXLikesImportState())?.running) {
+    throw new Error(
+      "Let the current capture finish or pause it before importing links.",
+    );
+  }
+  const connection = await getCaptureConnection();
+  if (expectedEndpoint && connection.endpoint !== expectedEndpoint) {
+    throw new Error(
+      "Ourchival address changed. Submit the same list again to resume at that address.",
+    );
+  }
+  const endpoint = new URL(connection.endpoint);
+  endpoint.pathname = endpoint.pathname.replace(
+    /\/capture\/?$/,
+    "/capture-links",
+  );
+  const response = await fetch(endpoint.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${connection.deviceToken}`,
+    },
+    body: JSON.stringify(batch),
+  });
+  const receipt = await response.json();
+  if (!response.ok || !receipt.ok)
+    throw new Error(receipt.error || "Saved-link batch failed.");
+  return { ...receipt, endpoint: connection.endpoint };
+}
