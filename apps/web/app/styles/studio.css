@@ -184,3 +184,6 @@ body { background: var(--bg); }
 .card-title-open { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 
 .copy-source { min-width: 92px; }
+
+.saved-search-inline { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+.saved-search-inline input { flex: 1; min-width: 120px; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--line); }
