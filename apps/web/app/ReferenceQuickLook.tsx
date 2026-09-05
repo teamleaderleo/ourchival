@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   referenceDisplayTitle,
   referenceMode,
@@ -31,14 +31,16 @@ export function ReferenceQuickLook({
   const [assetIndex, setAssetIndex] = useState(0);
   const [moving, setMoving] = useState(false);
   const [moveError, setMoveError] = useState("");
+  const movePending = useRef(false);
   useEffect(() => { setAssetIndex(0); setMoveError(""); }, [reference._id]);
-  async function move(action: "keep" | "later" | "trash") {
-    if (moving) return;
+  const move = useCallback(async (action: "keep" | "later" | "trash") => {
+    if (movePending.current) return;
+    movePending.current = true;
     setMoving(true);
     setMoveError("");
     try { if (!await onMove(action)) setMoveError("Could not move this reference. Try again."); }
-    finally { setMoving(false); }
-  }
+    finally { movePending.current = false; setMoving(false); }
+  }, [onMove]);
   const [imageFailed, setImageFailed] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -149,7 +151,7 @@ export function ReferenceQuickLook({
 
     document.addEventListener("keydown", handleKey, true);
     return () => document.removeEventListener("keydown", handleKey, true);
-  }, [next, onClose, onOpen, onSelect, onToggleFavorite, previous, reference, onMove, moving]);
+  }, [next, onClose, onOpen, onSelect, onToggleFavorite, previous, reference, move]);
 
   return (
     <div
