@@ -1,4 +1,5 @@
 import type { CapturePayload } from "@ourchival/shared";
+import type { SourceIntakeProvider } from "./sourceIntake";
 
 export type CaptureResult = {
   ok: boolean;
@@ -27,7 +28,9 @@ export type BatchCaptureSource =
   | "bookmarks"
   | "retry"
   | "x_post"
-  | "x_likes";
+  | "x_likes"
+  | "pixiv_bookmarks"
+  | "pinterest_board";
 
 export type BatchCaptureItem = {
   url?: string;
@@ -113,6 +116,34 @@ export type XLikesAuditReceipt = {
   reconciledAt: string;
 };
 
+export type SourceIntakeState = {
+  importId: string;
+  provider: SourceIntakeProvider;
+  label: string;
+  sourceUrl: string;
+  currentUrl: string;
+  cursor: string;
+  sensitiveDefault: boolean;
+  workerTabId?: number;
+  running: boolean;
+  exhausted: boolean;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  chunks: number;
+  observed: number;
+  captureAttempts: number;
+  saved: number;
+  duplicates: number;
+  failed: number;
+  skipped: number;
+  reportedCount?: number;
+  unresolved: number;
+  seenProviderIds: string[];
+  stopReason?: "paused" | "exhausted" | "tab_closed" | "error";
+  message?: string;
+};
+
 export type ExtensionSettings = {
   captureEndpoint?: string;
   deviceToken?: string;
@@ -124,6 +155,7 @@ export const LAST_CAPTURE_KEY = "lastCapture";
 export const LAST_RESULT_KEY = "lastCaptureResult";
 export const LAST_BATCH_KEY = "lastBatchCapture";
 export const X_LIKES_IMPORT_KEY = "xLikesImport";
+export const SOURCE_INTAKE_KEY = "sourceIntake";
 
 export async function getSettings(): Promise<ExtensionSettings> {
   const values = await chrome.storage.local.get(SETTINGS_KEY);
@@ -150,6 +182,15 @@ export async function saveXLikesImportState(state: XLikesImportState) {
   await chrome.storage.local.set({ [X_LIKES_IMPORT_KEY]: state });
 }
 
+export async function saveSourceIntakeState(state: SourceIntakeState) {
+  await chrome.storage.local.set({ [SOURCE_INTAKE_KEY]: state });
+}
+
+export async function getSourceIntakeState() {
+  const values = await chrome.storage.local.get(SOURCE_INTAKE_KEY);
+  return values[SOURCE_INTAKE_KEY] as SourceIntakeState | undefined;
+}
+
 export async function getXLikesImportState() {
   const values = await chrome.storage.local.get(X_LIKES_IMPORT_KEY);
   return normalizeXLikesImportState(
@@ -164,6 +205,7 @@ export async function getPopupState() {
     LAST_RESULT_KEY,
     LAST_BATCH_KEY,
     X_LIKES_IMPORT_KEY,
+    SOURCE_INTAKE_KEY,
   ]);
   values[X_LIKES_IMPORT_KEY] = normalizeXLikesImportState(
     values[X_LIKES_IMPORT_KEY] as XLikesImportState | undefined,

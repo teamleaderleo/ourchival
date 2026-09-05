@@ -6,6 +6,10 @@ import {
   type ImportedUrl,
 } from "./imports";
 import {
+  detectSourceIntakeContext,
+  type SourceIntakeContext,
+} from "./sourceIntake";
+import {
   getPopupState,
   LAST_BATCH_KEY,
   LAST_CAPTURE_KEY,
@@ -14,11 +18,13 @@ import {
   normalizePairingEndpoint,
   normalizeSiteRoot,
   saveSettings,
+  SOURCE_INTAKE_KEY,
   SETTINGS_KEY,
   type BatchCaptureSource,
   type BatchCaptureState,
   type CaptureResult,
   type ExtensionSettings,
+  type SourceIntakeState,
   type XLikesImportState,
   X_LIKES_IMPORT_KEY,
 } from "./storage";
@@ -51,6 +57,13 @@ async function render() {
   const batch = state[LAST_BATCH_KEY] as BatchCaptureState | undefined;
   const xLikesImport = state[X_LIKES_IMPORT_KEY] as
     XLikesImportState | undefined;
+  const sourceIntake = state[SOURCE_INTAKE_KEY] as
+    SourceIntakeState | undefined;
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  const sourceContext = detectSourceIntakeContext(activeTab?.url);
   const normalizedEndpoint = normalizeCaptureEndpoint(settings.captureEndpoint);
   const connected = Boolean(normalizedEndpoint && settings.deviceToken);
 
@@ -62,10 +75,15 @@ async function render() {
 
   const batchRunning = Boolean(batch?.running);
   const xLikesRunning = Boolean(xLikesImport?.running);
+  const sourceRunning = Boolean(sourceIntake?.running);
   const disabled =
-    batchRunning || xLikesRunning || savedLinkImportActive ? "disabled" : "";
+    batchRunning || xLikesRunning || sourceRunning || savedLinkImportActive
+      ? "disabled"
+      : "";
   const xLikesDisabled =
-    batchRunning || savedLinkImportActive ? "disabled" : "";
+    batchRunning || sourceRunning || savedLinkImportActive ? "disabled" : "";
+  const sourceDisabled =
+    batchRunning || xLikesRunning || savedLinkImportActive ? "disabled" : "";
 
   root.innerHTML = `
     <main>
@@ -76,6 +94,8 @@ async function render() {
           <h1>Import from this browser</h1>
         </div>
       </header>
+
+      ${renderSourceIntake(sourceIntake, sourceContext, sourceDisabled)}
 
       <section class="x-likes-panel">
         <div class="section-heading">
@@ -187,6 +207,16 @@ async function render() {
   document.getElementById("pause-x-likes")?.addEventListener("click", () => {
     transientMessage = "Pausing after the current Likes chunk…";
     void sendRuntimeMessage({ type: "OURCHIVAL_PAUSE_X_LIKES" });
+  });
+
+  document.getElementById("import-source")?.addEventListener("click", () => {
+    transientMessage = "Starting the resumable source import…";
+    void sendRuntimeMessage({ type: "OURCHIVAL_IMPORT_SOURCE" });
+  });
+
+  document.getElementById("pause-source")?.addEventListener("click", () => {
+    transientMessage = "Pausing after the current source chunk…";
+    void sendRuntimeMessage({ type: "OURCHIVAL_PAUSE_SOURCE" });
   });
 
   document
@@ -392,6 +422,58 @@ function bindPairingForm() {
     });
 }
 
+function renderSourceIntake(
+  state: SourceIntakeState | undefined,
+  context: SourceIntakeContext | undefined,
+  disabled: string,
+) {
+  if (!state && !context) return "";
+  const active = state?.running ? state : undefined;
+  const label =
+    active?.label ?? context?.label ?? state?.label ?? "Source import";
+  const sameSource = Boolean(
+    state && context && state.sourceUrl === context.sourceUrl,
+  );
+  const button = active
+    ? '<button id="pause-source" type="button" class="secondary full-width">Pause after this chunk</button>'
+    : context
+      ? `<button id="import-source" type="button" class="primary full-width" ${disabled}>${sameSource && !state?.exhausted ? "Continue import" : `Import ${escapeHtml(label)}`}</button>`
+      : "";
+  const progress = state
+    ? `<div class="batch-counts source-progress">
+        <span><strong>${state.observed}</strong> observed</span>
+        <span><strong>${state.saved}</strong> new</span>
+        ${state.duplicates ? `<span><strong>${state.duplicates}</strong> existing</span>` : ""}
+        ${state.failed ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
+        ${state.reportedCount ? `<span><strong>${state.unresolved}</strong> unresolved</span>` : ""}
+      </div>
+      <p class="hint"><strong>${state.running ? "Importing" : state.exhausted ? "Source end reached" : "Paused"}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"} · ${escapeHtml(state.cursor)}</p>
+      ${state.message ? `<p class="hint">${escapeHtml(state.message)}</p>` : ""}`
+    : "";
+  const sealed =
+    active?.sensitiveDefault || context?.sensitiveDefault
+      ? '<p class="hint"><strong>Sealed by default.</strong> Private previews stay out of the ordinary Inbox view.</p>'
+      : "";
+  const guidance =
+    !context && state && !state.running
+      ? `<p class="hint">Open ${escapeHtml(state.label)} to continue or begin a fresh pass.</p>`
+      : "";
+  return `
+    <section class="x-likes-panel source-intake-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Saved source</p>
+          <h2>${escapeHtml(label)}</h2>
+        </div>
+      </div>
+      ${button}
+      ${progress}
+      ${sealed}
+      ${guidance}
+    </section>
+  `;
+}
+
 function renderBatch(batch: BatchCaptureState | undefined) {
   if (!batch) return "";
   const progress = batch.total
@@ -517,6 +599,8 @@ function batchSourceLabel(source: BatchCaptureSource) {
   if (source === "bookmarks") return "Bookmarks HTML";
   if (source === "x_post") return "X post images";
   if (source === "x_likes") return "X Likes";
+  if (source === "pixiv_bookmarks") return "Pixiv bookmarks";
+  if (source === "pinterest_board") return "Pinterest board";
   if (source === "retry") return "Failed-item retry";
   return "Pasted links";
 }

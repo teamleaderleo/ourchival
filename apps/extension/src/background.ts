@@ -6,6 +6,12 @@ import {
 import type { CapturePayload, PageSnapshot } from "@ourchival/shared";
 import { isCapturableUrl, type ImportedUrl } from "./imports";
 import {
+  detectSourceIntakeContext,
+  sourceIntakePayload,
+  type SourceIntakeChunk,
+} from "./sourceIntake";
+import {
+  getSourceIntakeState,
   getSettings,
   getXLikesImportState,
   LAST_BATCH_KEY,
@@ -13,11 +19,13 @@ import {
   saveBatchState,
   saveLastCapture,
   saveLastResult,
+  saveSourceIntakeState,
   saveXLikesImportState,
   type BatchCaptureItem,
   type BatchCaptureSource,
   type BatchCaptureState,
   type CaptureResult,
+  type SourceIntakeState,
   type XLikesAuditReceipt,
   type XLikesImportState,
   type XLikesImportStopReason,
@@ -92,6 +100,13 @@ type ExtensionMessage =
   | { type: "OURCHIVAL_CLOSE_SAVED_TABS"; tabIds: number[] }
   | { type: "OURCHIVAL_IMPORT_X_LIKES" }
   | { type: "OURCHIVAL_PAUSE_X_LIKES" }
+  | { type: "OURCHIVAL_IMPORT_SOURCE" }
+  | { type: "OURCHIVAL_PAUSE_SOURCE" }
+  | {
+      type: "OURCHIVAL_SOURCE_INTAKE_CHUNK";
+      importId: string;
+      chunk: SourceIntakeChunk;
+    }
   | { type: "OURCHIVAL_REFERENCE_STATUS"; sourceUrls: string[] }
   | { type: "OURCHIVAL_CAPTURE_X_LIKE"; snapshot: XDomSnapshot }
   | {
@@ -278,6 +293,43 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
+    if (message?.type === "OURCHIVAL_IMPORT_SOURCE") {
+      void startSourceIntake()
+        .then((state) => sendResponse({ ok: true, state }))
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Source import failed."),
+          }),
+        );
+      return true;
+    }
+
+    if (message?.type === "OURCHIVAL_PAUSE_SOURCE") {
+      void pauseSourceIntake()
+        .then((state) => sendResponse({ ok: true, state }))
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: errorMessage(error, "Could not pause the source import."),
+          }),
+        );
+      return true;
+    }
+
+    if (message?.type === "OURCHIVAL_SOURCE_INTAKE_CHUNK") {
+      void acceptSourceIntakeChunk(message, sender)
+        .then(sendResponse)
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            continue: false,
+            error: errorMessage(error, "Could not save this source chunk."),
+          }),
+        );
+      return true;
+    }
+
     if (message?.type === "OURCHIVAL_REFERENCE_STATUS") {
       void referenceStatus(message.sourceUrls)
         .then((indexedSourceUrls) =>
@@ -373,6 +425,9 @@ async function captureTabs(mode: TabCaptureMode) {
 }
 
 async function startXLikesImport() {
+  if ((await getSourceIntakeState())?.running) {
+    throw new Error("Pause the current source import before starting X Likes.");
+  }
   const [tab] = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true,
@@ -459,6 +514,286 @@ async function pauseXLikesImport() {
   await saveXLikesImportState(state);
   await reportXLikesSession(state, "interrupted");
   return state;
+}
+
+async function startSourceIntake() {
+  if ((await getXLikesImportState())?.running || activeJobId) {
+    throw new Error("Pause the current import before starting another source.");
+  }
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  const context = detectSourceIntakeContext(tab?.url);
+  if (!context) {
+    throw new Error(
+      "Open a Pixiv bookmarks page or one Pinterest board first.",
+    );
+  }
+  const previous = await getSourceIntakeState();
+  if (previous?.running) return previous;
+
+  const now = new Date().toISOString();
+  const resumable = Boolean(
+    previous &&
+    !previous.exhausted &&
+    previous.provider === context.provider &&
+    previous.sourceUrl === context.sourceUrl,
+  );
+  const state: SourceIntakeState = resumable
+    ? {
+        ...previous!,
+        running: true,
+        updatedAt: now,
+        completedAt: undefined,
+        stopReason: undefined,
+        message: undefined,
+      }
+    : {
+        importId: createSourceImportId(),
+        provider: context.provider,
+        label: context.label,
+        sourceUrl: context.sourceUrl,
+        currentUrl: context.currentUrl,
+        cursor: context.cursor,
+        sensitiveDefault: context.sensitiveDefault,
+        running: true,
+        exhausted: false,
+        startedAt: now,
+        updatedAt: now,
+        chunks: 0,
+        observed: 0,
+        captureAttempts: 0,
+        saved: 0,
+        duplicates: 0,
+        failed: 0,
+        skipped: 0,
+        unresolved: 0,
+        seenProviderIds: [],
+      };
+  await saveSourceIntakeState(state);
+  await reportSourceIntakeSession(state, "running");
+
+  if (resumable && typeof state.workerTabId === "number") {
+    const existingWorker = await chrome.tabs
+      .get(state.workerTabId)
+      .catch(() => undefined);
+    if (existingWorker) {
+      if (existingWorker.status === "complete") {
+        void dispatchSourceIntake(existingWorker.id!);
+      }
+      return state;
+    }
+  }
+
+  const worker = await chrome.tabs.create({
+    url: resumable ? state.currentUrl : context.currentUrl,
+    active: false,
+  });
+  if (typeof worker.id !== "number") {
+    state.running = false;
+    state.stopReason = "error";
+    state.message = "Could not open the background intake tab.";
+    state.updatedAt = new Date().toISOString();
+    await saveSourceIntakeState(state);
+    throw new Error(state.message);
+  }
+  state.workerTabId = worker.id;
+  await saveSourceIntakeState(state);
+  if (worker.status === "complete") void dispatchSourceIntake(worker.id);
+  return state;
+}
+
+async function pauseSourceIntake() {
+  const state = await getSourceIntakeState();
+  if (!state) throw new Error("No source import is active.");
+  state.running = false;
+  state.stopReason = "paused";
+  state.message = "Paused after the last acknowledged chunk.";
+  state.updatedAt = new Date().toISOString();
+  await saveSourceIntakeState(state);
+  if (typeof state.workerTabId === "number") {
+    await chrome.tabs
+      .sendMessage(state.workerTabId, {
+        type: "OURCHIVAL_STOP_SOURCE_INTAKE",
+      })
+      .catch(() => undefined);
+  }
+  await reportSourceIntakeSession(state, "interrupted");
+  return state;
+}
+
+async function acceptSourceIntakeChunk(
+  message: Extract<ExtensionMessage, { type: "OURCHIVAL_SOURCE_INTAKE_CHUNK" }>,
+  sender: chrome.runtime.MessageSender,
+) {
+  const state = await getSourceIntakeState();
+  if (
+    !state ||
+    !state.running ||
+    state.importId !== message.importId ||
+    sender.tab?.id !== state.workerTabId
+  ) {
+    throw new Error("This source import is no longer active.");
+  }
+  const chunk = message.chunk;
+  if (
+    !chunk ||
+    chunk.provider !== state.provider ||
+    chunk.sourceUrl !== state.sourceUrl ||
+    !Array.isArray(chunk.items) ||
+    chunk.items.length > 120
+  ) {
+    throw new Error("The source chunk does not match this import.");
+  }
+
+  const seen = new Set(state.seenProviderIds);
+  const fresh = chunk.items.filter((item) => {
+    if (
+      !item ||
+      !/^\d+$/.test(item.providerId) ||
+      !isCapturableUrl(item.sourceUrl) ||
+      seen.has(item.providerId)
+    ) {
+      return false;
+    }
+    seen.add(item.providerId);
+    return true;
+  });
+  const firstOrdinal = state.observed;
+  const payloads = fresh.map((item, index) =>
+    sourceIntakePayload(item, {
+      provider: state.provider,
+      importId: state.importId,
+      ordinal: firstOrdinal + index,
+      sensitiveDefault: state.sensitiveDefault,
+    }),
+  );
+  const batch = payloads.length
+    ? await runPayloadBatch(payloads, state.provider, state.importId)
+    : undefined;
+  const now = new Date().toISOString();
+  state.seenProviderIds = Array.from(seen);
+  state.currentUrl = chunk.nextUrl ?? chunk.currentUrl;
+  state.cursor = chunk.cursor;
+  state.updatedAt = now;
+  state.chunks += 1;
+  state.observed += fresh.length;
+  state.captureAttempts += batch?.total ?? 0;
+  state.saved += batch?.saved ?? 0;
+  state.duplicates += batch?.duplicates ?? 0;
+  state.failed += batch?.failed ?? 0;
+  state.skipped += batch?.skipped ?? 0;
+  if (typeof chunk.reportedCount === "number") {
+    state.reportedCount = Math.max(
+      state.reportedCount ?? 0,
+      chunk.reportedCount,
+    );
+  }
+  state.unresolved = state.reportedCount
+    ? Math.max(0, state.reportedCount - state.observed)
+    : 0;
+
+  if (chunk.exhausted) {
+    state.running = false;
+    state.exhausted = true;
+    state.completedAt = now;
+    state.stopReason = "exhausted";
+    state.message = state.unresolved
+      ? `Reached the source end with ${state.unresolved} unresolved.`
+      : "Reached the source end with a complete receipt.";
+  }
+  await saveSourceIntakeState(state);
+  await reportSourceIntakeSession(
+    state,
+    chunk.exhausted && state.unresolved === 0
+      ? "completed"
+      : state.running
+        ? "running"
+        : "interrupted",
+  );
+
+  if (chunk.exhausted && typeof state.workerTabId === "number") {
+    const workerTabId = state.workerTabId;
+    setTimeout(
+      () => void chrome.tabs.remove(workerTabId).catch(() => undefined),
+      250,
+    );
+  }
+  return {
+    ok: true,
+    continue: state.running,
+    ...(state.running && chunk.nextUrl ? { nextUrl: chunk.nextUrl } : {}),
+  };
+}
+
+async function dispatchSourceIntake(tabId: number) {
+  const state = await getSourceIntakeState();
+  if (!state?.running || state.workerTabId !== tabId) return;
+  const start = async () =>
+    (await chrome.tabs.sendMessage(tabId, {
+      type: "OURCHIVAL_START_SOURCE_INTAKE",
+      importId: state.importId,
+      provider: state.provider,
+    })) as { ok?: boolean; error?: string } | undefined;
+  try {
+    let response = await start().catch(() => undefined);
+    if (!response) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      response = await start();
+    }
+    if (!response?.ok)
+      throw new Error(response?.error || "Reader did not start.");
+  } catch (error) {
+    const latest = await getSourceIntakeState();
+    if (!latest?.running || latest.workerTabId !== tabId) return;
+    latest.running = false;
+    latest.stopReason = "error";
+    latest.message = errorMessage(error, "Could not start the source reader.");
+    latest.updatedAt = new Date().toISOString();
+    await saveSourceIntakeState(latest);
+    await reportSourceIntakeSession(latest, "interrupted").catch(
+      () => undefined,
+    );
+  }
+}
+
+async function reportSourceIntakeSession(
+  state: SourceIntakeState,
+  status: "running" | "completed" | "interrupted",
+) {
+  const connection = await getCaptureConnection();
+  const endpoint = new URL(connection.endpoint);
+  endpoint.pathname = endpoint.pathname.replace(
+    /\/capture\/?$/,
+    "/capture-session",
+  );
+  const expected = state.reportedCount ?? state.observed;
+  const response = await fetch(endpoint.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${connection.deviceToken}`,
+    },
+    body: JSON.stringify({
+      sessionKey: state.importId,
+      source: state.provider,
+      label: state.label,
+      sourceUrl: state.sourceUrl,
+      expectedCount: expected,
+      completedCount: state.observed,
+      savedCount: state.saved,
+      duplicateCount: state.duplicates,
+      skippedCount: state.skipped,
+      failedCount: state.failed,
+      status,
+      startedAt: state.startedAt,
+      ...(status === "completed" && state.completedAt
+        ? { completedAt: state.completedAt }
+        : {}),
+    }),
+  });
+  if (!response.ok) throw new Error("Could not report source-import progress.");
 }
 
 async function captureXLikesChunk(
@@ -1192,6 +1527,10 @@ function createImportId() {
   return `x-likes-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
+function createSourceImportId() {
+  return `source-import-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
 function canonicalLikesUrl(value: string) {
   const url = new URL(value);
   return `https://x.com${url.pathname.replace(/\/$/, "")}`;
@@ -1211,7 +1550,42 @@ async function markResult(result: CaptureResult) {
   });
 }
 
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "complete") void dispatchSourceIntake(tabId);
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void (async () => {
+    const state = await getSourceIntakeState();
+    if (!state?.running || state.workerTabId !== tabId) return;
+    state.running = false;
+    state.stopReason = "tab_closed";
+    state.message = "The intake tab closed. Start again to resume safely.";
+    state.updatedAt = new Date().toISOString();
+    await saveSourceIntakeState(state);
+    await reportSourceIntakeSession(state, "interrupted").catch(
+      () => undefined,
+    );
+  })();
+});
+
+async function resumeSourceIntake() {
+  const state = await getSourceIntakeState();
+  if (!state?.running || typeof state.workerTabId !== "number") return;
+  const tab = await chrome.tabs.get(state.workerTabId).catch(() => undefined);
+  if (!tab) {
+    state.running = false;
+    state.stopReason = "tab_closed";
+    state.message = "The intake tab is gone. Start again to resume safely.";
+    state.updatedAt = new Date().toISOString();
+    await saveSourceIntakeState(state);
+    return;
+  }
+  if (tab.status === "complete") void dispatchSourceIntake(tab.id!);
+}
+
 void resumeInterruptedBatch();
+void resumeSourceIntake();
 
 async function captureSavedLinkBatch(
   batch: {
@@ -1225,7 +1599,11 @@ async function captureSavedLinkBatch(
 ) {
   if (batch.entries.length > 50)
     throw new Error("Import batches are limited to 50 links.");
-  if (activeJobId || (await getXLikesImportState())?.running) {
+  if (
+    activeJobId ||
+    (await getXLikesImportState())?.running ||
+    (await getSourceIntakeState())?.running
+  ) {
     throw new Error(
       "Let the current capture finish or pause it before importing links.",
     );

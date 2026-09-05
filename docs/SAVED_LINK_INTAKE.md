@@ -224,6 +224,32 @@ The same policy can cover future gallery-style providers without teaching the
 core archive about a specific site. Source adapters collect evidence; the vault
 owns sensitivity, preview, retrieval and review behavior.
 
+### Experimental automated source runner
+
+The Clipper now recognizes an active Pixiv artwork-bookmarks page or Pinterest
+board and offers one context-specific import action. Starting it creates an
+inactive worker tab in the same authenticated browser profile; credentials and
+cookies never enter a capture payload. The runner is mutually exclusive with X
+Likes and ordinary bulk imports, checkpoints every acknowledged chunk in
+extension storage and reports the same session to Ourchival.
+
+- Pixiv follows the visible numbered next-page links, deduplicates by artwork
+  ID, and records page/filter evidence. Public cards may supply their normal
+  thumbnail. Private or detected R-18 cards omit the ordinary preview field and
+  retain the URL only as sealed provenance.
+- Pinterest imports one board per run, advances in ten-window scroll chunks,
+  deduplicates by pin ID, and compares observed IDs with the board's reported
+  count. Reaching the bottom with a deficit produces an exhausted but
+  incomplete receipt rather than a false success.
+- Closing the worker tab or pausing leaves the last acknowledged cursor and
+  seen-ID set in local extension storage. Continuing the same source resumes
+  that job; a completed source starts a fresh reconciliation pass.
+
+This first runner captures stable source links, card titles/creators, safe
+previews and observed provenance. Pixiv detail-page tags and original ordered
+assets, Pinterest outbound-source resolution, account-wide board sequencing,
+safe derivative generation and native sealed-preview UI remain follow-up work.
+
 The initial task said “Pixabay” and asked whether that meant Pixiv. Repository
 platform/parser support names Pixiv, and on 2026-09-04 the coordinating task
 relayed Leo's explicit clarification that Pixabay was speech recognition for
