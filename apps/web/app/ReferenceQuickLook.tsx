@@ -29,6 +29,18 @@ export function ReferenceQuickLook({
   onMove: (action: "keep" | "later" | "trash") => Promise<boolean>;
 }) {
   const [assetIndex, setAssetIndex] = useState(0);
+  const [copyStatus, setCopyStatus] = useState("");
+  const copyGeneration = useRef(0);
+  useEffect(() => { copyGeneration.current += 1; setCopyStatus(""); }, [reference._id]);
+  async function copySource() {
+    const generation = copyGeneration.current;
+    try {
+      await navigator.clipboard.writeText(reference.sourceUrl);
+      if (generation === copyGeneration.current) setCopyStatus("Copied");
+    } catch {
+      if (generation === copyGeneration.current) setCopyStatus("Copy failed — use the source link");
+    }
+  }
   const [moving, setMoving] = useState(false);
   const [moveError, setMoveError] = useState("");
   const movePending = useRef(false);
@@ -75,7 +87,7 @@ export function ReferenceQuickLook({
     closeButtonRef.current?.focus();
     return () => {
       document.documentElement.classList.remove("quick-look-open");
-      previousFocus?.focus();
+      previousFocus?.focus({ preventScroll: true });
     };
   }, []);
 
@@ -91,6 +103,20 @@ export function ReferenceQuickLook({
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (event.repeat && ["k", "l", "f", "o", "delete"].includes(event.key.toLowerCase())) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        event.preventDefault();
+        event.stopPropagation();
+        setAssetIndex((value) => Math.max(0, Math.min(reference.assets.length - 1, value + (event.key === "ArrowDown" ? 1 : -1))));
+        return;
+      }
       if (event.key.toLowerCase() === "k" || event.key.toLowerCase() === "l" || event.key === "Delete") {
         event.preventDefault();
         event.stopPropagation();
@@ -254,11 +280,13 @@ export function ReferenceQuickLook({
             <button type="button" className="button ghost" disabled={moving} onClick={() => void move("trash")} title="Trash and block recapture (Delete)">Trash</button>
           </div>
           {reference.assets.length > 1 ? <div className="viewer-assets" aria-label="Images in this reference">
-            <button type="button" className="button ghost" disabled={assetIndex === 0} onClick={() => setAssetIndex((value) => value - 1)} aria-label="Previous image">‹</button>
+            <button type="button" className="button ghost" disabled={assetIndex === 0} onClick={() => setAssetIndex((value) => value - 1)} aria-label="Previous image" title="Previous image (↑)">‹</button>
             <span>{assetIndex + 1} / {reference.assets.length} images</span>
-            <button type="button" className="button ghost" disabled={assetIndex >= reference.assets.length - 1} onClick={() => setAssetIndex((value) => value + 1)} aria-label="Next image">›</button>
+            <button type="button" className="button ghost" disabled={assetIndex >= reference.assets.length - 1} onClick={() => setAssetIndex((value) => value + 1)} aria-label="Next image" title="Next image (↓)">›</button>
           </div> : null}
           {moveError ? <p role="alert">{moveError}</p> : null}
+          <button type="button" className="button ghost copy-source" title={copyStatus || "Copy source link"} onClick={() => void copySource()}>{copyStatus === "Copied" ? "Copied" : copyStatus ? "Retry copy" : "Copy link"}</button>
+          <span className="sr-only" role="status">{copyStatus}</span>
           <a
             className="button secondary"
             href={reference.sourceUrl}
