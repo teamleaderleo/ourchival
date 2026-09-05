@@ -251,6 +251,29 @@ export async function fetchPublicResponse(
   throw new Error("Remote fetch redirected too many times.");
 }
 
+export function remoteAssetCandidateUrls(sourceUrl: string) {
+  const candidates = [sourceUrl];
+  try {
+    const url = new URL(sourceUrl);
+    if (
+      /(^|\.)pinimg\.com$/i.test(url.hostname) &&
+      url.pathname.includes("/originals/")
+    ) {
+      for (const rendition of ["1200x", "736x"]) {
+        const fallback = new URL(url);
+        fallback.pathname = fallback.pathname.replace(
+          "/originals/",
+          `/${rendition}/`,
+        );
+        candidates.push(fallback.toString());
+      }
+    }
+  } catch {
+    // fetchPublicResponse reports invalid URLs consistently.
+  }
+  return candidates;
+}
+
 export function parseLinkMetadataHtml(
   html: string,
   pageUrl: string,

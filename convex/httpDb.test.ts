@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { captureSessionCompletedAt } from "./lib/captureSessions";
-import { existingAssetReceipt } from "./httpDb";
+import { existingAssetReceipt, storedAssetFields } from "./httpDb";
 
 describe("captureSessionCompletedAt", () => {
   it("keeps completion time only while the session is complete", () => {
@@ -30,6 +30,24 @@ describe("existingAssetReceipt", () => {
     expect(existingAssetReceipt({})).toMatchObject({
       storageProvider: "linked",
       status: "original asset is link-only",
+    });
+  });
+});
+
+describe("storedAssetFields", () => {
+  it("promotes a linked asset to a fetched Drive rendition", () => {
+    expect(
+      storedAssetFields({
+        storageProvider: "google_drive",
+        fetchedUrl: "https://i.pinimg.com/1200x/a/b/c.jpg",
+        driveFileId: "drive-file",
+        fileSize: 123,
+      }),
+    ).toMatchObject({
+      storageProvider: "google_drive",
+      fetchedUrl: "https://i.pinimg.com/1200x/a/b/c.jpg",
+      driveFileId: "drive-file",
+      fileSize: 123,
     });
   });
 });

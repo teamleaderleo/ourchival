@@ -9,6 +9,7 @@ import {
 import {
   fetchPublicResponse,
   fetchLinkMetadata,
+  remoteAssetCandidateUrls,
   type LinkMetadata,
 } from "./lib/linkMetadata";
 import { detectPlatform } from "./lib/platform";
@@ -123,6 +124,7 @@ type ReferenceStatusBody = {
 type StoredRemoteAsset = {
   status: string;
   storageProvider: "google_drive" | "convex" | "linked";
+  fetchedUrl?: string;
   storageId?: any;
   mimeType?: string;
   fileSize?: number;
@@ -1145,7 +1147,10 @@ async function persistDuplicateCapture(
   if (duplicate.reference.deleted) return duplicate;
   const assetUrl = cleanString(args.body.assetUrl);
   let storedAsset: StoredRemoteAsset | undefined;
-  if (assetUrl && !duplicate.assetId) {
+  if (
+    assetUrl &&
+    (!duplicate.assetId || duplicate.storedAsset?.storageProvider === "linked")
+  ) {
     storedAsset = await fetchAndStoreRemoteAsset(ctx, {
       assetUrl,
       sourceUrl: duplicate.reference.sourceUrl,
@@ -1371,13 +1376,27 @@ async function fetchAndStoreRemoteAsset(
   const controller = new AbortController();
   let timer = setTimeout(() => controller.abort(), remoteAssetTimeoutMs);
   try {
-    const { response } = await fetchPublicResponse(args.assetUrl, {
-      signal: controller.signal,
-      headers: {
-        Accept:
-          "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-      },
-    });
+    let response: Response | undefined;
+    let fetchedUrl = args.assetUrl;
+    for (const candidateUrl of remoteAssetCandidateUrls(args.assetUrl)) {
+      const result = await fetchPublicResponse(candidateUrl, {
+        signal: controller.signal,
+        headers: {
+          Accept:
+            "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        },
+      });
+      response = result.response;
+      fetchedUrl = result.finalUrl;
+      if (response.ok) break;
+      await response.body?.cancel().catch(() => undefined);
+    }
+    if (!response) {
+      return {
+        status: "remote asset fetch failed",
+        storageProvider: "linked",
+      };
+    }
     if (!response.ok) {
       return {
         status: `fetch failed: ${response.status}`,
@@ -1414,6 +1433,7 @@ async function fetchAndStoreRemoteAsset(
         return {
           status: driveUpload.status,
           storageProvider: "google_drive",
+          fetchedUrl,
           mimeType,
           fileSize: contentLength,
           driveFileId: driveUpload.file.id,
@@ -1424,7 +1444,11 @@ async function fetchAndStoreRemoteAsset(
           driveMimeType: driveUpload.file.mimeType,
         };
       }
-      return { status: driveUpload.status, storageProvider: "linked" };
+      return {
+        status: driveUpload.status,
+        storageProvider: "linked",
+        fetchedUrl,
+      };
     }
 
     const blob = await readBoundedBlob(
@@ -1449,6 +1473,7 @@ async function fetchAndStoreRemoteAsset(
       return {
         status: driveUpload.status,
         storageProvider: "google_drive",
+        fetchedUrl,
         mimeType,
         fileSize: blob.size,
         driveFileId: driveUpload.file.id,
@@ -1461,10 +1486,11 @@ async function fetchAndStoreRemoteAsset(
     }
 
     const storageId = await ctx.storage.store(blob);
-    return {
-      status: `${driveUpload.status}; stored original asset in Convex Storage fallback`,
-      storageProvider: "convex",
-      storageId,
+      return {
+        status: `${driveUpload.status}; stored original asset in Convex Storage fallback`,
+        storageProvider: "convex",
+        fetchedUrl,
+        storageId,
       mimeType,
       fileSize: blob.size,
     };

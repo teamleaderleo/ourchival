@@ -669,14 +669,14 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
     throw new Error("Open one Pinterest board before importing.");
   }
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    if (document.querySelector('a[href*="/pin/"]')) break;
+    if (pinterestBoardPinAnchors().length > 0) break;
     await wait(250);
   }
   const countMatch = document.body.innerText.match(/([\d,]+)\s+Pins\b/i);
   const reportedCount = countMatch?.[1]
     ? Number(countMatch[1].replaceAll(",", ""))
     : undefined;
-  if (!document.querySelector('a[href*="/pin/"]')) {
+  if (pinterestBoardPinAnchors().length === 0) {
     return {
       provider: "pinterest_board",
       sourceUrl: context.sourceUrl,
@@ -698,9 +698,7 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
   let stagnantBottomRounds = 0;
   for (let round = 0; round < 10 && !stopSourceIntake; round += 1) {
     const before = items.size;
-    for (const anchor of Array.from(
-      document.querySelectorAll<HTMLAnchorElement>('a[href*="/pin/"]'),
-    )) {
+    for (const anchor of pinterestBoardPinAnchors()) {
       const providerId = anchor.href.match(/\/pin\/(\d+)/)?.[1];
       if (!providerId || items.has(providerId)) continue;
       const card = closestPinterestCard(anchor);
@@ -750,6 +748,22 @@ async function scanPinterestBoardChunk(): Promise<SourceIntakeChunk> {
     ...(reportedCount ? { reportedCount } : {}),
     exhausted,
   };
+}
+
+function pinterestBoardPinAnchors() {
+  // Pinterest appends recommendation carousels after a board's own masonry
+  // grid. Those cards use the same /pin/ links and pin-card markup, so a
+  // document-wide selector silently attributes recommendations to the board.
+  // Fail closed when the board grid is unavailable instead of importing pins
+  // whose membership we cannot prove.
+  const boardGrid = document.querySelector<HTMLElement>(
+    '[data-test-id="base-board-pin-grid"]',
+  );
+  return boardGrid
+    ? Array.from(
+        boardGrid.querySelectorAll<HTMLAnchorElement>('a[href*="/pin/"]'),
+      )
+    : [];
 }
 
 function closestArtworkCard(anchor: HTMLAnchorElement) {

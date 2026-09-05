@@ -440,6 +440,9 @@ export const saveDuplicateCapture = internalMutation({
         );
       } else if (assetId) {
         await ctx.db.patch(assetId, {
+          ...(args.storedAsset?.storageProvider !== "linked"
+            ? storedAssetFields(args.storedAsset)
+            : {}),
           ...(typeof details.assetIndex === "number"
             ? { sourceIndex: details.assetIndex }
             : {}),
@@ -644,6 +647,7 @@ export function existingAssetReceipt(asset: Record<string, any>) {
           ? "original asset already stored in Convex Storage"
           : "original asset is link-only",
     ...(asset.originalStorageId ? { storageId: asset.originalStorageId } : {}),
+    ...(asset.fetchedUrl ? { fetchedUrl: asset.fetchedUrl } : {}),
     ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
     ...(asset.fileSize ? { fileSize: asset.fileSize } : {}),
     ...(asset.driveFileId ? { driveFileId: asset.driveFileId } : {}),
@@ -674,7 +678,7 @@ async function insertAsset(
 ) {
   return await ctx.db.insert("assets", {
     referenceId,
-    storageProvider: storedAsset.storageProvider,
+    ...storedAssetFields(storedAsset),
     originalUrl: assetUrl,
     ...(typeof details?.sourceIndex === "number"
       ? { sourceIndex: details.sourceIndex }
@@ -684,6 +688,14 @@ async function insertAsset(
       : {}),
     ...(details?.altText ? { altText: details.altText } : {}),
     tagIds: [],
+    dominantColors: [],
+  });
+}
+
+export function storedAssetFields(storedAsset: Record<string, any>) {
+  return {
+    storageProvider: storedAsset.storageProvider,
+    ...(storedAsset.fetchedUrl ? { fetchedUrl: storedAsset.fetchedUrl } : {}),
     ...(storedAsset.storageId
       ? { originalStorageId: storedAsset.storageId }
       : {}),
@@ -707,8 +719,7 @@ async function insertAsset(
     ...(storedAsset.driveMimeType
       ? { driveMimeType: storedAsset.driveMimeType }
       : {}),
-    dominantColors: [],
-  });
+  };
 }
 
 async function insertSourceSnapshot(
