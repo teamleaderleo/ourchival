@@ -314,7 +314,8 @@ export const updateAssetMetadata = internalMutation({
     if (!asset) return null;
     const patch = args.patch as Record<string, unknown>;
     if (Object.keys(patch).length > 0) await ctx.db.patch(assetId, patch);
-    if (Object.keys(patch).length > 0) await scheduleReferenceSearch(ctx, asset.referenceId);
+    if (Object.keys(patch).length > 0)
+      await scheduleReferenceSearch(ctx, asset.referenceId);
     const tags =
       args.addTagNames.length > 0 || args.removeTagIds.length > 0
         ? await updateAssetTags(ctx, assetId, {
@@ -579,7 +580,12 @@ async function findDuplicate(
     for (const asset of matchingAssets) {
       const reference = await ctx.db.get(asset.referenceId);
       if (reference && (args.includeDeleted !== false || !reference.deleted)) {
-        return { reference, assetId: asset._id, reason: "asset_url" as const };
+        return {
+          reference,
+          assetId: asset._id,
+          reason: "asset_url" as const,
+          storedAsset: existingAssetReceipt(asset),
+        };
       }
     }
   }
@@ -593,8 +599,8 @@ async function findDuplicate(
   const canonicalReference =
     args.includeDeleted === false
       ? canonicalMatches.find((reference: any) => !reference.deleted)
-      : canonicalMatches.find((reference: any) => reference.deleted) ??
-        canonicalMatches[0];
+      : (canonicalMatches.find((reference: any) => reference.deleted) ??
+        canonicalMatches[0]);
   if (canonicalReference) {
     return {
       reference: canonicalReference,
@@ -610,8 +616,8 @@ async function findDuplicate(
   const sourceReference =
     args.includeDeleted === false
       ? sourceMatches.find((reference: any) => !reference.deleted)
-      : sourceMatches.find((reference: any) => reference.deleted) ??
-        sourceMatches[0];
+      : (sourceMatches.find((reference: any) => reference.deleted) ??
+        sourceMatches[0]);
   return sourceReference
     ? {
         reference: sourceReference,
@@ -619,6 +625,40 @@ async function findDuplicate(
         reason: "source_url" as const,
       }
     : null;
+}
+
+export function existingAssetReceipt(asset: Record<string, any>) {
+  const storageProvider =
+    asset.storageProvider ??
+    (asset.driveFileId
+      ? "google_drive"
+      : asset.originalStorageId
+        ? "convex"
+        : "linked");
+  return {
+    storageProvider,
+    status:
+      storageProvider === "google_drive"
+        ? "original asset already stored in Google Drive"
+        : storageProvider === "convex"
+          ? "original asset already stored in Convex Storage"
+          : "original asset is link-only",
+    ...(asset.originalStorageId ? { storageId: asset.originalStorageId } : {}),
+    ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
+    ...(asset.fileSize ? { fileSize: asset.fileSize } : {}),
+    ...(asset.driveFileId ? { driveFileId: asset.driveFileId } : {}),
+    ...(asset.driveFolderId ? { driveFolderId: asset.driveFolderId } : {}),
+    ...(asset.driveWebViewLink
+      ? { driveWebViewLink: asset.driveWebViewLink }
+      : {}),
+    ...(asset.driveWebContentLink
+      ? { driveWebContentLink: asset.driveWebContentLink }
+      : {}),
+    ...(asset.driveThumbnailLink
+      ? { driveThumbnailLink: asset.driveThumbnailLink }
+      : {}),
+    ...(asset.driveMimeType ? { driveMimeType: asset.driveMimeType } : {}),
+  };
 }
 
 async function insertAsset(

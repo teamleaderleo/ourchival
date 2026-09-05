@@ -868,11 +868,14 @@ http.route({
     let canonicalUrl = normalizeSourceUrl(
       cleanUrl(clientMetadata.canonicalUrl) ?? sourceUrl,
     );
-    let duplicate = await ctx.runQuery(internal.httpDb.findDuplicateCapture, {
-      sourceUrl,
-      canonicalUrl,
-      ...(assetUrl ? { assetUrl } : {}),
-    });
+    let duplicate: DuplicateCapture | null = await ctx.runQuery(
+      internal.httpDb.findDuplicateCapture,
+      {
+        sourceUrl,
+        canonicalUrl,
+        ...(assetUrl ? { assetUrl } : {}),
+      },
+    );
 
     if (duplicate) {
       duplicate = await persistDuplicateCapture(ctx, duplicate, {
