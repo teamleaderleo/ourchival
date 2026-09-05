@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { detectSourceIntakeContext, sourceIntakePayload } from "./sourceIntake";
+import {
+  detectSourceIntakeContext,
+  reconcilePinterestQueue,
+  sourceIntakePayload,
+} from "./sourceIntake";
 
 describe("detectSourceIntakeContext", () => {
   it("keeps Pixiv pagination separate from stable filter identity", () => {
@@ -9,6 +13,7 @@ describe("detectSourceIntakeContext", () => {
       ),
     ).toMatchObject({
       provider: "pixiv_bookmarks",
+      scope: "bookmarks",
       sourceUrl:
         "https://www.pixiv.net/en/users/17656036/bookmarks/artworks?rest=show&mode=all",
       currentUrl:
@@ -30,21 +35,55 @@ describe("detectSourceIntakeContext", () => {
     });
   });
 
-  it("recognizes a Pinterest board but not profile or pin pages", () => {
+  it("recognizes Pinterest profiles and boards but not pin pages", () => {
     expect(
       detectSourceIntakeContext(
         "https://ca.pinterest.com/teamleaderleo/anime-art/",
       ),
     ).toMatchObject({
       provider: "pinterest_board",
+      scope: "board",
       cursor: "scroll:0",
     });
     expect(
       detectSourceIntakeContext("https://ca.pinterest.com/teamleaderleo/"),
-    ).toBeUndefined();
+    ).toMatchObject({
+      provider: "pinterest_board",
+      scope: "profile",
+      label: "Pinterest boards",
+      cursor: "boards:index",
+    });
     expect(
       detectSourceIntakeContext("https://ca.pinterest.com/pin/123/"),
     ).toBeUndefined();
+  });
+});
+
+describe("reconcilePinterestQueue", () => {
+  it("fans a profile out across boards and advances after each board", () => {
+    const discovered = [
+      "https://ca.pinterest.com/teamleaderleo/anime-art/",
+      "https://ca.pinterest.com/teamleaderleo/lighting/",
+    ];
+    const first = reconcilePinterestQueue({
+      discoveredUrls: discovered,
+      currentUrl: "https://ca.pinterest.com/teamleaderleo/",
+      exhausted: true,
+    });
+    expect(first).toEqual({
+      pendingUrls: discovered,
+      nextUrl: discovered[0],
+    });
+
+    const second = reconcilePinterestQueue({
+      pendingUrls: first.pendingUrls,
+      currentUrl: `${discovered[0]}?foo=bar`,
+      exhausted: true,
+    });
+    expect(second).toEqual({
+      pendingUrls: [discovered[1]],
+      nextUrl: discovered[1],
+    });
   });
 });
 

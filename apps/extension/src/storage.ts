@@ -166,6 +166,7 @@ export type SourceIntakeState = {
   reportedCount?: number;
   unresolved: number;
   seenProviderIds: string[];
+  pendingUrls?: string[];
   stopReason?: "paused" | "exhausted" | "tab_closed" | "error";
   message?: string;
 };
