@@ -53,17 +53,26 @@ export type BatchCaptureState = {
   completed: number;
   nextIndex: number;
   saved: number;
+  attached?: number;
+  refreshed?: number;
   duplicates: number;
   failed: number;
   skipped: number;
   currentLabel?: string;
+  refreshedSourceUrls?: string[];
   items: BatchCaptureItem[];
   successfulTabIds: number[];
   failures: BatchCaptureFailure[];
 };
 
 export type XLikesImportStopReason =
-  "paused" | "timeline_end" | "round_limit" | "cursor_not_found" | "error";
+  | "paused"
+  | "known_boundary"
+  | "stalled"
+  | "timeline_end"
+  | "round_limit"
+  | "cursor_not_found"
+  | "error";
 
 export type XLikesImportState = {
   importId: string;
@@ -77,6 +86,8 @@ export type XLikesImportState = {
   discoveredPosts: number;
   captureAttempts: number;
   saved: number;
+  attachedMedia?: number;
+  refreshedPosts?: number;
   duplicates: number;
   failed: number;
   skipped: number;
@@ -84,6 +95,22 @@ export type XLikesImportState = {
   lastPublishedAt?: string;
   stopReason?: XLikesImportStopReason;
   message?: string;
+  audit?: XLikesAuditReceipt;
+};
+
+export type XLikesAuditReceipt = {
+  status: "verified" | "gaps" | "partial";
+  networkPages: number;
+  networkPosts: number;
+  observedPosts: number;
+  vaultPosts: number;
+  vaultChecked: boolean;
+  unparseableArticles: number;
+  networkMissingInDom: number;
+  domMissingInVault: number;
+  networkGapSamples: string[];
+  vaultGapSamples: string[];
+  reconciledAt: string;
 };
 
 export type ExtensionSettings = {
@@ -125,17 +152,60 @@ export async function saveXLikesImportState(state: XLikesImportState) {
 
 export async function getXLikesImportState() {
   const values = await chrome.storage.local.get(X_LIKES_IMPORT_KEY);
-  return values[X_LIKES_IMPORT_KEY] as XLikesImportState | undefined;
+  return normalizeXLikesImportState(
+    values[X_LIKES_IMPORT_KEY] as XLikesImportState | undefined,
+  );
 }
 
 export async function getPopupState() {
-  return await chrome.storage.local.get([
+  const values = await chrome.storage.local.get([
     SETTINGS_KEY,
     LAST_CAPTURE_KEY,
     LAST_RESULT_KEY,
     LAST_BATCH_KEY,
     X_LIKES_IMPORT_KEY,
   ]);
+  values[X_LIKES_IMPORT_KEY] = normalizeXLikesImportState(
+    values[X_LIKES_IMPORT_KEY] as XLikesImportState | undefined,
+  );
+  return values;
+}
+
+export function normalizeXLikesImportState(
+  state: XLikesImportState | undefined,
+) {
+  if (!state) return state;
+  const normalized =
+    typeof state.attachedMedia === "number"
+      ? state
+      : (() => {
+          const extraMedia = Math.min(
+            state.duplicates,
+            Math.max(0, state.captureAttempts - state.discoveredPosts),
+          );
+          return {
+            ...state,
+            attachedMedia: extraMedia,
+            duplicates: Math.max(0, state.duplicates - extraMedia),
+          };
+        })();
+
+  // Older builds treated a temporarily stable virtualized X timeline as a
+  // genuine end. Keep that checkpoint resumable: X can expose more rows after
+  // another scroll pulse or a manual nudge.
+  if (normalized.stopReason === "timeline_end") {
+    return {
+      ...normalized,
+      exhausted: false,
+      completedAt: undefined,
+      stopReason: "stalled" as const,
+      message:
+        normalized.message ??
+        "X paused loading more Likes. Your checkpoint is safe; continue to probe for older posts.",
+    };
+  }
+
+  return normalized;
 }
 
 export function normalizeCaptureEndpoint(value: string | undefined) {

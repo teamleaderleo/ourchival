@@ -56,7 +56,9 @@ export async function listReferencePage(ctx: any, request: Request | string) {
   }
   if (options.projectId) {
     const projects = await ctx.db.query("projects").collect();
-    const project = projects.find((candidate: any) => String(candidate._id) === options.projectId);
+    const project = projects.find(
+      (candidate: any) => String(candidate._id) === options.projectId,
+    );
     if (project) {
       const uses = await ctx.db
         .query("projectReferences")
@@ -197,8 +199,12 @@ export async function hydrateReference(
   const assetsWithUrls = await Promise.all(
     assets.map(async (asset: any) => {
       const [originalStorageUrl, previewUrl, thumbUrl] = await Promise.all([
-        asset.originalStorageId ? ctx.storage.getUrl(asset.originalStorageId) : null,
-        asset.previewStorageId ? ctx.storage.getUrl(asset.previewStorageId) : null,
+        asset.originalStorageId
+          ? ctx.storage.getUrl(asset.originalStorageId)
+          : null,
+        asset.previewStorageId
+          ? ctx.storage.getUrl(asset.previewStorageId)
+          : null,
         asset.thumbStorageId ? ctx.storage.getUrl(asset.thumbStorageId) : null,
       ]);
 
@@ -224,6 +230,7 @@ export async function hydrateReference(
 }
 
 export function sourceSnapshotPayload(snapshot: any) {
+  const sourceMetadata = sourceMetadataPayload(snapshot.jsonMetadata);
   return {
     pageTitle: snapshot.pageTitle,
     postText: snapshot.postText,
@@ -240,7 +247,75 @@ export function sourceSnapshotPayload(snapshot: any) {
     httpStatus: snapshot.httpStatus,
     metadataFetchedAt: snapshot.metadataFetchedAt,
     createdAt: snapshot.createdAt,
+    ...(sourceMetadata ? { sourceMetadata } : {}),
   };
+}
+
+export function sourceMetadataPayload(value: unknown) {
+  const metadata = jsonObject(value);
+  const rawMetadata = jsonObject(metadata?.rawMetadata);
+  const rawSnapshot = jsonObject(rawMetadata?.snapshot) ?? rawMetadata;
+  const engagement = engagementPayload(
+    rawMetadata?.engagement ?? rawSnapshot?.engagement,
+  );
+  const payload = compactObject({
+    provenance: stringValue(rawMetadata?.provenance),
+    sourceKind: stringValue(rawMetadata?.sourceKind),
+    feedContext: stringValue(rawMetadata?.feedContext),
+    textLanguage: stringValue(
+      rawMetadata?.textLanguage ?? rawSnapshot?.textLanguage,
+    ),
+    mediaIndex: nonNegativeNumber(rawMetadata?.mediaIndex),
+    mediaCount: nonNegativeNumber(rawMetadata?.mediaCount),
+    engagement,
+  });
+  return Object.keys(payload).length > 0 ? payload : undefined;
+}
+
+function engagementPayload(value: unknown) {
+  const metrics = jsonObject(value);
+  if (!metrics) return undefined;
+  const payload = compactObject({
+    replies: nonNegativeNumber(metrics.replies),
+    reposts: nonNegativeNumber(metrics.reposts),
+    quotes: nonNegativeNumber(metrics.quotes),
+    likes: nonNegativeNumber(metrics.likes),
+    bookmarks: nonNegativeNumber(metrics.bookmarks),
+    views: nonNegativeNumber(metrics.views),
+  });
+  return Object.keys(payload).length > 0 ? payload : undefined;
+}
+
+function jsonObject(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === "string") {
+    try {
+      return jsonObject(JSON.parse(value));
+    } catch {
+      return undefined;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim()
+    ? value.trim().slice(0, 160)
+    : undefined;
+}
+
+function nonNegativeNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  );
 }
 
 async function getReferenceSearchContext(
@@ -295,7 +370,9 @@ function getCachedDocument(
   const key = String(id);
   const existing = cache.get(key);
   if (existing) return existing;
-  const request = Promise.resolve(ctx.db.get(id)).then((value) => value ?? null);
+  const request = Promise.resolve(ctx.db.get(id)).then(
+    (value) => value ?? null,
+  );
   cache.set(key, request);
   return request;
 }
@@ -351,7 +428,9 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
   const requestedPageSize = Number(url.searchParams.get("limit") ?? 48);
   const collection = url.searchParams.get("collection");
   const lane = url.searchParams.get("lane");
-  const queryFilters = parseReferenceFilterTokens(url.searchParams.get("query") ?? "");
+  const queryFilters = parseReferenceFilterTokens(
+    url.searchParams.get("query") ?? "",
+  );
 
   return {
     cursor: url.searchParams.get("cursor") || null,
@@ -362,7 +441,9 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
     lane: isLane(lane) ? lane : "all",
     favoritesOnly: url.searchParams.get("favorites") === "true",
     query: normalizeSearchText(queryFilters.query),
-    domain: normalizeDomain(url.searchParams.get("domain") ?? queryFilters.domain),
+    domain: normalizeDomain(
+      url.searchParams.get("domain") ?? queryFilters.domain,
+    ),
     sourceType: normalizeSearchText(
       url.searchParams.get("sourceType") ?? queryFilters.sourceType,
     ),
@@ -404,26 +485,40 @@ export function parseReferenceFilterTokens(value: string) {
   return { query: words.join(" "), domain, sourceType, tag, board, project };
 }
 
-function matchesReferenceFilters(reference: any, options: ReferenceListOptions) {
+function matchesReferenceFilters(
+  reference: any,
+  options: ReferenceListOptions,
+) {
   if (referenceCollection(reference) !== options.collection) return false;
-  if (options.lane !== "all" && referenceLane(reference.kind) !== options.lane) {
+  if (
+    options.lane !== "all" &&
+    referenceLane(reference.kind) !== options.lane
+  ) {
     return false;
   }
   if (options.favoritesOnly && !reference.favorite) return false;
-  if (options.sourceType && normalizeSearchText(reference.kind) !== options.sourceType) {
+  if (
+    options.sourceType &&
+    normalizeSearchText(reference.kind) !== options.sourceType
+  ) {
     return false;
   }
-  if (options.domain && !matchesDomain(reference.sourceUrl, options.domain)) return false;
+  if (options.domain && !matchesDomain(reference.sourceUrl, options.domain))
+    return false;
   if (
     options.tagSlug &&
     (!options.tagId ||
-      !reference.tagIds.some((tagId: any) => String(tagId) === String(options.tagId)))
+      !reference.tagIds.some(
+        (tagId: any) => String(tagId) === String(options.tagId),
+      ))
   ) {
     return false;
   }
   if (
     options.boardId &&
-    !reference.boardIds.some((boardId: any) => String(boardId) === options.boardId)
+    !reference.boardIds.some(
+      (boardId: any) => String(boardId) === options.boardId,
+    )
   ) {
     return false;
   }
@@ -438,14 +533,18 @@ function matchesReferenceFilters(reference: any, options: ReferenceListOptions) 
 
 function matchesDomain(sourceUrl: string, domain: string) {
   try {
-    const hostname = new URL(sourceUrl).hostname.toLocaleLowerCase().replace(/^www\./, "");
+    const hostname = new URL(sourceUrl).hostname
+      .toLocaleLowerCase()
+      .replace(/^www\./, "");
     return hostname === domain || hostname.endsWith(`.${domain}`);
   } catch {
     return false;
   }
 }
 
-function referenceFacetKeys(reference: any | null | undefined): ReferenceCountKey[] {
+function referenceFacetKeys(
+  reference: any | null | undefined,
+): ReferenceCountKey[] {
   if (!reference) return [];
   const collection = referenceCollection(reference);
   const keys: ReferenceCountKey[] = [collection];
@@ -489,7 +588,10 @@ function normalizeSearchText(value: string) {
 }
 
 function normalizeDomain(value: string) {
-  const normalized = normalizeSearchText(value).replace(/^https?:\/\//, "").split("/")[0] ?? "";
+  const normalized =
+    normalizeSearchText(value)
+      .replace(/^https?:\/\//, "")
+      .split("/")[0] ?? "";
   return normalized.replace(/^www\./, "").replace(/\.$/, "");
 }
 

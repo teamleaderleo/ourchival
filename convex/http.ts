@@ -35,6 +35,8 @@ type CaptureBody = {
   sourceUrl?: string;
   canonicalUrl?: string;
   assetUrl?: string;
+  assetIndex?: number;
+  assetCount?: number;
   pageTitle?: string;
   pageDescription?: string;
   siteName?: string;
@@ -84,6 +86,17 @@ type UpdateReferenceBody = {
   deleted?: boolean;
 };
 
+type UpdateAssetBody = {
+  notes?: string;
+  addTags?: string[];
+  removeTagIds?: string[];
+  metadata?: unknown;
+};
+
+type ReferenceStatusBody = {
+  sourceUrls?: string[];
+};
+
 type StoredRemoteAsset = {
   status: string;
   storageProvider: "google_drive" | "convex" | "linked";
@@ -109,7 +122,9 @@ for (const path of [
   "/capture",
   "/capture-session",
   "/references",
+  "/reference-status",
   "/reference",
+  "/asset",
   "/reference-metadata",
   "/preference-export",
   "/drive-file",
@@ -129,6 +144,29 @@ for (const path of [
     ),
   });
 }
+
+http.route({
+  path: "/reference-status",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateCapture(ctx, request);
+      const body = (await request
+        .json()
+        .catch(() => ({}))) as ReferenceStatusBody;
+      const sourceUrls = cleanStringArray(body.sourceUrls, 80)
+        .map(normalizeSourceUrl)
+        .filter(Boolean);
+      const indexedSourceUrls = await ctx.runQuery(
+        internal.httpDb.referenceStatuses,
+        { sourceUrls },
+      );
+      return jsonResponse(request, { ok: true, indexedSourceUrls });
+    } catch (error) {
+      return accessErrorResponse(request, error);
+    }
+  }),
+});
 
 http.route({
   path: "/auth-check",
@@ -440,6 +478,50 @@ http.route({
 });
 
 http.route({
+  path: "/asset",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    const denied = await ownerDenied(request);
+    if (denied) return denied;
+    const assetId = new URL(request.url).searchParams.get("id");
+    if (!assetId)
+      return jsonResponse(request, { ok: false, error: "id is required" }, 400);
+    const body = (await readJson(request)) as UpdateAssetBody | undefined;
+    if (!body)
+      return jsonResponse(request, { ok: false, error: "Invalid JSON" }, 400);
+
+    const notes = cleanString(body.notes)?.slice(0, 4_000);
+    const metadata = boundedJsonMetadata(body.metadata);
+    if (body.metadata !== undefined && metadata === undefined) {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error: "metadata must be valid JSON no larger than 32 KiB",
+        },
+        400,
+      );
+    }
+    const updated = await ctx.runMutation(internal.httpDb.updateAssetMetadata, {
+      assetId,
+      patch: serializableValue({
+        ...(typeof body.notes === "string" ? { notes: notes ?? "" } : {}),
+        ...(metadata ? { jsonMetadata: metadata } : {}),
+      }),
+      addTagNames: cleanTagNames(body.addTags),
+      removeTagIds: cleanStringArray(body.removeTagIds, 32),
+    });
+    if (!updated)
+      return jsonResponse(
+        request,
+        { ok: false, error: "Asset not found" },
+        404,
+      );
+    return jsonResponse(request, { ok: true, ...updated });
+  }),
+});
+
+http.route({
   path: "/reference",
   method: "PATCH",
   handler: httpAction(async (ctx, request) => {
@@ -602,6 +684,8 @@ http.route({
     const postId = cleanString(body.postId);
     const postText = cleanString(body.postText);
     const altText = cleanString(body.altText);
+    const assetIndex = boundedAssetOrdinal(body.assetIndex);
+    const assetCount = boundedAssetCount(body.assetCount);
     const rawMetadata = cleanString(body.rawMetadata);
     const tagNames = cleanTagNames(body.tags);
     const captureSessionId = cleanString(body.captureSessionId);
@@ -635,6 +719,8 @@ http.route({
         pageTitle,
         postText,
         altText,
+        assetIndex,
+        assetCount,
         selectedText,
         rawMetadata,
         explicitAuthorName,
@@ -678,6 +764,8 @@ http.route({
           pageTitle,
           postText,
           altText,
+          assetIndex,
+          assetCount,
           selectedText,
           rawMetadata,
           explicitAuthorName,
@@ -753,6 +841,15 @@ http.route({
       tagNames,
       ...(assetUrl ? { assetUrl } : {}),
       ...(storedAsset ? { storedAsset: serializableValue(storedAsset) } : {}),
+      ...(assetUrl
+        ? {
+            assetDetails: serializableValue({
+              assetIndex,
+              assetCount,
+              altText,
+            }),
+          }
+        : {}),
       snapshot: serializableValue({
         ...(title ? { pageTitle: title } : {}),
         ...(postText ? { postText } : {}),
@@ -860,6 +957,8 @@ async function persistDuplicateCapture(
     pageTitle?: string;
     postText?: string;
     altText?: string;
+    assetIndex?: number;
+    assetCount?: number;
     selectedText?: string;
     rawMetadata?: string;
     explicitAuthorName?: string;
@@ -892,6 +991,8 @@ async function persistDuplicateCapture(
       pageTitle: args.pageTitle,
       postText: args.postText,
       altText: args.altText,
+      assetIndex: args.assetIndex,
+      assetCount: args.assetCount,
       selectedText: args.selectedText,
       rawMetadata: args.rawMetadata,
       explicitAuthorName: args.explicitAuthorName,
@@ -922,6 +1023,46 @@ function cleanTagNames(value: unknown) {
         .filter(Boolean),
     ),
   ).slice(0, 12);
+}
+
+function cleanStringArray(value: unknown, limit: number) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, limit);
+}
+
+function boundedAssetOrdinal(value: unknown) {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value < 100
+    ? value
+    : undefined;
+}
+
+function boundedAssetCount(value: unknown) {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= 100
+    ? value
+    : undefined;
+}
+
+function boundedJsonMetadata(value: unknown) {
+  if (value === undefined) return undefined;
+  try {
+    const json = JSON.stringify(value);
+    return typeof json === "string" && json.length <= 32_768 ? json : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function boundedSessionCount(value: unknown) {

@@ -3,6 +3,7 @@ import {
   normalizeCaptureEndpoint,
   normalizePairingEndpoint,
   normalizeSiteRoot,
+  normalizeXLikesImportState,
 } from "./storage";
 
 describe("normalizeSiteRoot", () => {
@@ -39,5 +40,58 @@ describe("normalizeSiteRoot", () => {
     expect(
       normalizeSiteRoot("https://example.com/capture#settings"),
     ).toBeUndefined();
+  });
+});
+
+describe("normalizeXLikesImportState", () => {
+  it("migrates legacy extra-image counts away from duplicates", () => {
+    expect(
+      normalizeXLikesImportState({
+        importId: "likes-1",
+        profileUrl: "https://x.com/i/history/likes",
+        running: false,
+        exhausted: true,
+        startedAt: "2026-08-31T00:00:00.000Z",
+        updatedAt: "2026-08-31T01:00:00.000Z",
+        chunks: 57,
+        discoveredPosts: 684,
+        captureAttempts: 737,
+        saved: 684,
+        duplicates: 53,
+        failed: 0,
+        skipped: 0,
+      }),
+    ).toMatchObject({
+      attachedMedia: 53,
+      duplicates: 0,
+    });
+  });
+
+  it("keeps legacy timeline-end checkpoints resumable", () => {
+    expect(
+      normalizeXLikesImportState({
+        importId: "likes-stalled",
+        profileUrl: "https://x.com/i/history/likes",
+        running: false,
+        exhausted: true,
+        startedAt: "2026-08-31T00:00:00.000Z",
+        updatedAt: "2026-08-31T01:00:00.000Z",
+        completedAt: "2026-08-31T01:00:00.000Z",
+        chunks: 324,
+        discoveredPosts: 3888,
+        captureAttempts: 4356,
+        saved: 3370,
+        attachedMedia: 157,
+        refreshedPosts: 763,
+        duplicates: 0,
+        failed: 0,
+        skipped: 0,
+        stopReason: "timeline_end",
+      }),
+    ).toMatchObject({
+      exhausted: false,
+      completedAt: undefined,
+      stopReason: "stalled",
+    });
   });
 });

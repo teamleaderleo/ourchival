@@ -49,7 +49,13 @@ export default defineSchema({
     .index("by_captured_at", ["capturedAt"])
     .searchIndex("search_references", {
       searchField: "title",
-      filterFields: ["platform", "favorite", "triageState", "archived", "deleted"],
+      filterFields: [
+        "platform",
+        "favorite",
+        "triageState",
+        "archived",
+        "deleted",
+      ],
     }),
 
   referenceStats: defineTable({
@@ -123,6 +129,12 @@ export default defineSchema({
     previewStorageId: v.optional(v.id("_storage")),
     thumbStorageId: v.optional(v.id("_storage")),
     originalUrl: v.optional(v.string()),
+    sourceIndex: v.optional(v.number()),
+    sourceCount: v.optional(v.number()),
+    altText: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    tagIds: v.optional(v.array(v.id("tags"))),
+    jsonMetadata: v.optional(v.string()),
     driveFileId: v.optional(v.string()),
     driveFolderId: v.optional(v.string()),
     driveWebViewLink: v.optional(v.string()),
@@ -138,11 +150,7 @@ export default defineSchema({
     perceptualHash: v.optional(v.string()),
     dominantColors: v.array(v.string()),
     derivativeStatus: v.optional(
-      v.union(
-        v.literal("processing"),
-        v.literal("ready"),
-        v.literal("failed"),
-      ),
+      v.union(v.literal("processing"), v.literal("ready"), v.literal("failed")),
     ),
   })
     .index("by_reference", ["referenceId"])
