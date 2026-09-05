@@ -5,6 +5,7 @@ import {
   isSafePublicUrl,
   parseLinkMetadataHtml,
   parseHoyolabPostMetadata,
+  remoteAssetCandidateUrls,
 } from "./linkMetadata";
 
 afterEach(() => {
@@ -197,5 +198,25 @@ describe("fetchPublicResponse", () => {
     expect(result.finalUrl).toBe("https://example.com/original.jpg");
     expect(result.response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("remoteAssetCandidateUrls", () => {
+  it("falls back through Pinterest's largest public renditions", () => {
+    expect(
+      remoteAssetCandidateUrls(
+        "https://i.pinimg.com/originals/aa/bb/cc/example.jpg",
+      ),
+    ).toEqual([
+      "https://i.pinimg.com/originals/aa/bb/cc/example.jpg",
+      "https://i.pinimg.com/1200x/aa/bb/cc/example.jpg",
+      "https://i.pinimg.com/736x/aa/bb/cc/example.jpg",
+    ]);
+  });
+
+  it("does not invent renditions for unrelated assets", () => {
+    expect(remoteAssetCandidateUrls("https://example.com/image.jpg")).toEqual([
+      "https://example.com/image.jpg",
+    ]);
   });
 });

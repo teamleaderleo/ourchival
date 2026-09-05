@@ -131,6 +131,7 @@ export default defineSchema({
     previewStorageId: v.optional(v.id("_storage")),
     thumbStorageId: v.optional(v.id("_storage")),
     originalUrl: v.optional(v.string()),
+    fetchedUrl: v.optional(v.string()),
     sourceIndex: v.optional(v.number()),
     sourceCount: v.optional(v.number()),
     altText: v.optional(v.string()),
