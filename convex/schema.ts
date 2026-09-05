@@ -43,6 +43,7 @@ export default defineSchema({
     favorite: v.boolean(),
     archived: v.boolean(),
     deleted: v.boolean(),
+    sealed: v.optional(v.boolean()),
   })
     .index("by_source_url", ["sourceUrl"])
     .index("by_canonical_url", ["canonicalUrl"])
@@ -132,6 +133,10 @@ export default defineSchema({
     thumbStorageId: v.optional(v.id("_storage")),
     originalUrl: v.optional(v.string()),
     fetchedUrl: v.optional(v.string()),
+    quality: v.optional(v.string()),
+    qualityReason: v.optional(v.string()),
+    fetchReceipt: v.optional(v.string()),
+    promotionReceipt: v.optional(v.string()),
     sourceIndex: v.optional(v.number()),
     sourceCount: v.optional(v.number()),
     altText: v.optional(v.string()),
@@ -335,6 +340,7 @@ export default defineSchema({
   }).index("by_reference", ["referenceId"]),
 
   captureSessions: defineTable({
+    receiptJson: v.optional(v.string()),
     sessionKey: v.string(),
     source: v.string(),
     kind: v.union(v.literal("bundle"), v.literal("import")),

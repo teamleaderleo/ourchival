@@ -17,6 +17,7 @@ import type * as enrichmentBatch from "../enrichmentBatch.js";
 import type * as enrichmentJobs from "../enrichmentJobs.js";
 import type * as http from "../http.js";
 import type * as httpDb from "../httpDb.js";
+import type * as lib_assetQuality from "../lib/assetQuality.js";
 import type * as lib_captureSessions from "../lib/captureSessions.js";
 import type * as lib_compactVisual from "../lib/compactVisual.js";
 import type * as lib_drive from "../lib/drive.js";
@@ -73,6 +74,7 @@ declare const fullApi: ApiFromModules<{
   enrichmentJobs: typeof enrichmentJobs;
   http: typeof http;
   httpDb: typeof httpDb;
+  "lib/assetQuality": typeof lib_assetQuality;
   "lib/captureSessions": typeof lib_captureSessions;
   "lib/compactVisual": typeof lib_compactVisual;
   "lib/drive": typeof lib_drive;

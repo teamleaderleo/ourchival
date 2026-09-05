@@ -1,3 +1,4 @@
+import { assetQuality } from "./lib/assetQuality";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import {
@@ -132,6 +133,7 @@ export const authenticateClipper = internalMutation({
 
 export const upsertCaptureSession = internalMutation({
   args: {
+    receiptJson: v.optional(v.string()),
     sessionKey: v.string(),
     source: v.string(),
     label: v.optional(v.string()),
@@ -162,6 +164,7 @@ export const upsertCaptureSession = internalMutation({
       );
     }
     const counts = {
+      ...(args.receiptJson ? { receiptJson: args.receiptJson } : {}),
       expectedCount: Math.max(existing?.expectedCount ?? 0, args.expectedCount),
       completedCount: Math.max(
         existing?.completedCount ?? 0,
@@ -389,6 +392,7 @@ export const saveDuplicateCapture = internalMutation({
     const metadata = args.metadata as Record<string, any> | undefined;
     const body = args.body as Record<string, any>;
     const referencePatch: Record<string, unknown> = {
+      ...(args.tagNames.includes("Sealed") ? { sealed: true } : {}),
       ...(!reference.canonicalUrl && details.canonicalUrl
         ? { canonicalUrl: details.canonicalUrl }
         : {}),
@@ -440,8 +444,28 @@ export const saveDuplicateCapture = internalMutation({
         );
       } else if (assetId) {
         await ctx.db.patch(assetId, {
+          ...(args.storedAsset?.fetchReceipt
+            ? {
+                promotionReceipt: JSON.stringify({
+                  previous: existingAsset
+                    ? existingAssetReceipt(existingAsset)
+                    : null,
+                  attempt: JSON.parse(args.storedAsset.fetchReceipt),
+                }),
+              }
+            : {}),
           ...(args.storedAsset && args.storedAsset.storageProvider !== "linked"
-            ? storedAssetFields(args.storedAsset)
+            ? {
+                ...storedAssetFields(args.storedAsset),
+                originalStorageId: args.storedAsset.storageId,
+                driveFileId: args.storedAsset.driveFileId,
+                previewStorageId: undefined,
+                thumbStorageId: undefined,
+                derivativeStatus: undefined,
+                contentHash: undefined,
+                perceptualHash: undefined,
+                dominantColors: [],
+              }
             : {}),
           ...(typeof details.assetIndex === "number"
             ? { sourceIndex: details.assetIndex }
@@ -631,22 +655,25 @@ async function findDuplicate(
 }
 
 export function existingAssetReceipt(asset: Record<string, any>) {
-  const storageProvider =
-    asset.storageProvider ??
-    (asset.driveFileId
-      ? "google_drive"
-      : asset.originalStorageId
-        ? "convex"
-        : "linked");
+  const storageProvider = asset.driveFileId
+    ? "google_drive"
+    : asset.originalStorageId
+      ? "convex"
+      : "linked";
   return {
     storageProvider,
     status:
       storageProvider === "google_drive"
-        ? "original asset already stored in Google Drive"
+        ? "asset already stored in Google Drive"
         : storageProvider === "convex"
-          ? "original asset already stored in Convex Storage"
-          : "original asset is link-only",
+          ? "asset already stored in Convex Storage"
+          : "asset is link-only",
     ...(asset.originalStorageId ? { storageId: asset.originalStorageId } : {}),
+    quality: assetQuality(asset),
+    ...(asset.qualityReason ? { qualityReason: asset.qualityReason } : {}),
+    ...(asset.fetchReceipt ? { fetchReceipt: asset.fetchReceipt } : {}),
+    ...(asset.width ? { width: asset.width } : {}),
+    ...(asset.height ? { height: asset.height } : {}),
     ...(asset.fetchedUrl ? { fetchedUrl: asset.fetchedUrl } : {}),
     ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
     ...(asset.fileSize ? { fileSize: asset.fileSize } : {}),
@@ -695,6 +722,15 @@ async function insertAsset(
 export function storedAssetFields(storedAsset: Record<string, any>) {
   return {
     storageProvider: storedAsset.storageProvider,
+    quality: assetQuality(storedAsset),
+    ...(storedAsset.qualityReason
+      ? { qualityReason: storedAsset.qualityReason }
+      : {}),
+    ...(storedAsset.fetchReceipt
+      ? { fetchReceipt: storedAsset.fetchReceipt }
+      : {}),
+    ...(storedAsset.width ? { width: storedAsset.width } : {}),
+    ...(storedAsset.height ? { height: storedAsset.height } : {}),
     ...(storedAsset.fetchedUrl ? { fetchedUrl: storedAsset.fetchedUrl } : {}),
     ...(storedAsset.storageId
       ? { originalStorageId: storedAsset.storageId }

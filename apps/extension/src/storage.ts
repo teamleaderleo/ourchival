@@ -47,6 +47,7 @@ export type BatchCaptureFailure = {
 };
 
 export type BatchCaptureState = {
+  receiptVersion?: number;
   jobId: string;
   source: BatchCaptureSource;
   running: boolean;
@@ -61,6 +62,17 @@ export type BatchCaptureState = {
   duplicates: number;
   failed: number;
   skipped: number;
+  referenceReceipts?: Array<{ sourceUrl: string; referenceId: string }>;
+  assetReceipts?: Array<{
+    assetId: string;
+    referenceId: string;
+    quality: string;
+    provider: string;
+    sourceUrl: string;
+  }>;
+  canonicalReferenceIds?: string[];
+  degradedStored?: number;
+  unknownStored?: number;
   originalsStored?: number;
   originalsLinked?: number;
   storedBytes?: number;
@@ -81,6 +93,7 @@ export type XLikesImportStopReason =
   | "error";
 
 export type XLikesImportState = {
+  receiptVersion?: number;
   importId: string;
   profileUrl: string;
   running: boolean;
@@ -163,6 +176,14 @@ export type SourceIntakeState = {
   duplicates: number;
   failed: number;
   skipped: number;
+  receiptVersion?: number;
+  canonicalReferenceIds?: string[];
+  assets?: Record<string, { quality: string; provider: string }>;
+  expectedPages?: Record<string, number>;
+  unknownPageCountArtworks?: number;
+  gaps?: Record<string, string>;
+  degradedStored?: number;
+  unknownStored?: number;
   originalCandidates?: number;
   originalsStored?: number;
   originalsLinked?: number;

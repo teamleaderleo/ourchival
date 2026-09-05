@@ -8,7 +8,7 @@ import { isCapturableUrl, type ImportedUrl } from "./imports";
 import {
   detectSourceIntakeContext,
   reconcilePinterestQueue,
-  sourceIntakePayload,
+  sourceIntakePayloads,
   sourceIntakeItemKey,
   type SourceIntakeChunk,
 } from "./sourceIntake";
@@ -63,6 +63,8 @@ type CaptureResponse = {
   storageStatus?: string;
   storageProvider?: "google_drive" | "convex" | "linked";
   storedBytes?: number;
+  newStoredBytes?: number;
+  assetQuality?: string;
   alreadySaved?: boolean;
   duplicateReason?: "asset_url" | "canonical_url" | "source_url";
   existingReference?: CaptureResult["existingReference"];
@@ -487,6 +489,7 @@ async function startXLikesImport() {
     : {
         importId: createImportId(),
         profileUrl,
+        receiptVersion: 2,
         running: true,
         exhausted: false,
         startedAt: now,
@@ -580,6 +583,7 @@ async function startSourceIntake() {
   const now = new Date().toISOString();
   const resumable = Boolean(
     previous &&
+    previous.receiptVersion === 2 &&
     !previous.exhausted &&
     previous.provider === context.provider &&
     previous.sourceUrl === context.sourceUrl,
@@ -598,7 +602,12 @@ async function startSourceIntake() {
         provider: context.provider,
         label: context.label,
         sourceUrl: context.sourceUrl,
-        currentUrl: profileDiscovery?.discoveredUrls?.[0] ?? context.currentUrl,
+        currentUrl:
+          profileDiscovery?.discoveredUrls?.[0] ??
+          (context.provider === "pixiv_bookmarks"
+            ? context.sourceUrl
+            : context.currentUrl),
+        receiptVersion: 2,
         cursor: context.cursor,
         sensitiveDefault: context.sensitiveDefault,
         running: true,
@@ -720,8 +729,8 @@ async function acceptSourceIntakeChunk(
     return true;
   });
   const firstOrdinal = state.observed;
-  const payloads = fresh.map((item, index) =>
-    sourceIntakePayload(item, {
+  const payloads = fresh.flatMap((item, index) =>
+    sourceIntakePayloads(item, {
       provider: state.provider,
       importId: state.importId,
       ordinal: firstOrdinal + index,
@@ -751,15 +760,59 @@ async function acceptSourceIntakeChunk(
   state.duplicates += batch?.duplicates ?? 0;
   state.failed += batch?.failed ?? 0;
   state.skipped += batch?.skipped ?? 0;
-  state.originalCandidates =
-    (state.originalCandidates ?? 0) +
-    payloads.filter((payload) => Boolean(payload.assetUrl)).length;
-  state.originalsStored =
-    (state.originalsStored ?? 0) + (batch?.originalsStored ?? 0);
-  state.originalsLinked =
-    (state.originalsLinked ?? 0) + (batch?.originalsLinked ?? 0);
-  state.storedBytes =
-    (state.storedBytes ?? 0) + (batch?.storedBytes ?? 0);
+  state.receiptVersion = 2;
+  state.canonicalReferenceIds = Array.from(
+    new Set([
+      ...(state.canonicalReferenceIds ?? []),
+      ...(batch?.canonicalReferenceIds ?? []),
+    ]),
+  );
+  state.assets ??= {};
+  state.expectedPages ??= {};
+  state.gaps ??= {};
+  for (const item of fresh) {
+    const referenceKey =
+      batch?.referenceReceipts?.find((r) => r.sourceUrl === item.sourceUrl)
+        ?.referenceId ?? item.sourceUrl;
+    if (item.pageCount || item.assetUrl)
+      state.expectedPages[referenceKey] = Math.max(
+        state.expectedPages[referenceKey] ?? 0,
+        item.pageCount ?? 1,
+      );
+    else
+      state.unknownPageCountArtworks =
+        (state.unknownPageCountArtworks ?? 0) + 1;
+    if (item.gap) state.gaps[item.providerId] = item.gap;
+  }
+  for (const gap of chunk.gaps ?? [])
+    state.gaps[gap.key] =
+      gap.message + ` (ordinal ${gap.ordinal}; ${chunk.currentUrl})`;
+  for (const failure of batch?.failures ?? [])
+    state.gaps[failure.url] = failure.message;
+  for (const receipt of batch?.assetReceipts ?? []) {
+    state.assets[receipt.assetId] = {
+      quality: receipt.quality,
+      provider: receipt.provider,
+    };
+    if (receipt.provider === "linked")
+      state.gaps[receipt.sourceUrl] = "Image page is not durably stored";
+  }
+  const assets = Object.values(state.assets);
+  state.originalCandidates = Object.values(state.expectedPages).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  state.originalsStored = assets.filter(
+    (a) => a.provider !== "linked" && a.quality === "original",
+  ).length;
+  state.degradedStored = assets.filter(
+    (a) => a.provider !== "linked" && a.quality === "degraded",
+  ).length;
+  state.unknownStored = assets.filter(
+    (a) => a.provider !== "linked" && a.quality === "unknown",
+  ).length;
+  state.originalsLinked = assets.filter((a) => a.provider === "linked").length;
+  state.storedBytes = (state.storedBytes ?? 0) + (batch?.storedBytes ?? 0);
   if (typeof chunk.reportedCount === "number") {
     state.reportedCount = Math.max(
       state.reportedCount ?? 0,
@@ -770,6 +823,7 @@ async function acceptSourceIntakeChunk(
     ? Math.max(0, state.reportedCount - state.observed)
     : 0;
 
+  state.unresolved = Math.max(state.unresolved, Object.keys(state.gaps).length);
   const sourceExhausted = chunk.exhausted && !nextUrl;
   if (sourceExhausted) {
     state.running = false;
@@ -860,6 +914,21 @@ async function reportSourceIntakeSession(
       source: state.provider,
       label: state.label,
       sourceUrl: state.sourceUrl,
+      receiptJson: JSON.stringify({
+        version: state.receiptVersion ?? 1,
+        observedArtworks: state.observed,
+        uniqueReferences: state.canonicalReferenceIds?.length ?? null,
+        imagePagesExpected: state.originalCandidates ?? 0,
+        originalsStored:
+          state.receiptVersion === 2 ? (state.originalsStored ?? 0) : null,
+        degradedPreviews: state.degradedStored ?? 0,
+        unprovenRenditions: state.unknownStored ?? 0,
+        originalsLinked: state.originalsLinked ?? 0,
+        failures: state.failed,
+        unresolved: state.unresolved,
+        newStoredBytes: state.storedBytes ?? 0,
+        unknownPageCountArtworks: state.unknownPageCountArtworks ?? 0,
+      }),
       expectedCount: expected,
       completedCount: state.observed,
       savedCount: state.saved,
@@ -1337,6 +1406,7 @@ async function runBatch(
   const connection = await getCaptureConnection();
 
   const state: BatchCaptureState = {
+    receiptVersion: 2,
     jobId: resolvedJobId,
     source,
     running: true,
@@ -1509,13 +1579,38 @@ function applyBatchItemOutcome(
     } else state.saved += 1;
   } else if (result.body.alreadySaved) state.duplicates += 1;
   else state.saved += 1;
+  state.canonicalReferenceIds ??= [];
+  if (
+    result.body.referenceId &&
+    !state.canonicalReferenceIds.includes(result.body.referenceId)
+  )
+    state.canonicalReferenceIds.push(result.body.referenceId);
+  state.referenceReceipts ??= [];
+  if (result.body.referenceId)
+    state.referenceReceipts.push({
+      sourceUrl: payload.sourceUrl,
+      referenceId: result.body.referenceId,
+    });
+  state.assetReceipts ??= [];
+  if (result.body.assetId && result.body.referenceId)
+    state.assetReceipts.push({
+      assetId: result.body.assetId,
+      referenceId: result.body.referenceId,
+      quality: result.body.assetQuality ?? "unknown",
+      provider: result.body.storageProvider ?? "linked",
+      sourceUrl: payload.sourceUrl,
+    });
   const storage = classifyAssetStorage(result.body);
   if (storage === "stored") {
-    state.originalsStored = (state.originalsStored ?? 0) + 1;
+    if (result.body.assetQuality === "original")
+      state.originalsStored = (state.originalsStored ?? 0) + 1;
+    else if (result.body.assetQuality === "degraded")
+      state.degradedStored = (state.degradedStored ?? 0) + 1;
+    else state.unknownStored = (state.unknownStored ?? 0) + 1;
     state.storedBytes =
       (state.storedBytes ?? 0) +
-      (Number.isFinite(result.body.storedBytes)
-        ? Math.max(0, result.body.storedBytes ?? 0)
+      (Number.isFinite(result.body.newStoredBytes)
+        ? Math.max(0, result.body.newStoredBytes ?? 0)
         : 0);
   } else if (storage === "linked") {
     state.originalsLinked = (state.originalsLinked ?? 0) + 1;

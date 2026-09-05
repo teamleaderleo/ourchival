@@ -29,7 +29,7 @@ describe("existingAssetReceipt", () => {
   it("keeps legacy URL-only assets distinguishable from stored originals", () => {
     expect(existingAssetReceipt({})).toMatchObject({
       storageProvider: "linked",
-      status: "original asset is link-only",
+      status: "asset is link-only",
     });
   });
 });
