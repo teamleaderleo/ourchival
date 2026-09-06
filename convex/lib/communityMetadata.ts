@@ -7,6 +7,7 @@ export async function expandCommunity(
   ctx: Ctx,
   match: Doc<"communityMatches">,
   limit = 512,
+  forSearch = false,
 ) {
   const [asset, post] = await Promise.all([
     ctx.db.get(match.assetId),
@@ -24,14 +25,29 @@ export async function expandCommunity(
     (asset.contentHash ?? null) === match.originalContentHash;
   if (!post) throw new Error("Missing community source receipt");
   const codes = decodeTagSet(post.tagPayload);
+  const correction = await ctx.db
+    .query("communityCorrections")
+    .withIndex("by_asset_id", (q) => q.eq("assetId", match.assetId))
+    .unique();
+  const hidden = new Set(
+    correction ? decodeTagSet(correction.hiddenTagPayload) : [],
+  );
+  const eligible = forSearch
+    ? codes.filter((code) => !hidden.has(code))
+    : codes;
   const tags = await Promise.all(
-    codes.slice(0, limit).map(async (code) => {
+    eligible.slice(0, limit).map(async (code) => {
       const term = await ctx.db
         .query("communityTerms")
         .withIndex("by_code", (q) => q.eq("code", code))
         .unique();
       if (!term) throw new Error("Missing community term");
-      return { name: term.name, category: term.category };
+      return {
+        code,
+        name: term.name,
+        category: term.category,
+        hidden: hidden.has(code),
+      };
     }),
   );
   return {
@@ -46,8 +62,9 @@ export async function expandCommunity(
     evidence: match.evidence,
     state: current ? ("current" as const) : ("stale" as const),
     tags,
+    correctionRevision: correction?.revision ?? 0,
     tagCount: codes.length,
-    truncated: codes.length > limit,
+    truncated: eligible.length > limit,
   };
 }
 
@@ -60,7 +77,7 @@ export async function communityForSearch(
     .withIndex("by_reference_id", (q) => q.eq("referenceId", referenceId))
     .take(9);
   const expanded = await Promise.all(
-    rows.slice(0, 8).map((row) => expandCommunity(ctx, row, 64)),
+    rows.slice(0, 8).map((row) => expandCommunity(ctx, row, 64, true)),
   );
   return {
     items: expanded.filter((row) => row.state === "current"),

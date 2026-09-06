@@ -14,6 +14,24 @@ const publish = makeFunctionReference<"mutation">("communityTags:publish"),
 const accessKey = "test-community-owner";
 beforeEach(() => vi.stubEnv("OURCHIVAL_OWNER_ACCESS_KEY", accessKey));
 afterEach(() => vi.unstubAllEnvs());
+test("visual inspection selects late image pages and rejects another reference's asset", async () => {
+  const t = convexTest(schema, modules);
+  const first = await seed(t);
+  const other = await seed(t);
+  const last = await t.run(async (ctx) => {
+    let id = first.assetId;
+    for (let index = 0; index < 35; index++) {
+      id = await ctx.db.insert("assets", { referenceId: first.referenceId, dominantColors: [] });
+    }
+    return id;
+  });
+  const visualInspect = makeFunctionReference<"query">("visualEnrichment:inspect");
+  const result = await t.query(visualInspect, { accessKey, referenceId: first.referenceId, assetId: last });
+  expect(result.items.map((item: { assetId: string }) => item.assetId)).toEqual([last]);
+  expect(result.truncated).toBe(false);
+  await expect(t.query(visualInspect, { accessKey, referenceId: first.referenceId, assetId: other.assetId }))
+    .rejects.toThrow("Image does not belong");
+});
 async function seed(t: ReturnType<typeof convexTest>) {
   const ids = await t.run(async (ctx) => {
     const referenceId = await ctx.db.insert("references", {
@@ -75,7 +93,14 @@ test("publishes a separate compact source record, searchable with attribution, a
     postId: 123,
     tagCount: 2,
   });
-  expect(result.items[0].tags).toEqual(expect.arrayContaining(args.tags));
+  expect(
+    result.items[0].tags.map(
+      ({ name, category }: { name: string; category: string }) => ({
+        name,
+        category,
+      }),
+    ),
+  ).toEqual(expect.arrayContaining(args.tags));
   await t.run(async (ctx) => {
     expect(await ctx.db.query("communityPosts").collect()).toHaveLength(1);
     expect(await ctx.db.query("communityTerms").collect()).toHaveLength(2);
@@ -233,4 +258,52 @@ test("active Library searches published source tags across unreviewed items with
     await refreshReferenceSearch(ctx, args.referenceId);
   });
   expect((await t.query(list, { url })).references).toHaveLength(0);
+});
+
+test("hide/restore affects only this asset's source search, persists across updates and fences stale edits", async () => {
+  const t = convexTest(schema, modules),
+    args = await seed(t);
+  await t.mutation(publish, args);
+  const toggle = makeFunctionReference<"mutation">("communityTags:setHidden");
+  const view = await t.query(inspect, { accessKey, assetId: args.assetId });
+  const code = view.items[0].tags.find(
+    (tag: { name: string }) => tag.name === "crosshatching",
+  ).code;
+  const change = {
+    accessKey,
+    assetId: args.assetId,
+    code,
+    hidden: true,
+    expectedRevision: 0,
+  };
+  await expect(
+    t.mutation(toggle, { ...change, accessKey: "wrong" }),
+  ).rejects.toThrow();
+  await expect(
+    t.mutation(toggle, { ...change, code: 999999 }),
+  ).rejects.toThrow();
+  await t.mutation(toggle, change);
+  await expect(
+    t.mutation(toggle, { ...change, hidden: false }),
+  ).rejects.toThrow();
+  await t.mutation(publish, { ...args, sourceUpdatedAt: 1002 });
+  const next = await t.query(inspect, { accessKey, assetId: args.assetId });
+  expect(next.items[0].correctionRevision).toBe(1);
+  expect(
+    next.items[0].tags.find((tag: { code: number }) => tag.code === code)
+      .hidden,
+  ).toBe(true);
+  await t.run(async (ctx) => {
+    expect(
+      (await ctx.db.query("referenceSearchDocuments").unique())!.text,
+    ).not.toContain("crosshatching");
+    expect((await ctx.db.get(args.referenceId))!.tagIds).toEqual([]);
+    expect(await ctx.db.query("visualCorrections").collect()).toHaveLength(0);
+  });
+  await t.mutation(toggle, { ...change, hidden: false, expectedRevision: 1 });
+  await t.run(async (ctx) => {
+    expect(
+      (await ctx.db.query("referenceSearchDocuments").unique())!.text,
+    ).toContain("crosshatching");
+  });
 });

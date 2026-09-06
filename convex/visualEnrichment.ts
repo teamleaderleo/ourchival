@@ -547,12 +547,15 @@ export const correct = mutation({
 });
 
 export const inspect = query({
-  args: { accessKey: v.string(), referenceId: v.id("references") },
+  args: { accessKey: v.string(), referenceId: v.id("references"), assetId: v.optional(v.id("assets")) },
   handler: async (ctx, args) => {
     await requireOwnerAccess(args.accessKey);
     const reference = await ctx.db.get(args.referenceId);
     if (!reference) throw new Error("Reference is unavailable.");
-    const assets = await ctx.db
+    const selectedAsset = args.assetId ? await ctx.db.get(args.assetId) : null;
+    if (args.assetId && (!selectedAsset || selectedAsset.referenceId !== reference._id))
+      throw new Error("Image does not belong to this reference");
+    const assets = selectedAsset ? [selectedAsset] : await ctx.db
       .query("assets")
       .withIndex("by_reference", (q) => q.eq("referenceId", reference._id))
       .take(33);

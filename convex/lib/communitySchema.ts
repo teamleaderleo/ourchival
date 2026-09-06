@@ -13,6 +13,11 @@ export const communityTag = v.object({
   category: communityCategory,
 });
 export const communityTables = {
+  communityCorrections: defineTable({
+    assetId: v.id("assets"),
+    hiddenTagPayload: v.bytes(),
+    revision: v.number(),
+  }).index("by_asset_id", ["assetId"]),
   communityTerms: defineTable({
     name: v.string(),
     category: communityCategory,

@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { requireOwnerAccess } from "./lib/privateAccess";
 import { communityTag } from "./lib/communitySchema";
 import { allocateTagCode } from "./lib/tagIdentity";
-import { encodeTagSet } from "./lib/tagSetCodec";
+import { encodeTagSet, decodeTagSet } from "./lib/tagSetCodec";
 import { expandCommunity } from "./lib/communityMetadata";
 import { refreshReferenceSearch } from "./lib/searchIndex";
 import { storageSha256 } from "./lib/storageDigest";
@@ -247,5 +247,67 @@ export const inspect = query({
       ),
       truncated: rows.length > 4,
     };
+  },
+});
+
+export const setHidden = mutation({
+  args: {
+    accessKey: v.string(),
+    assetId: v.id("assets"),
+    code: v.number(),
+    hidden: v.boolean(),
+    expectedRevision: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    if (
+      !Number.isSafeInteger(args.code) ||
+      args.code < 1 ||
+      args.code > 0xffffffff ||
+      !Number.isSafeInteger(args.expectedRevision) ||
+      args.expectedRevision < 0
+    )
+      throw new Error("Invalid tag change");
+    const asset = await ctx.db.get(args.assetId);
+    const reference = asset ? await ctx.db.get(asset.referenceId) : null;
+    if (!asset || !reference || reference.deleted)
+      throw new Error("Asset unavailable");
+    const correction = await ctx.db
+      .query("communityCorrections")
+      .withIndex("by_asset_id", (q) => q.eq("assetId", args.assetId))
+      .unique();
+    if ((correction?.revision ?? 0) !== args.expectedRevision)
+      throw new Error("Tags changed; reload before trying again");
+    const codes = new Set(
+      correction ? decodeTagSet(correction.hiddenTagPayload) : [],
+    );
+    const matches = await ctx.db
+      .query("communityMatches")
+      .withIndex("by_asset_id_and_post_id", (q) =>
+        q.eq("assetId", args.assetId),
+      )
+      .take(4);
+    const posts = await Promise.all(
+      matches.map((row) => ctx.db.get(row.postSnapshotId)),
+    );
+    if (
+      !posts.some(
+        (post) => post && decodeTagSet(post.tagPayload).includes(args.code),
+      )
+    )
+      throw new Error("Tag is not associated with this image");
+    if (codes.has(args.code) === args.hidden)
+      return { revision: correction?.revision ?? 0 };
+    if (args.hidden) codes.add(args.code);
+    else codes.delete(args.code);
+    const payload = {
+      assetId: asset._id,
+      hiddenTagPayload: encodeTagSet([...codes]),
+      revision: (correction?.revision ?? 0) + 1,
+    };
+    if (correction) await ctx.db.replace(correction._id, payload);
+    else await ctx.db.insert("communityCorrections", payload);
+    await refreshReferenceSearch(ctx, asset.referenceId);
+    return { revision: payload.revision };
   },
 });

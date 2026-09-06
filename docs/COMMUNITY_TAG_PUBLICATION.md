@@ -43,8 +43,18 @@ Owner/source text has priority over community/model terms in the bounded search
 projection. These bounds avoid copying a source graph into every card or creating
 one database row for every image/tag pair.
 
-Dedicated tag display, review controls and source-filter usability are the next
-UI stage. This change supplies storage, attributed search and retrieval APIs.
+The image viewer shows up to six source terms beside the selected image. A
+disclosure reveals categorized, filterable terms and source links. Sealed images
+require an explicit reveal before loading source tags. Stale matches are labeled
+and cannot be edited in the viewer.
+
+Hide/restore changes only that image's community search terms. Preferences use
+one compact binary code set per image in `communityCorrections`, with revision
+checks to prevent stale edits. Original snapshots, owner tags and model decisions
+remain separate; source updates preserve the preferences. The same term can
+still match another image or another metadata source. Model suggestions in the
+viewer now follow the selected image, including pages beyond the former 32-image
+inspection limit.
 
 ## Run locally
 
@@ -100,3 +110,12 @@ worker tests and full typechecking. Focused coverage includes source/owner/model
 separation, shared snapshots, stale input rejection, Drive binding, revision
 conflicts, active-Library filtering, binary validation, partial-write replay and
 credential-safe failure receipts.
+
+The subsequent viewer pass passed 249 Vitest tests, all auxiliary suites, full
+typechecking and a production web build. A browser fixture using the real viewer
+styles checked 1280×720, 1440×900 and 700×900 layouts and hide/restore interactions;
+this was not an authenticated end-to-end browser test. Live read-only checks
+verified all 636 source terms and 21 selected-image queries after local deployment.
+No owner preferences were changed. See [the review receipt](validation/community-review-live.json).
+The local launcher now allows two minutes for a large backend to start, avoiding
+repeated interruption by its former 30-second timeout.

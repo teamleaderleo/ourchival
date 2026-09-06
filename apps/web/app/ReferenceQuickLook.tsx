@@ -9,6 +9,7 @@ import {
 import { getDomain, getInitial } from "./ReferenceCards";
 import { isProtectedDriveUrl, usePrivateImageUrl } from "./usePrivateImageUrl";
 import { ReferenceVisualMetadata } from "./ReferenceVisualMetadata";
+import { ReferenceCommunityTags } from "./ReferenceCommunityTags";
 
 export function ReferenceQuickLook({
   reference,
@@ -293,7 +294,8 @@ export function ReferenceQuickLook({
         <aside className="quick-look-tag-panel" aria-label="Image tags">
           <h2>Tags</h2>
           {reference.tags?.length ? <div className="viewer-saved-tags">{reference.tags.map(tag => <span key={tag._id}>{tag.name}</span>)}</div> : <p className="menu-hint">No accepted tags yet.</p>}
-          {reference.assets.length > 0 ? <ReferenceVisualMetadata key={reference._id} reference={reference} compact /> : <p className="menu-hint">Model tags need a captured image. This item currently has none.</p>}
+          {reference.assets[assetIndex] ? <ReferenceCommunityTags key={reference.assets[assetIndex]._id} assetId={reference.assets[assetIndex]._id} sealed={reference.sealed} /> : null}
+          {reference.assets.length > 0 ? <ReferenceVisualMetadata key={reference.assets[assetIndex]?._id ?? reference._id} reference={reference} assetId={reference.assets[assetIndex]?._id} compact /> : <p className="menu-hint">Model tags need a captured image. This item currently has none.</p>}
         </aside>
         <footer className="quick-look-footer">
           <div className="viewer-actions">
