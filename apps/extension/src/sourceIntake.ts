@@ -16,6 +16,12 @@ export type SourceIntakeItem = {
   providerId: string;
   sourceUrl: string;
   assetUrl?: string;
+  assetOriginalUrl?: string;
+  assetUrls?: string[];
+  ordinal?: number;
+  publishedAt?: string;
+  tags?: string[];
+  gap?: string;
   title?: string;
   authorName?: string;
   authorUrl?: string;
@@ -31,6 +37,7 @@ export type SourceIntakeChunk = {
   currentUrl: string;
   cursor: string;
   items: SourceIntakeItem[];
+  gaps?: Array<{ key: string; message: string; ordinal: number }>;
   discoveredUrls?: string[];
   nextUrl?: string;
   reportedCount?: number;
@@ -191,7 +198,7 @@ export function sourceIntakePayload(
     version: 1,
     provider: args.provider,
     providerId: item.providerId,
-    ordinal: args.ordinal,
+    ordinal: item.ordinal ?? args.ordinal,
     sensitivity: item.sensitive ?? (sealed ? "unknown" : "general"),
     sealed,
     ...(item.pageCount ? { pageCount: item.pageCount } : {}),
@@ -210,6 +217,11 @@ export function sourceIntakePayload(
     ...(item.assetUrl
       ? { assetUrl: item.assetUrl, assetIndex: 0, assetCount: 1 }
       : {}),
+    ...(item.assetOriginalUrl
+      ? { assetOriginalUrl: item.assetOriginalUrl }
+      : {}),
+    ...(item.assetUrl ? { promoteOriginal: true } : {}),
+    ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
     ...(item.title ? { pageTitle: item.title } : {}),
     ...(item.authorName ? { authorName: item.authorName } : {}),
     ...(item.authorUrl ? { authorUrl: item.authorUrl } : {}),
@@ -219,7 +231,10 @@ export function sourceIntakePayload(
       : {}),
     deferMetadata: true,
     rawMetadata: JSON.stringify(rawMetadata),
-    tags: sealed ? [providerLabel, "Sealed"] : [providerLabel],
+    tags: [
+      ...(sealed ? [providerLabel, "Sealed"] : [providerLabel]),
+      ...(item.tags ?? []),
+    ],
     captureSessionId: args.importId,
     capturedAt: new Date().toISOString(),
   };
@@ -279,4 +294,19 @@ function objectValue(value: unknown) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+export function sourceIntakePayloads(
+  item: SourceIntakeItem,
+  args: Parameters<typeof sourceIntakePayload>[1],
+): CapturePayload[] {
+  const base = sourceIntakePayload(item, args);
+  if (!item.assetUrls?.length) return [base];
+  return item.assetUrls.map((assetUrl, assetIndex) => ({
+    ...base,
+    assetUrl,
+    assetIndex,
+    assetCount: item.assetUrls!.length,
+    promoteOriginal: true,
+  }));
 }

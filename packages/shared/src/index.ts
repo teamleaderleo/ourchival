@@ -6,6 +6,8 @@ export type CapturePayload = {
   sourceUrl: string;
   canonicalUrl?: string;
   assetUrl?: string;
+  assetOriginalUrl?: string;
+  promoteOriginal?: boolean;
   assetIndex?: number;
   assetCount?: number;
   pageTitle?: string;

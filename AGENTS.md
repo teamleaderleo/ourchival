@@ -3,6 +3,13 @@ Treat its hierarchy, first-viewport, progressive-disclosure, and state-specific
 requirements as acceptance criteria. A technically complete surface that makes
 the user hunt for its next required action is not complete.
 
+On Air Blue, use `/Users/leoli/Projects/ourchival` for the running vault and
+extension build. Group other worktrees under `/Users/leoli/Projects/worktrees/ourchival`.
+Never install a separate worktree's extension build into the persistent browser.
+The legacy `ourchival-air-blue-runtime` path contains only a managed compiled extension
+installation, preserving the installed extension ID and its local state.
+See `docs/LOCAL_CHECKOUT.md` before changing the browser's installed path.
+
 <!-- convex-ai-start -->
 
 This project uses [Convex](https://convex.dev) as its backend.

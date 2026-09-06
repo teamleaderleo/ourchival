@@ -82,12 +82,16 @@ export async function listReferencePage(ctx: any, request: Request | string) {
     snapshot: any | null | undefined;
     searchMatches: SearchMatch[];
   }> = [];
-  const indexedPage = options.query ? await indexedReferencePage(ctx, options) : null;
-  const page = indexedPage ?? await ctx.db
-    .query("references")
-    .withIndex("by_captured_at")
-    .order("desc")
-    .paginate({ numItems: options.pageSize, cursor: options.cursor });
+  const indexedPage = options.query
+    ? await indexedReferencePage(ctx, options)
+    : null;
+  const page =
+    indexedPage ??
+    (await ctx.db
+      .query("references")
+      .withIndex("by_captured_at")
+      .order("desc")
+      .paginate({ numItems: options.pageSize, cursor: options.cursor }));
   const candidates = page.page.filter((reference: any) =>
     matchesReferenceFilters(reference, options),
   );
@@ -101,10 +105,13 @@ export async function listReferencePage(ctx: any, request: Request | string) {
       })),
     );
   } else if (indexedPage) {
-    references.push(...candidates.map((reference: any) => ({
-      reference, snapshot: undefined,
-      searchMatches: indexedPage.matches.get(String(reference._id)) ?? [],
-    })));
+    references.push(
+      ...candidates.map((reference: any) => ({
+        reference,
+        snapshot: undefined,
+        searchMatches: indexedPage.matches.get(String(reference._id)) ?? [],
+      })),
+    );
   } else {
     const searchable = await Promise.all(
       candidates.map(async (reference: any) => {
@@ -141,7 +148,11 @@ export async function listReferencePage(ctx: any, request: Request | string) {
     references: hydrated,
     continueCursor: page.isDone ? null : page.continueCursor,
     hasMore: !page.isDone,
-    searchMode: options.query ? (indexedPage ? "indexed" : "page_scan") : "browse",
+    searchMode: options.query
+      ? indexedPage
+        ? "indexed"
+        : "page_scan"
+      : "browse",
     scanned: page.page.length,
     counts: {
       inbox: counts.inbox,
@@ -208,8 +219,30 @@ export async function hydrateReference(
       : Promise.resolve(knownSnapshot),
   ]);
 
+  const sealed =
+    reference.sealed === true ||
+    (() => {
+      try {
+        const raw = JSON.parse(snapshot?.jsonMetadata ?? "{}");
+        return (raw.rawMetadata ?? raw).sealed === true;
+      } catch {
+        return false;
+      }
+    })();
   const assetsWithUrls = await Promise.all(
     assets.map(async (asset: any) => {
+      if (sealed)
+        return {
+          _id: asset._id,
+          referenceId: asset.referenceId,
+          sourceIndex: asset.sourceIndex,
+          sourceCount: asset.sourceCount,
+          width: asset.width,
+          height: asset.height,
+          quality: asset.quality,
+          sealed: true,
+        };
+
       const [originalStorageUrl, previewUrl, thumbUrl] = await Promise.all([
         asset.originalStorageId
           ? ctx.storage.getUrl(asset.originalStorageId)
@@ -233,8 +266,16 @@ export async function hydrateReference(
 
   return {
     ...reference,
+    sealed,
     assets: assetsWithUrls,
-    ...(snapshot ? { sourceSnapshot: sourceSnapshotPayload(snapshot) } : {}),
+    ...(snapshot
+      ? {
+          sourceSnapshot: {
+            ...sourceSnapshotPayload(snapshot),
+            ...(sealed ? { previewImageUrl: undefined } : {}),
+          },
+        }
+      : {}),
     ...(knownSearchMatches.length > 0
       ? { searchMatches: knownSearchMatches }
       : {}),
@@ -404,7 +445,9 @@ async function scanReferenceCounts(ctx: QueryCtx): Promise<ReferenceCounts> {
   const counts = emptyCounts();
   // Bootstrap the existing counters in one query. Convex forbids calling
   // paginate more than once in a transaction, even with successive cursors.
-  for await (const reference of ctx.db.query("references").withIndex("by_captured_at")) {
+  for await (const reference of ctx.db
+    .query("references")
+    .withIndex("by_captured_at")) {
     for (const key of referenceFacetKeys(reference)) counts[key] += 1;
   }
 

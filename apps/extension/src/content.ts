@@ -1,4 +1,9 @@
 import {
+  pixivArtwork,
+  pixivBody,
+  pinterestOriginalFromState,
+} from "./artworkIntake";
+import {
   parseXSnapshot,
   type ParsedXSource,
   type XDomSnapshot,
@@ -609,72 +614,116 @@ async function scanPinterestProfile(
 
 async function scanPixivBookmarksPage(): Promise<SourceIntakeChunk> {
   const context = detectSourceIntakeContext(location.href);
-  if (context?.provider !== "pixiv_bookmarks") {
+  if (context?.provider !== "pixiv_bookmarks")
     throw new Error("Open a Pixiv artwork-bookmarks page before importing.");
-  }
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (document.querySelector('a[href*="/artworks/"]')) break;
-    await wait(250);
-  }
-
   const page = Number(context.cursor.replace("page:", "")) || 1;
-  const items = new Map<string, SourceIntakeItem>();
-  const scope = document.querySelector("main") ?? document.body;
-  for (const anchor of Array.from(
-    scope.querySelectorAll<HTMLAnchorElement>('a[href*="/artworks/"]'),
-  )) {
-    const url = absoluteHttpUrl(anchor.href);
-    const providerId = url?.match(/\/artworks\/(\d+)/)?.[1];
-    if (!url || !providerId || items.has(providerId)) continue;
-    const card = closestArtworkCard(anchor);
-    const sameWorkLinks = Array.from(
-      card.querySelectorAll<HTMLAnchorElement>(
-        `a[href*="/artworks/${providerId}"]`,
-      ),
+  if (new URL(context.sourceUrl).searchParams.get("mode") !== "all")
+    throw new Error(
+      "Use the All artworks bookmark view for a complete import.",
     );
-    const image = card.querySelector<HTMLImageElement>("img");
-    const title = firstText(
-      image?.alt,
-      ...sameWorkLinks.map((link) => link.textContent?.trim()),
-      anchor.getAttribute("aria-label") ?? undefined,
-    );
-    const author = card.querySelector<HTMLAnchorElement>('a[href*="/users/"]');
-    const pageCount = confidentPageCount(card);
-    const authorName = firstText(author?.textContent?.trim());
-    const authorUrl = absoluteHttpUrl(author?.href);
-    const previewImageUrl = absoluteHttpUrl(image?.currentSrc || image?.src);
-    items.set(providerId, {
-      providerId,
-      sourceUrl: `https://www.pixiv.net/en/artworks/${providerId}`,
-      ...(title ? { title } : {}),
-      ...(authorName ? { authorName } : {}),
-      ...(authorUrl ? { authorUrl } : {}),
-      ...(previewImageUrl ? { previewImageUrl } : {}),
-      ...(pageCount ? { pageCount } : {}),
-      sensitive: isExplicitArtworkCard(card) ? "explicit" : "general",
-      metadata: {
-        page,
-        rest: new URL(location.href).searchParams.get("rest") ?? "show",
-        mode: new URL(location.href).searchParams.get("mode") ?? "all",
-      },
+  const limit = 44;
+  const offset = (page - 1) * limit;
+  const userId = new URL(context.sourceUrl).pathname.match(/users\/(\d+)/)?.[1];
+  const rest = context.sensitiveDefault ? "hide" : "show";
+  const request = async (path: string): Promise<unknown> => {
+    // The browser owns the session; credentials are neither read nor relayed to the vault.
+    const response = await fetch(new URL(path, location.origin), {
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(20_000),
+      headers: { Accept: "application/json" },
     });
+    if (!response.ok) throw new Error("Pixiv metadata HTTP " + response.status);
+    return response.json();
+  };
+  const listing = pixivBody(
+    await request(
+      `/ajax/user/${userId}/illusts/bookmarks?tag=&offset=${offset}&limit=${limit}&rest=${rest}`,
+    ),
+  );
+  if (
+    !Array.isArray(listing.works) ||
+    !Number.isSafeInteger(listing.total) ||
+    listing.total < 0
+  ) {
+    throw new Error(
+      "Pixiv bookmark listing is incomplete; checkpoint retained.",
+    );
   }
-
-  const nextUrl = pixivNextPageUrl(context.sourceUrl, page + 1);
-  const hasNext = Array.from(
-    document.querySelectorAll<HTMLAnchorElement>("a[href]"),
-  ).some((anchor) => sameUrlIgnoringOrder(anchor.href, nextUrl));
-  const reportedCount = reportedPixivCount(document.body.innerText);
+  if (!listing.works.length && offset < listing.total)
+    throw new Error("Pixiv returned an empty page before its declared end.");
+  const items: SourceIntakeItem[] = [];
+  const gaps: Array<{ key: string; message: string; ordinal: number }> = [];
+  for (const [index, bookmark] of listing.works.entries()) {
+    if (stopSourceIntake)
+      throw new Error("Paused; current bookmark page will be replayed.");
+    const ordinal = offset + index;
+    if (!/^\d+$/.test(String(bookmark.id))) {
+      gaps.push({
+        key: `bookmark:${bookmark.bookmarkData?.id ?? ordinal}`,
+        ordinal,
+        message: "Deleted or unavailable bookmark has no artwork ID",
+      });
+      continue;
+    }
+    items.push(await pixivArtwork(bookmark, context, ordinal, page, request));
+  }
+  const exhausted = offset + listing.works.length >= listing.total;
   return {
     provider: "pixiv_bookmarks",
     sourceUrl: context.sourceUrl,
     currentUrl: location.href,
     cursor: context.cursor,
-    items: Array.from(items.values()),
-    ...(hasNext ? { nextUrl } : {}),
-    ...(reportedCount ? { reportedCount } : {}),
-    exhausted: !hasNext,
+    items,
+    gaps,
+    reportedCount: listing.total,
+    exhausted,
+    ...(!exhausted
+      ? { nextUrl: pixivNextPageUrl(context.sourceUrl, page + 1) }
+      : {}),
   };
+}
+
+async function resolvePinterestOriginal(item: SourceIntakeItem) {
+  if (!item.assetUrl) return;
+  const evidence: Record<string, unknown> = {
+    url: item.sourceUrl,
+    status: null,
+  };
+  try {
+    const response = await fetch(item.sourceUrl, {
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(15_000),
+    });
+    evidence.status = response.status;
+    if (!response.ok) throw new Error("Pin metadata HTTP " + response.status);
+    const html = await response.text();
+    if (html.length > 5_000_000)
+      throw new Error("Pin metadata exceeds bounded parser limit");
+    const document = new DOMParser().parseFromString(html, "text/html");
+    for (const script of document.querySelectorAll(
+      'script[type="application/json"]',
+    )) {
+      let value: unknown;
+      try {
+        value = JSON.parse(script.textContent ?? "");
+      } catch {
+        continue;
+      }
+      const original = pinterestOriginalFromState(value, item.providerId);
+      if (original) {
+        item.assetOriginalUrl = original;
+        evidence.originalUrl = original;
+        evidence.method = "pin.images.orig";
+        break;
+      }
+    }
+    if (!item.assetOriginalUrl)
+      throw new Error("Authoritative pin.images.orig metadata unavailable");
+  } catch (error) {
+    evidence.error =
+      error instanceof Error ? error.message : "Pin metadata unavailable";
+  }
+  item.metadata = { ...item.metadata, originalResolution: evidence };
 }
 
 async function scanPinterestBoardChunk(scan: {
@@ -759,21 +808,19 @@ async function scanPinterestBoardChunk(scan: {
       document.documentElement.scrollHeight - 4 && stagnantBottomRounds >= 2;
   const expectedPinsObserved =
     !reportedCount || scan.providerIds.size >= reportedCount;
-  if (
-    settledAtBottom &&
-    !expectedPinsObserved &&
-    scan.recoveryProbes < 6
-  ) {
+  if (settledAtBottom && !expectedPinsObserved && scan.recoveryProbes < 6) {
     scan.recoveryProbes += 1;
-    window.scrollBy(
-      0,
-      -Math.max(960, Math.floor(window.innerHeight * 4)),
-    );
+    window.scrollBy(0, -Math.max(960, Math.floor(window.innerHeight * 4)));
     await wait(1_000);
   }
   const exhausted =
-    settledAtBottom &&
-    (expectedPinsObserved || scan.recoveryProbes >= 6);
+    settledAtBottom && (expectedPinsObserved || scan.recoveryProbes >= 6);
+  const capturedItems = Array.from(items.values());
+  for (let start = 0; start < capturedItems.length; start += 3) {
+    await Promise.all(
+      capturedItems.slice(start, start + 3).map(resolvePinterestOriginal),
+    );
+  }
   return {
     provider: "pinterest_board",
     sourceUrl: context.sourceUrl,

@@ -1,3 +1,8 @@
+import {
+  assetQuality,
+  completeImageResponse,
+  imageDimensions,
+} from "./lib/assetQuality";
 import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
@@ -42,6 +47,8 @@ type CaptureBody = {
   sourceUrl?: string;
   canonicalUrl?: string;
   assetUrl?: string;
+  assetOriginalUrl?: string;
+  promoteOriginal?: boolean;
   assetIndex?: number;
   assetCount?: number;
   pageTitle?: string;
@@ -67,6 +74,7 @@ type CaptureBody = {
 };
 
 type CaptureSessionBody = {
+  receiptJson?: string;
   sessionKey?: string;
   source?: string;
   label?: string;
@@ -125,6 +133,12 @@ type StoredRemoteAsset = {
   status: string;
   storageProvider: "google_drive" | "convex" | "linked";
   fetchedUrl?: string;
+  storedThisRequest?: boolean;
+  quality?: string;
+  qualityReason?: string;
+  fetchReceipt?: string;
+  width?: number;
+  height?: number;
   storageId?: any;
   mimeType?: string;
   fileSize?: number;
@@ -807,6 +821,10 @@ http.route({
         source,
         ...(label ? { label: label.slice(0, 160) } : {}),
         ...(sourceUrl ? { sourceUrl } : {}),
+        ...(typeof body.receiptJson === "string" &&
+        body.receiptJson.length <= 16_000
+          ? { receiptJson: body.receiptJson }
+          : {}),
         expectedCount: boundedSessionCount(body.expectedCount),
         completedCount: boundedSessionCount(body.completedCount),
         savedCount: boundedSessionCount(body.savedCount),
@@ -985,6 +1003,7 @@ http.route({
       favorite: false,
       archived: false,
       deleted: false,
+      ...(tagNames.includes("Sealed") ? { sealed: true } : {}),
     };
 
     let storageStatus = linkMetadata
@@ -997,6 +1016,7 @@ http.route({
     if (assetUrl) {
       storedAsset = await fetchAndStoreRemoteAsset(ctx, {
         assetUrl,
+        originalUrl: cleanString(body.assetOriginalUrl),
         sourceUrl,
         title,
       });
@@ -1048,7 +1068,11 @@ http.route({
         ...(storedAsset
           ? {
               storageProvider: storedAsset.storageProvider,
+              assetQuality: assetQuality(storedAsset),
               storedBytes: storedAsset.fileSize,
+              newStoredBytes: storedAsset.storedThisRequest
+                ? storedAsset.fileSize
+                : 0,
             }
           : {}),
       },
@@ -1149,10 +1173,18 @@ async function persistDuplicateCapture(
   let storedAsset: StoredRemoteAsset | undefined;
   if (
     assetUrl &&
-    (!duplicate.assetId || duplicate.storedAsset?.storageProvider === "linked")
+    (!duplicate.assetId ||
+      duplicate.storedAsset?.storageProvider === "linked" ||
+      (args.body.promoteOriginal === true &&
+        assetQuality(duplicate.storedAsset ?? {}) !== "original"))
   ) {
     storedAsset = await fetchAndStoreRemoteAsset(ctx, {
       assetUrl,
+      originalUrl: cleanString(args.body.assetOriginalUrl),
+      promotionOnly: Boolean(
+        duplicate.assetId &&
+        duplicate.storedAsset?.storageProvider !== "linked",
+      ),
       sourceUrl: duplicate.reference.sourceUrl,
       title: args.pageTitle ?? duplicate.reference.title,
     });
@@ -1196,11 +1228,15 @@ async function persistDuplicateCapture(
     : null;
 }
 
-export function duplicateAssetReceipt<T>(
+export function duplicateAssetReceipt<T extends { storageProvider?: string }>(
   fetched: T | undefined,
   existing: T | undefined,
 ) {
-  return fetched ?? existing;
+  return fetched?.storageProvider === "linked" &&
+    existing &&
+    existing.storageProvider !== "linked"
+    ? existing
+    : (fetched ?? existing);
 }
 
 function cleanTagNames(value: unknown) {
@@ -1271,11 +1307,15 @@ function duplicateResponse(request: Request, duplicate: DuplicateCapture) {
     assetId: duplicate.assetId,
     storageStatus: duplicate.reference.deleted
       ? "blocked by Trash"
-      : duplicate.storedAsset?.status ?? "already saved",
+      : (duplicate.storedAsset?.status ?? "already saved"),
     ...(duplicate.storedAsset
       ? {
           storageProvider: duplicate.storedAsset.storageProvider,
+          assetQuality: assetQuality(duplicate.storedAsset),
           storedBytes: duplicate.storedAsset.fileSize,
+          newStoredBytes: duplicate.storedAsset.storedThisRequest
+            ? duplicate.storedAsset.fileSize
+            : 0,
         }
       : {}),
     existingReference: {
@@ -1380,137 +1420,232 @@ function shouldSyncPreference(body: UpdateReferenceBody) {
   );
 }
 
-async function fetchAndStoreRemoteAsset(
+export async function fetchAndStoreRemoteAsset(
   ctx: { storage: { store: (blob: Blob) => Promise<any> } },
-  args: { assetUrl: string; sourceUrl: string; title?: string },
+  args: {
+    assetUrl: string;
+    originalUrl?: string;
+    promotionOnly?: boolean;
+    sourceUrl: string;
+    title?: string;
+  },
 ): Promise<StoredRemoteAsset> {
   const controller = new AbortController();
   let timer = setTimeout(() => controller.abort(), remoteAssetTimeoutMs);
+  const candidates = Array.from(
+    new Set([
+      ...(args.originalUrl ? [args.originalUrl] : []),
+      ...remoteAssetCandidateUrls(args.assetUrl),
+    ]),
+  ).filter(
+    (url) =>
+      !args.promotionOnly || assetQuality({ fetchedUrl: url }) === "original",
+  );
+  const attempts: Array<Record<string, unknown>> = [];
+  let selectedUrl: string | undefined;
+  let dimensions: { width: number; height: number } | undefined;
+  const receipt = (result: StoredRemoteAsset): StoredRemoteAsset => ({
+    ...result,
+    storedThisRequest: result.storageProvider !== "linked",
+    ...(selectedUrl ? { fetchedUrl: selectedUrl } : {}),
+    ...dimensions,
+    quality: selectedUrl
+      ? assetQuality({ fetchedUrl: selectedUrl })
+      : "unknown",
+    qualityReason: !selectedUrl
+      ? "No complete image retrieved; original availability unresolved"
+      : assetQuality({ fetchedUrl: selectedUrl }) === "degraded"
+        ? "Original candidates failed; retained a resized rendition. HTTP 403 does not prove nonexistence."
+        : assetQuality({ fetchedUrl: selectedUrl }) === "unknown"
+          ? "Served rendition lacks original evidence"
+          : "Fetched original rendition",
+    fetchReceipt: JSON.stringify({
+      version: 1,
+      at: new Date().toISOString(),
+      candidates,
+      selectedUrl: selectedUrl ?? null,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null,
+      attempts,
+      candidateOutcomes: candidates.map(
+        (url) =>
+          attempts.find((a) => a.url === url) ?? {
+            url,
+            outcome: "not_attempted",
+            status: null,
+            bytes: null,
+            width: null,
+            height: null,
+          },
+      ),
+    }),
+  });
   try {
-    let response: Response | undefined;
-    let fetchedUrl = args.assetUrl;
-    for (const candidateUrl of remoteAssetCandidateUrls(args.assetUrl)) {
-      const result = await fetchPublicResponse(candidateUrl, {
-        signal: controller.signal,
-        headers: {
-          Accept:
-            "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-        },
-      });
-      response = result.response;
-      fetchedUrl = result.finalUrl;
-      if (response.ok) break;
-      await response.body?.cancel().catch(() => undefined);
-    }
-    if (!response) {
-      return {
-        status: "remote asset fetch failed",
-        storageProvider: "linked",
+    for (const candidateUrl of candidates) {
+      const attempt: Record<string, unknown> = {
+        url: candidateUrl,
+        status: null,
+        bytes: null,
+        width: null,
+        height: null,
       };
-    }
-    if (!response.ok) {
-      return {
-        status: `fetch failed: ${response.status}`,
-        storageProvider: "linked",
-      };
-    }
-
-    const mimeType = response.headers.get("Content-Type") ?? undefined;
-    const contentLength = Number(response.headers.get("Content-Length") ?? 0);
-    if (!mimeType?.toLowerCase().startsWith("image/")) {
-      return {
-        status: `remote asset is ${mimeType ?? "an unknown type"}`,
-        storageProvider: "linked",
-      };
-    }
-
-    if (
-      contentLength > maxBufferedRemoteAssetBytes &&
-      response.body
-    ) {
-      clearTimeout(timer);
-      timer = setTimeout(
-        () => controller.abort(),
-        remoteAssetStreamTimeoutMs,
-      );
-      const driveUpload = await uploadStreamToDrive({
-        stream: response.body,
-        size: contentLength,
-        sourceUrl: args.sourceUrl,
-        title: args.title,
-        mimeType,
-      });
-      if (driveUpload.ok && driveUpload.file?.id) {
-        return {
+      attempts.push(attempt);
+      try {
+        const isPixiv = /(^|\.)pximg\.net$/.test(
+          new URL(candidateUrl).hostname,
+        );
+        const result = await fetchPublicResponse(candidateUrl, {
+          signal: controller.signal,
+          headers: {
+            Accept: "image/*",
+            ...(isPixiv ? { Referer: "https://www.pixiv.net/" } : {}),
+          },
+        });
+        const response = result.response;
+        attempt.status = response.status;
+        attempt.finalUrl = result.finalUrl;
+        attempt.contentRange = response.headers.get("content-range");
+        const mimeType = response.headers.get("content-type") ?? "";
+        attempt.mimeType = mimeType;
+        if (
+          !completeImageResponse(response) ||
+          !mimeType.toLowerCase().startsWith("image/") ||
+          (isPixiv &&
+            assetQuality({ fetchedUrl: result.finalUrl }) !== "original")
+        ) {
+          attempt.error = !response.ok
+            ? "HTTP " + response.status
+            : response.status === 206
+              ? "Incomplete or unproven byte range"
+              : "Not an image";
+          const errorBody = await readBoundedBlob(
+            response,
+            mimeType,
+            64 * 1024,
+          );
+          attempt.bytes = errorBody?.size ?? null;
+          continue;
+        }
+        const contentLength = Number(
+          response.headers.get("content-length") ?? 0,
+        );
+        let driveUpload;
+        let blob: Blob | undefined;
+        let fileSize: number;
+        if (contentLength > maxBufferedRemoteAssetBytes && response.body) {
+          clearTimeout(timer);
+          timer = setTimeout(
+            () => controller.abort(),
+            remoteAssetStreamTimeoutMs,
+          );
+          const reader = response.body.getReader();
+          const first = await reader.read();
+          dimensions = first.value ? imageDimensions(first.value) : undefined;
+          let pending = first.value;
+          let total = 0;
+          const stream = new ReadableStream<Uint8Array>({
+            async pull(target) {
+              const chunk = pending
+                ? { done: false, value: pending }
+                : await reader.read();
+              pending = undefined;
+              if (chunk.done) {
+                if (total !== contentLength)
+                  target.error(new Error("Image byte count mismatch"));
+                else target.close();
+                reader.releaseLock();
+                return;
+              }
+              total += chunk.value!.byteLength;
+              if (total > contentLength) {
+                target.error(new Error("Image exceeds declared size"));
+                await reader.cancel();
+                return;
+              }
+              target.enqueue(chunk.value!);
+            },
+            cancel(reason) {
+              return reader.cancel(reason);
+            },
+          });
+          driveUpload = await uploadStreamToDrive({
+            stream,
+            size: contentLength,
+            sourceUrl: args.sourceUrl,
+            title: args.title,
+            mimeType,
+          });
+          fileSize = total;
+        } else {
+          const downloaded = await readBoundedBlob(
+            response,
+            mimeType,
+            maxBufferedRemoteAssetBytes,
+          );
+          if (
+            !downloaded ||
+            downloaded.size === 0 ||
+            (contentLength && downloaded.size !== contentLength)
+          ) {
+            attempt.error = "Empty, oversized, or incomplete image body";
+            continue;
+          }
+          blob = downloaded;
+          dimensions = imageDimensions(
+            new Uint8Array(await blob.arrayBuffer()),
+          );
+          fileSize = blob.size;
+          driveUpload = await uploadBlobToDrive({
+            blob,
+            sourceUrl: args.sourceUrl,
+            title: args.title,
+            mimeType,
+          });
+        }
+        selectedUrl = result.finalUrl;
+        attempt.bytes = fileSize;
+        attempt.width = dimensions?.width ?? null;
+        attempt.height = dimensions?.height ?? null;
+        if (driveUpload.ok && driveUpload.file?.id) {
+          return receipt({
+            status: driveUpload.status,
+            storageProvider: "google_drive",
+            mimeType,
+            fileSize,
+            driveFileId: driveUpload.file.id,
+            driveFolderId: driveUpload.file.parents?.[0],
+            driveWebViewLink: driveUpload.file.webViewLink,
+            driveWebContentLink: driveUpload.file.webContentLink,
+            driveThumbnailLink: driveUpload.file.thumbnailLink,
+            driveMimeType: driveUpload.file.mimeType,
+          });
+        }
+        // Pixiv originals must reach Drive. A failed upload remains retryable.
+        if (blob && !isPixiv) {
+          const storageId = await ctx.storage.store(blob);
+          return receipt({
+            status:
+              driveUpload.status + "; asset stored in Convex Storage fallback",
+            storageProvider: "convex",
+            storageId,
+            mimeType,
+            fileSize,
+          });
+        }
+        return receipt({
           status: driveUpload.status,
-          storageProvider: "google_drive",
-          fetchedUrl,
-          mimeType,
-          fileSize: contentLength,
-          driveFileId: driveUpload.file.id,
-          driveFolderId: driveUpload.file.parents?.[0],
-          driveWebViewLink: driveUpload.file.webViewLink,
-          driveWebContentLink: driveUpload.file.webContentLink,
-          driveThumbnailLink: driveUpload.file.thumbnailLink,
-          driveMimeType: driveUpload.file.mimeType,
-        };
+          storageProvider: "linked",
+        });
+      } catch (error) {
+        attempt.error =
+          error instanceof Error ? error.message : "Asset request failed";
+        if (controller.signal.aborted) break;
       }
-      return {
-        status: driveUpload.status,
-        storageProvider: "linked",
-        fetchedUrl,
-      };
     }
-
-    const blob = await readBoundedBlob(
-      response,
-      mimeType,
-      maxBufferedRemoteAssetBytes,
-    );
-    if (!blob) {
-      return {
-        status: "remote asset too large for buffered fallback",
-        storageProvider: "linked",
-      };
-    }
-
-    const driveUpload = await uploadBlobToDrive({
-      blob,
-      sourceUrl: args.sourceUrl,
-      title: args.title,
-      mimeType,
-    });
-    if (driveUpload.ok && driveUpload.file?.id) {
-      return {
-        status: driveUpload.status,
-        storageProvider: "google_drive",
-        fetchedUrl,
-        mimeType,
-        fileSize: blob.size,
-        driveFileId: driveUpload.file.id,
-        driveFolderId: driveUpload.file.parents?.[0],
-        driveWebViewLink: driveUpload.file.webViewLink,
-        driveWebContentLink: driveUpload.file.webContentLink,
-        driveThumbnailLink: driveUpload.file.thumbnailLink,
-        driveMimeType: driveUpload.file.mimeType,
-      };
-    }
-
-    const storageId = await ctx.storage.store(blob);
-      return {
-        status: `${driveUpload.status}; stored original asset in Convex Storage fallback`,
-        storageProvider: "convex",
-        fetchedUrl,
-        storageId,
-      mimeType,
-      fileSize: blob.size,
-    };
-  } catch (error) {
-    return {
-      status:
-        error instanceof Error ? error.message : "remote asset fetch failed",
+    return receipt({
+      status: "No complete original image secured; see fetch receipt",
       storageProvider: "linked",
-    };
+    });
   } finally {
     clearTimeout(timer);
   }

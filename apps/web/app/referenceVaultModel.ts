@@ -78,6 +78,7 @@ export type ReferenceCollection =
   "inbox" | "library" | "later" | "archive" | "trash";
 
 export type SavedReference = {
+  sealed?: boolean;
   _id: string;
   kind: string;
   title?: string;

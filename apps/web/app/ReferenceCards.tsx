@@ -76,6 +76,7 @@ export function ReferenceCard({
         title={onQuickLook ? "Open image" : undefined}
       >
         <div className="thumb-wrap" style={dimensions ? { aspectRatio: `${dimensions.width} / ${dimensions.height}` } : undefined}>
+          {reference.sealed ? <span className="kind-badge">Sealed</span> : null}
           <ThumbImage
             imageUrl={nearViewport ? imageUrl : undefined}
             title={title}

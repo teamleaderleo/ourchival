@@ -95,7 +95,7 @@ async function render() {
   root.innerHTML = `
     <main>
       <header class="popup-header">
-        <div class="brand-mark" aria-hidden="true">O</div>
+        <img class="brand-mark" src="icons/cat-48.png" alt="" aria-hidden="true" />
         <div>
           <p class="eyebrow">Ourchival Clipper</p>
           <h1>Import from this browser</h1>
@@ -332,7 +332,7 @@ function renderPairingState(settings: ExtensionSettings) {
   return `
     <main class="pairing-view">
       <header class="popup-header">
-        <div class="brand-mark" aria-hidden="true">O</div>
+        <img class="brand-mark" src="icons/cat-48.png" alt="" aria-hidden="true" />
         <div>
           <p class="eyebrow">Ourchival Clipper</p>
           <h1>Connect this browser</h1>
@@ -453,11 +453,13 @@ function renderSourceIntake(
   const progress = state
     ? `<div class="batch-counts source-progress">
         <span><strong>${state.observed}</strong> observed</span>
-        <span><strong>${state.saved}</strong> new</span>
+        <span><strong>${state.canonicalReferenceIds?.length ?? state.saved}</strong> references</span>
         ${state.duplicates ? `<span><strong>${state.duplicates}</strong> existing</span>` : ""}
         ${state.failed ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
         ${state.reportedCount ? `<span><strong>${state.unresolved}</strong> unresolved</span>` : ""}
-        ${(state.originalCandidates ?? 0) > 0 ? `<span><strong>${state.originalsStored ?? 0}/${state.originalCandidates}</strong> originals secured</span>` : ""}
+        ${state.receiptVersion === 2 && (state.originalCandidates ?? 0) > 0 ? `<span><strong>${state.originalsStored ?? 0}/${state.originalCandidates}</strong> originals secured</span>` : state.originalCandidates ? `<span>Legacy receipt: rendition audit needed</span>` : ""}
+        ${state.degradedStored ? `<span><strong>${state.degradedStored}</strong> degraded</span>` : ""}
+        ${state.unknownStored ? `<span><strong>${state.unknownStored}</strong> unproven rendition</span>` : ""}
         ${(state.originalsLinked ?? 0) > 0 ? `<span><strong>${state.originalsLinked}</strong> link-only</span>` : ""}
       </div>
       <p class="hint"><strong>${state.running ? "Importing" : state.exhausted ? "Source end reached" : "Paused"}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"} · ${escapeHtml(state.cursor)}</p>
@@ -585,7 +587,7 @@ function renderXLikesProgress(state: XLikesImportState | undefined) {
       ${(state.refreshedPosts ?? 0) > 0 ? `<span><strong>${state.refreshedPosts}</strong> refreshed</span>` : ""}
       ${state.duplicates > 0 ? `<span><strong>${state.duplicates}</strong> existing posts</span>` : ""}
       ${state.failed > 0 ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
-      ${(state.originalsStored ?? 0) > 0 ? `<span><strong>${state.originalsStored}</strong> originals secured</span>` : ""}
+      ${state.receiptVersion === 2 && (state.originalsStored ?? 0) > 0 ? `<span><strong>${state.originalsStored}</strong> originals secured</span>` : state.originalsStored ? "<span>Legacy receipt: rendition audit needed</span>" : ""}
       ${(state.originalsLinked ?? 0) > 0 ? `<span><strong>${state.originalsLinked}</strong> link-only</span>` : ""}
     </div>
     <p class="hint"><strong>${status}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"}</p>
