@@ -1,5 +1,6 @@
 import { visualResultCurrent } from "./visualMetadata";
 import { expandVisual } from "./compactVisual";
+import { communityForSearch } from "./communityMetadata";
 import { getSourceContext } from "./sourceContext";
 import { internal } from "../_generated/api";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
@@ -92,7 +93,9 @@ export async function refreshReferenceSearch(
       hideCaption: correction?.hideCaption,
     });
   }
+  const community = await communityForSearch(ctx, referenceId);
   const document = buildSearchDocument(reference, snapshot, {
+    community: community.items,
     tags: tags.filter((t): t is NonNullable<typeof t> => t !== null),
     boards: boards.filter((b): b is NonNullable<typeof b> => b !== null),
     uses: hydratedUses,
@@ -116,6 +119,7 @@ export async function refreshReferenceSearch(
     indexedAt: Date.now(),
     truncated:
       document.truncated ||
+      community.truncated ||
       reference.tagIds.length > 64 ||
       reference.boardIds.length > 32 ||
       uses.length > 32 ||
@@ -164,6 +168,7 @@ export async function startSearchRebuild(
 
 const cursorPrefix = "ourchival-index-v1:";
 type SearchOptions = {
+  includeUnreviewed?: boolean;
   query: string;
   collection: string;
   lane: string;
@@ -220,6 +225,7 @@ export async function indexedReferencePage(
   const scope = JSON.stringify([
     query,
     options.collection,
+    !!options.includeUnreviewed,
     options.lane,
     options.favoritesOnly,
     options.sourceType,
@@ -241,7 +247,11 @@ export async function indexedReferencePage(
   const result = await ctx.db
     .query("referenceSearchDocuments")
     .withSearchIndex("search_text", (q) => {
-      let search = q.search("text", query).eq("collection", options.collection);
+      let search = q.search("text", query);
+      // Active Library includes inbox/later; ordinary collection filtering still
+      // applies after hydration so archived and trashed references stay excluded.
+      if (!(options.collection === "library" && options.includeUnreviewed))
+        search = search.eq("collection", options.collection);
       if (options.lane !== "all") search = search.eq("lane", options.lane);
       if (options.favoritesOnly) search = search.eq("favorite", true);
       if (options.sourceType) search = search.eq("kind", options.sourceType);

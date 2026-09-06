@@ -1,0 +1,17 @@
+{
+  "observedPilotImages": 48,
+  "historicalExactMatches": 21,
+  "publishedImageAssociations": 18,
+  "canonicalReferences": 18,
+  "sourceSnapshots": 18,
+  "termAssignments": 636,
+  "uniqueCommunityTerms": 391,
+  "unscoredPayloadBytes": 2688,
+  "unconfirmedPilotImages": 27,
+  "unresolvedInputBindings": 3,
+  "fullTagAndSourceParity": true,
+  "attributedSearchChecks": 3,
+  "scope": "Existing pilot only; payload bytes exclude dictionaries, source records, indexes and database overhead",
+  "replayNewAssociations": 0,
+  "replayExistingAssociations": 18
+}

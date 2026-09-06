@@ -35,7 +35,8 @@ provenance stay behind disclosure. Packing is not a reason to display more tags.
 
 Danbooru source candidates and artist-profile candidates remain lookup receipts;
 they do not become confirmed labels through this migration. Exact source tag
-publication is a separate integration. Community membership has no model score
-and should use a shared source receipt plus an unscored sparse set when that
-integration is implemented, rather than inventing confidence values or copying
-the lookup graph onto every image.
+publication uses [shared source snapshots and unscored sparse sets](COMMUNITY_TAG_PUBLICATION.md).
+Community membership has no model score. Its OTS-v1 payload has an eight-byte
+header (`OTS`, version 1, uint32 count) followed by sorted uint32 term codes,
+with a maximum of 512 unique terms. It stores neither fabricated confidence
+values nor the lookup graph on each image.

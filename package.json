@@ -8,7 +8,7 @@
     "dev": "pnpm --filter @ourchival/web dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
-    "test": "vitest --run && node --test scripts/local-vault.node-test.mjs && python3 -m unittest discover -s scripts -p 'test_*.py'",
+    "test": "vitest --run && node --test scripts/*.node-test.mjs && python3 -m unittest discover -s scripts -p 'test_*.py'",
     "typecheck": "pnpm -r typecheck && tsc -p convex/tsconfig.json",
     "extension:dev": "pnpm --filter @ourchival/extension dev",
     "extension:build": "pnpm --filter @ourchival/extension build",

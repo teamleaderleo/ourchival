@@ -91,7 +91,7 @@ export async function listReferencePage(ctx: any, request: Request | string) {
   }> = [];
   const chronological = url.searchParams.has("sort");
   const indexedPage =
-    options.query && !chronological && !options.includeUnreviewed
+    options.query && !chronological
       ? await indexedReferencePage(ctx, options)
       : null;
   const page =

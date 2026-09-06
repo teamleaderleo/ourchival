@@ -28,9 +28,9 @@ uses a shared query cache and one request per second; denial or rate limiting
 checkpoints and stops. `--resume` requires the exact same input manifests, retries
 unfinished images, preserves previous errors, and skips completed images.
 
-This implements the matching and receipt layer. It does not yet publish community
-tags to the catalog or run a whole-archive lookup automatically. It uploads no
-image files to third-party services.
+The lookup remains read-only. Its exact-image receipts can now be published with
+the separate [catalog publisher](COMMUNITY_TAG_PUBLICATION.md). Neither tool runs
+a whole-archive lookup automatically or uploads image files to third parties.
 
 ### Learning from partial coverage
 
