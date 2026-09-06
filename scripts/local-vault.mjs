@@ -212,6 +212,12 @@ async function dev() {
   );
   await restoreFile(cloudEnvPath, cloudEnv);
 
+  // A surviving local backend can outlive its CLI watcher. Reconcile functions
+  // before serving a newer frontend instead of silently keeping stale endpoints.
+  if (children[0].exitCode !== null) {
+    await deployToRunningLocalBackend(convexUrl);
+  }
+
   children.push(
     spawn(
       "pnpm",
@@ -275,6 +281,19 @@ async function status() {
     );
   }
   if (results.some((result) => !result.ok)) process.exitCode = 1;
+}
+
+async function deployToRunningLocalBackend(url) {
+  if (url !== defaultConvexUrl) throw new Error("Unexpected local backend address.");
+  const config = JSON.parse(await readFile(join(projectRoot, ".convex/local/default/config.json"), "utf8"));
+  if (typeof config.adminKey !== "string" || !config.adminKey) throw new Error("Local deployment access is unavailable.");
+  const envPath = join(projectRoot, ".convex", `local-deploy-${process.pid}.env`);
+  try {
+    await writeFile(envPath, `CONVEX_SELF_HOSTED_URL=${url}\nCONVEX_SELF_HOSTED_ADMIN_KEY=${config.adminKey}\n`, { mode: 0o600 });
+    await run("pnpm", ["exec", "convex", "deploy", "--env-file", envPath, "--yes"], { quiet: true });
+  } finally {
+    await unlink(envPath).catch(() => {});
+  }
 }
 
 async function syncDriveConfiguration() {

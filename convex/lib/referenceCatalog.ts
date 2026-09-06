@@ -1,3 +1,4 @@
+import { readSourceFilters, matchesSourcePlatform } from "../../packages/shared/src/sourceFilters";
 import { getSourceContext } from "./sourceContext";
 import {
   findReferenceSearchMatches,
@@ -31,6 +32,7 @@ type ReferenceListOptions = {
   cursor: string | null;
   pageSize: number;
   collection: ReferenceCollection;
+  includeUnreviewed: boolean;
   lane: ReferenceLane;
   favoritesOnly: boolean;
   query: string;
@@ -89,7 +91,7 @@ export async function listReferencePage(ctx: any, request: Request | string) {
   }> = [];
   const chronological = url.searchParams.has("sort");
   const indexedPage =
-    options.query && !chronological
+    options.query && !chronological && !options.includeUnreviewed
       ? await indexedReferencePage(ctx, options)
       : null;
   const page =
@@ -101,11 +103,24 @@ export async function listReferencePage(ctx: any, request: Request | string) {
           .withIndex("by_captured_at")
           .order("desc")
           .paginate({ numItems: options.pageSize, cursor: options.cursor }));
-  const candidates = page.page.filter(
+  let candidates = page.page.filter(
     (reference: any) =>
       (!("cutoff" in page) || reference._creationTime <= Number(page.cutoff)) &&
       matchesReferenceFilters(reference, options),
   );
+
+  const sourceFilters = readSourceFilters(url.searchParams.get("query") ?? "");
+  candidates = candidates.filter((reference: any) => matchesSourcePlatform(reference.platform, sourceFilters));
+  if (sourceFilters.origins.length || sourceFilters.excludedOrigins.length) {
+    if (sourceFilters.origins.length + sourceFilters.excludedOrigins.length > 32) throw new Error("Choose at most 32 source collections.");
+    const matching = await Promise.all(candidates.map(async (reference: any) => {
+      const has = async (key: string) => Boolean(await ctx.db.query("referenceOrigins").withIndex("by_reference_id_and_container_key", (q: any) => q.eq("referenceId", reference._id).eq("containerKey", key)).first());
+      const included = await Promise.all(sourceFilters.origins.map(has));
+      const excluded = await Promise.all(sourceFilters.excludedOrigins.map(has));
+      return (!included.length || included.some(Boolean)) && !excluded.some(Boolean);
+    }));
+    candidates = candidates.filter((_: any, i: number) => matching[i]);
+  }
 
   if (!options.query) {
     references.push(
@@ -199,6 +214,9 @@ export async function applyReferenceStatsDelta(
   after: any | null | undefined,
 ) {
   const referenceId = (after ?? before)?._id;
+  if (after && after.browseLane !== referenceLane(after.kind)) {
+    await ctx.db.patch(after._id, { browseLane: referenceLane(after.kind) });
+  }
   if (referenceId) await scheduleReferenceSearch(ctx, referenceId);
   const stats = await getReferenceStatsDocument(ctx);
   if (!stats) {
@@ -505,6 +523,7 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
       ? Math.min(96, Math.max(12, Math.floor(requestedPageSize)))
       : 48,
     collection: isCollection(collection) ? collection : "inbox",
+    includeUnreviewed: url.searchParams.get("scope") === "active",
     lane: isLane(lane) ? lane : "all",
     favoritesOnly: url.searchParams.get("favorites") === "true",
     query: normalizeSearchText(queryFilters.query),
@@ -541,6 +560,7 @@ export function parseReferenceFilterTokens(value: string) {
     const filterValue = token.slice(separator + 1).trim();
     if (!filterValue) continue;
 
+    if (["source", "-source", "origin", "-origin"].includes(key)) continue;
     if (key === "site" || key === "domain") domain = filterValue;
     else if (key === "type" || key === "kind") sourceType = filterValue;
     else if (key === "tag") tag = filterValue;
@@ -556,7 +576,9 @@ function matchesReferenceFilters(
   reference: any,
   options: ReferenceListOptions,
 ) {
-  if (referenceCollection(reference) !== options.collection) return false;
+  if (options.collection === "library" && options.includeUnreviewed) {
+    if (reference.deleted || reference.archived) return false;
+  } else if (referenceCollection(reference) !== options.collection) return false;
   if (
     options.lane !== "all" &&
     referenceLane(reference.kind) !== options.lane

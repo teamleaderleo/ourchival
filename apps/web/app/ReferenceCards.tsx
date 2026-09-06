@@ -19,7 +19,6 @@ export function ReferenceCard({
   onQuickLook,
   onToggleFavorite,
   priority = false,
-  dateBasis,
 }: {
   reference: SavedReference;
   selected: boolean;
@@ -27,7 +26,6 @@ export function ReferenceCard({
   onQuickLook?: () => void;
   onToggleFavorite: () => void;
   priority?: boolean;
-  dateBasis?: "saved" | "published";
 }) {
   const cardRef = useRef<HTMLElement>(null);
   const [nearViewport, setNearViewport] = useState(priority);
@@ -35,14 +33,14 @@ export function ReferenceCard({
     if (nearViewport || !cardRef.current) return;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry?.isIntersecting) { setNearViewport(true); observer.disconnect(); }
-    }, { rootMargin: "500px" });
+    }, { rootMargin: "1200px" });
     observer.observe(cardRef.current);
     return () => observer.disconnect();
   }, [nearViewport]);
   const asset = reference.assets[0];
   const [learned, setLearned] = useState(() => asset ? rememberedDimensions(asset._id) : undefined);
   const dimensions = learned ?? (asset?.width && asset.height ? { width: asset.width, height: asset.height } : undefined);
-  const mode = referenceMode(reference.kind);
+  const mode = !reference.assets.length && !reference.sourceSnapshot?.previewImageUrl && !reference.sealed ? "links" : referenceMode(reference.kind);
   const snapshot = reference.sourceSnapshot;
   const [tags] = useReferenceTags(reference.tagIds, reference.tags);
   const batch = useBatchSelectionItem(reference._id);
@@ -71,7 +69,7 @@ export function ReferenceCard({
       data-reference-id={reference._id}
       className={`reference-card ${mode === "links" ? "link-card" : ""} ${selected ? "selected" : ""} ${batch.selected ? "batch-selected" : ""}`}
     >
-      <button
+      {imageUrl || mode !== "links" ? <button
         type="button"
         className="card-select"
         aria-pressed={selected}
@@ -79,8 +77,9 @@ export function ReferenceCard({
         title={onQuickLook ? "Open image" : undefined}
       >
         <div className="thumb-wrap" style={dimensions ? { aspectRatio: `${dimensions.width} / ${dimensions.height}` } : undefined}>
-          {reference.sealed ? <span className="kind-badge">Sealed</span> : null}
           <ThumbImage
+            hidden={reference.sealed}
+            deferred={!nearViewport}
             imageUrl={nearViewport ? imageUrl : undefined}
             title={title}
             kind={reference.kind}
@@ -99,7 +98,7 @@ export function ReferenceCard({
             </span>
           ) : null}
         </div>
-      </button>
+      </button> : null}
         <div className="card-copy">
           {mode === "links" ? (
             <p className="link-source-row">
@@ -113,10 +112,8 @@ export function ReferenceCard({
             </p>
           ) : null}
           <h2>{mode === "links" ? <button type="button" className="card-title-open" onClick={onQuickLook ?? onSelect}>{title}</button> : title}</h2>
-          {dateBasis ? <p className="card-domain">{dateBasis === "published"
-            ? reference.publishedAt == null ? "Publication date unknown" : `Published ${formatCaptureDate(reference.publishedAt)}`
-            : `Saved ${formatCaptureDate(reference.capturedAt)}`}</p> : null}
-          {mode !== "links" ? <a className="card-source-link" href={reference.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a> : null}
+          {reference.publishedAt != null ? <p className="card-domain">Posted {formatCaptureDate(reference.publishedAt)}</p> : null}
+          {mode !== "links" ? <a className="card-source-link" href={reference.sourceUrl} target="_blank" rel="noreferrer">Source ↗</a> : null}
           {mode === "links" && snapshot?.description ? (
             <p className="card-description">{snapshot.description}</p>
           ) : mode !== "links" && !title.includes(sourceLabel) ? (
@@ -144,7 +141,7 @@ export function ReferenceCard({
           {mode === "links" ? (
             <p className="card-meta">
               <span>{reference.lastOpenedAt ? "Opened" : "Unread"}</span>
-              <span>{formatCaptureDate(reference.capturedAt)}</span>
+              {reference.publishedAt != null ? <span>{formatCaptureDate(reference.publishedAt)}</span> : null}
             </p>
           ) : null}
         </div>
@@ -184,6 +181,8 @@ export function ReferenceCard({
 }
 
 export function ThumbImage({
+  hidden = false,
+  deferred = false,
   imageUrl,
   title,
   kind,
@@ -192,6 +191,8 @@ export function ThumbImage({
   height,
   onDimensions,
 }: {
+  hidden?: boolean;
+  deferred?: boolean;
   imageUrl?: string | null;
   title?: string;
   kind: string;
@@ -215,7 +216,7 @@ export function ThumbImage({
         aria-hidden={!title}
         aria-busy={loading}
       >
-        {linkLike ? <span>{getInitial(title)}</span> : null}
+        {hidden ? <span className="preview-status">Sensitive or private<br /><small>Preview hidden by default</small></span> : linkLike ? <span>{getInitial(title)}</span> : <span className="preview-status">{loading || deferred ? "Loading preview…" : failed || imageUrl ? "Preview unavailable" : "No image captured"}</span>}
       </div>
     );
   }

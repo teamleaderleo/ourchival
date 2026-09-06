@@ -20,6 +20,7 @@ type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 const prefix = "ourchival:browse:v1:";
 export function browseViewKey(origin: string, view: BrowseView) {
   return JSON.stringify([
+    "active-library-v2",
     origin,
     view.view,
     view.query.trim(),
@@ -93,7 +94,18 @@ export function readBrowseView(
       v.query.length <= 2000 &&
       isArchiveSort(v.sort) &&
       typeof v.imagesOnly === "boolean"
-      ? v
+      ? {
+          view: v.browseVersion === 2 ? v.view : "all",
+          query:
+            v.browseVersion === 2
+              ? v.query
+              : v.query
+                  .split(/\s+/)
+                  .filter((token: string) => !/^-?(source|origin):/.test(token))
+                  .join(" "),
+          sort: v.sort,
+          imagesOnly: v.browseVersion === 2 ? v.imagesOnly : false,
+        }
       : null;
   } catch {
     return null;
@@ -101,7 +113,10 @@ export function readBrowseView(
 }
 export function saveBrowseView(store: Store, origin: string, view: BrowseView) {
   try {
-    store.setItem(prefix + "view:" + origin, JSON.stringify(view));
+    store.setItem(
+      prefix + "view:" + origin,
+      JSON.stringify({ ...view, browseVersion: 2 }),
+    );
   } catch {
     /* Optional browser persistence. */
   }

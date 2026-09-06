@@ -26,6 +26,7 @@ export function useArchivePosition(
   const capture = useRef(() => {});
   const suppress = useRef(false);
   const restoring = useRef(false);
+  const startAtTop = useRef(false);
 
   const beginRestore = useCallback(() => {
     try {
@@ -34,7 +35,8 @@ export function useArchivePosition(
       pending.current = null;
     }
     suppress.current = false;
-    restoring.current = Boolean(pending.current);
+    startAtTop.current = !pending.current;
+    restoring.current = true;
     setRestoreReferenceId(pending.current?.referenceId ?? null);
     setRestoreSerial((serial) => serial + 1);
     setNotice("");
@@ -43,13 +45,21 @@ export function useArchivePosition(
   function reset() {
     setRestoreReferenceId(null);
     pending.current = null;
+    startAtTop.current = false;
     suppress.current = true;
     restoring.current = false;
     setNotice("");
   }
 
   useLayoutEffect(() => {
-    if (loading || !pending.current) return;
+    if (loading) return;
+    if (startAtTop.current) {
+      window.scrollTo({ top: 0, behavior: "instant" });
+      startAtTop.current = false;
+      restoring.current = false;
+      return;
+    }
+    if (!pending.current) return;
     const marker = pending.current;
     let frame = 0;
     let passes = 0;
@@ -135,7 +145,13 @@ export function useArchivePosition(
       const candidates = Array.from(visible)
         .filter((node) => node.isConnected)
         .map((node) => ({ node, top: node.getBoundingClientRect().top }));
-      candidates.sort((a, b) => Math.abs(a.top - 80) - Math.abs(b.top - 80));
+      const headerBottom =
+        document.querySelector(".app-header")?.getBoundingClientRect().bottom ??
+        80;
+      candidates.sort(
+        (a, b) =>
+          Math.abs(a.top - headerBottom) - Math.abs(b.top - headerBottom),
+      );
       const anchor = candidates[0];
       const referenceId = anchor?.node.dataset.referenceId;
       const cursor = referenceId && byId.get(referenceId)?.browseCursor;

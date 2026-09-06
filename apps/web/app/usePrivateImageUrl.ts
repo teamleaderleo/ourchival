@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { resolveConvexSiteUrl } from "./privateAccess";
+import { createPreviewCache } from "./privatePreviewCache";
+
+const previewCache = createPreviewCache(async sourceUrl => {
+  const response = await fetch(sourceUrl);
+  if (!response.ok) throw new Error(`Preview could not load (${response.status}).`);
+  return response.blob();
+});
+let listening = false;
 
 export function usePrivateImageUrl(sourceUrl?: string | null) {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(
@@ -13,6 +21,11 @@ export function usePrivateImageUrl(sourceUrl?: string | null) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!listening) {
+      listening = true;
+      window.addEventListener("ourchival-access-changed", previewCache.clear);
+      window.addEventListener("storage", previewCache.clear);
+    }
     let cancelled = false;
     let objectUrl: string | undefined;
 
@@ -34,18 +47,7 @@ export function usePrivateImageUrl(sourceUrl?: string | null) {
     setLoading(true);
     setError("");
 
-    void fetch(sourceUrl)
-      .then(async (response) => {
-        if (!response.ok) {
-          const body = (await response.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          throw new Error(
-            body.error || `Private image request failed: ${response.status}`,
-          );
-        }
-        return await response.blob();
-      })
+    void previewCache.get(sourceUrl)
       .then((blob) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);

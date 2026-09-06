@@ -1,4 +1,5 @@
 "use client";
+import { ProjectPanel } from "./ProjectPanel";
 import { Popover } from "./Popover";
 
 import { useMemo, useState } from "react";
@@ -44,13 +45,15 @@ export function TagFilterBar({
   return (
     <Popover className="vault-tools" label={<>
         <span>
-          <strong>View & tools</strong>
+          <strong>Tags & boards</strong>
         </span>
         <span>
           {activeFilterCount ? `${activeFilterCount} active` : <span aria-hidden="true">+</span>}
         </span>
       </>}>
       <div className="vault-tools-content">
+        <p className="menu-hint">Browse your accepted tags here. Open an image’s details to review its source tags and model suggestions.</p>
+        <details className="tool-section"><summary>Projects</summary><ProjectPanel query={query} onChange={onChange} /></details>
         {onImagesOnly ? <label className="media-preference"><input type="checkbox" checked={!imagesOnly} onChange={(event) => onImagesOnly(!event.target.checked)} />Include text posts</label> : null}
         {onRefresh ? <button type="button" className="button ghost" onClick={onRefresh}>Refresh archive</button> : null}
         {tags.length > 0 ? (

@@ -17,6 +17,8 @@ export function InspectorOrganization({
 }) {
   const [metadataOpen, setMetadataOpen] = useState(false);
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const [organizationOpen, setOrganizationOpen] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const linkLike = referenceMode(reference.kind) === "links";
 
   return (
@@ -29,7 +31,7 @@ export function InspectorOrganization({
           onToggle={(event) => setMetadataOpen(event.currentTarget.open)}
         >
           <summary>
-            <span>Image metadata</span>
+            <span>Model tags & image metadata</span>
             <small>Review generated terms</small>
           </summary>
           {metadataOpen ? (
@@ -60,30 +62,30 @@ export function InspectorOrganization({
           )}
         </details>
       )}
-      <details open>
+      <details onToggle={event => { if (event.currentTarget.open) setOrganizationOpen(true); }}>
         <summary>
           <span>Organize</span>
           <small>Boards · projects</small>
         </summary>
-        <div className="inspector-organization-body">
+        {organizationOpen ? <div className="inspector-organization-body">
           <ReferenceBoardAssignment reference={reference} />
           <ReferenceProjectAssignment reference={reference} />
-        </div>
+        </div> : null}
       </details>
 
-      <details>
+      <details onToggle={event => { if (event.currentTarget.open) setSuggestionsOpen(true); }}>
         <summary>
-          <span>Discover</span>
+          <span>Suggested tags & related images</span>
           <small>Suggestions · related</small>
         </summary>
-        <div className="inspector-organization-body">
+        {suggestionsOpen ? <div className="inspector-organization-body">
           <ReferenceSuggestedTagsPanel referenceId={reference._id} />
           <RelatedReferencesPanel referenceId={reference._id} />
           <ReferenceEnrichmentPanel
             referenceId={reference._id}
             enabled={linkLike}
           />
-        </div>
+        </div> : null}
       </details>
     </div>
   );

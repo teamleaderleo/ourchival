@@ -64,3 +64,40 @@ loaded items. No archive-wide frame-rate claim is made.
 
 These changes do not mark references reviewed, apply model suggestions as owner
 tags, or move anything between New, Library, Later, Archive or Trash.
+
+## Library and source browsing update
+
+
+Library includes all active saved items. Images and Links are subsets by kind;
+Favorites contains items explicitly starred. Unreviewed and Review later are
+review states, not prerequisites for appearing in Library. Mark reviewed keeps
+an item in Library and removes it from Unreviewed. Archive and Trash remain separate.
+
+Source filters appear as removable labels above the grid. The browsing update
+resets legacy hidden source filters once; subsequent filter choices persist.
+Sorting and filtering each have their own saved position. New views start at
+the top. Scrolling preloads the next page; a keyboard-accessible fallback remains.
+
+Tags & boards contains accepted-tag filters and organization tools. Image details
+contain Model tags & image metadata and Suggested tags & related images. Generated
+terms remain distinguishable from owner-accepted tags. Opening a menu or details
+section loads its secondary panels on demand.
+
+## Local deployment
+
+After deploying the browseLane schema and functions, run from the canonical
+checkout with a Convex-supported Node version:
+
+```sh
+node scripts/backfill-browse-lanes.mjs
+```
+
+This idempotent, bounded backfill stores its cursor in
+`.convex/reconciliation/browse-lanes.json`. Finish it before enabling the new lane
+queries on an existing deployment. Normal capture/update mutations maintain the
+lane field afterward. The runner only targets the existing local backend.
+
+On September 6, 2026, all 25,881 local references were indexed as images. The old
+hosted snapshot contained 48 separate link references; they were restored with
+their 49 source snapshots, preserving the two archived links. No old hosted image
+rows were restored. Private reconciliation receipts remain under `.convex/reconciliation`.
