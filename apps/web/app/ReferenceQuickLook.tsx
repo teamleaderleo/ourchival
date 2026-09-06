@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   referenceDisplayTitle,
   referenceMode,
@@ -32,6 +32,9 @@ export function ReferenceQuickLook({
 }) {
   const [assetIndex, setAssetIndex] = useState(0);
   const [zoomed, setZoomed] = useState(false);
+  const [showTags, setShowTags] = useState(true);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const tagPanelId = useId();
   const imageViewport = useRef<HTMLDivElement>(null);
   const [copyStatus, setCopyStatus] = useState("");
   const copyGeneration = useRef(0);
@@ -73,6 +76,7 @@ export function ReferenceQuickLook({
     resolvedUrl: imageUrl,
     loading: imageLoading,
     error: imageError,
+    retry: retryImage,
   } = usePrivateImageUrl(imageSource);
   const title = referenceDisplayTitle(reference);
   const sourceLabel =
@@ -113,7 +117,18 @@ export function ReferenceQuickLook({
     function handleKey(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
       const target = event.target;
-      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (event.key === "Escape" && target instanceof HTMLElement) {
+        const disclosure = target.closest<HTMLDetailsElement>("details[open]");
+        if (disclosure) {
+          event.preventDefault();
+          event.stopPropagation();
+          disclosure.open = false;
+          disclosure.querySelector("summary")?.focus();
+          return;
+        }
+      }
+      if (!["Tab", "Escape"].includes(event.key) && target instanceof HTMLElement &&
+        (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.closest(".quick-look-tag-panel, .viewer-more"))) return;
       if (event.repeat && ["k", "l", "f", "o", "z", "delete"].includes(event.key.toLowerCase())) {
         event.preventDefault();
         event.stopPropagation();
@@ -140,9 +155,9 @@ export function ReferenceQuickLook({
       if (event.key === "Tab") {
         const focusable = Array.from(
           panelRef.current?.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
+            'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])',
           ) ?? [],
-        );
+        ).filter(element => element.getClientRects().length > 0 && element.tabIndex >= 0);
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
         if (first && last) {
@@ -203,7 +218,7 @@ export function ReferenceQuickLook({
     >
       <section
         ref={panelRef}
-        className="quick-look-panel"
+        className={`quick-look-panel ${showTags ? "" : "tags-hidden"}`}
         role="dialog"
         aria-modal="true"
         aria-label={`Quick look: ${title}`}
@@ -214,6 +229,7 @@ export function ReferenceQuickLook({
             <strong>{title}</strong>
           </div>
           <div className="quick-look-header-actions">
+            <button type="button" className="button ghost viewer-tags-toggle" aria-expanded={showTags} aria-controls={tagPanelId} onClick={() => setShowTags(value => !value)}>Tags</button>
             <button type="button" className="button ghost viewer-zoom" aria-label={zoomed ? "Fit preview to viewer" : "Show preview at actual size"} aria-pressed={zoomed} disabled={!imageUrl || imageFailed} title="Actual preview size / fit (Z or double-click image)" onClick={() => setZoomed((value) => !value)}>{zoomed ? "Fit" : "100%"}</button>
             <span className="quick-look-count">
               {index >= 0 ? index + 1 : 1} / {references.length}
@@ -246,6 +262,7 @@ export function ReferenceQuickLook({
           {imageUrl && !imageFailed ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
+              key={`${imageSource}:${previewAttempt}`}
               className="quick-look-image"
               src={imageUrl}
               alt={title}
@@ -263,7 +280,10 @@ export function ReferenceQuickLook({
               {referenceMode(reference.kind) === "links" ? (
                 <span>{getInitial(title)}</span>
               ) : (
-                <span>{reference.sealed ? "Sensitive or private content — preview hidden by default" : imageLoading ? "Loading preview…" : "No preview available"}</span>
+                <div className="viewer-preview-status">
+                  <span>{imageError || imageFailed ? "Preview couldn’t load" : reference.sealed ? "Sensitive or private content — preview hidden by default" : imageLoading ? "Loading preview…" : "No preview available"}</span>
+                  {imageSource && (imageError || imageFailed) ? <><p>Your saved reference is still here.</p><button type="button" className="button secondary" onClick={() => { setImageFailed(false); setPreviewAttempt(value => value + 1); retryImage(); }}>Retry preview</button></> : null}
+                </div>
               )}
             </div>
           )}
@@ -291,18 +311,24 @@ export function ReferenceQuickLook({
           </button>
         </div>
 
-        <aside className="quick-look-tag-panel" aria-label="Image tags">
+        <aside id={tagPanelId} hidden={!showTags} className="quick-look-tag-panel" aria-label="Image tags">
           <h2>Tags</h2>
-          {reference.tags?.length ? <div className="viewer-saved-tags">{reference.tags.map(tag => <span key={tag._id}>{tag.name}</span>)}</div> : <p className="menu-hint">No accepted tags yet.</p>}
+          {reference.tags?.length ? <div className="viewer-saved-tags">{reference.tags.map(tag => <span key={tag._id}>{tag.name}</span>)}</div> : null}
           {reference.assets[assetIndex] ? <ReferenceCommunityTags key={reference.assets[assetIndex]._id} assetId={reference.assets[assetIndex]._id} sealed={reference.sealed} /> : null}
           {reference.assets.length > 0 ? <ReferenceVisualMetadata key={reference.assets[assetIndex]?._id ?? reference._id} reference={reference} assetId={reference.assets[assetIndex]?._id} compact /> : <p className="menu-hint">Model tags need a captured image. This item currently has none.</p>}
         </aside>
         <footer className="quick-look-footer">
           <div className="viewer-actions">
             <button type="button" className="button primary" disabled={moving} onClick={() => void move("keep")} title="Move from New to your library (K)">Mark reviewed</button>
+            <details className="viewer-more" key={reference._id}>
+              <summary className="button ghost">More <span aria-hidden="true">⌄</span></summary>
+              <div className="viewer-more-content">
             <button type="button" className="button ghost" disabled={moving} onClick={() => void move("later")} title="Set aside for another review (L)">Review later</button>
             <button type="button" className="button ghost" disabled={moving} onClick={onInspect}>Edit details</button>
             <button type="button" className="button ghost" disabled={moving} onClick={() => void move("trash")} title="Trash and block recapture (Delete)">Move to trash</button>
+            <button type="button" className="button ghost copy-source" title={copyStatus || "Copy source link"} onClick={() => void copySource()}>{copyStatus === "Copied" ? "Copied" : copyStatus ? "Retry copy" : "Copy link"}</button>
+              </div>
+            </details>
           </div>
           {reference.assets.length > 1 ? <div className="viewer-assets" aria-label="Images in this reference">
             <button type="button" className="button ghost" disabled={assetIndex === 0} onClick={() => setAssetIndex((value) => value - 1)} aria-label="Previous image" title="Previous image (↑)">‹</button>
@@ -310,7 +336,6 @@ export function ReferenceQuickLook({
             <button type="button" className="button ghost" disabled={assetIndex >= reference.assets.length - 1} onClick={() => setAssetIndex((value) => value + 1)} aria-label="Next image" title="Next image (↓)">›</button>
           </div> : null}
           {moveError ? <p role="alert">{moveError}</p> : null}
-          <button type="button" className="button ghost copy-source" title={copyStatus || "Copy source link"} onClick={() => void copySource()}>{copyStatus === "Copied" ? "Copied" : copyStatus ? "Retry copy" : "Copy link"}</button>
           <span className="sr-only" role="status">{copyStatus}</span>
           <a
             className="button secondary"

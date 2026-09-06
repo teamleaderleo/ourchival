@@ -12,6 +12,7 @@ const previewCache = createPreviewCache(async sourceUrl => {
 let listening = false;
 
 export function usePrivateImageUrl(sourceUrl?: string | null) {
+  const [attempt, setAttempt] = useState(0);
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(
     sourceUrl && !isProtectedDriveUrl(sourceUrl) ? sourceUrl : null,
   );
@@ -69,9 +70,13 @@ export function usePrivateImageUrl(sourceUrl?: string | null) {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [sourceUrl]);
+  }, [sourceUrl, attempt]);
 
-  return { resolvedUrl, loading, error };
+  function retry() {
+    if (sourceUrl) previewCache.invalidate(sourceUrl);
+    setAttempt(value => value + 1);
+  }
+  return { resolvedUrl, loading, error, retry };
 }
 
 export function isProtectedDriveUrl(value: string) {
