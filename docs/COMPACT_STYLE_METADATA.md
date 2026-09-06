@@ -5,8 +5,9 @@ Proposed design, September 5, 2026. This is not a deployed schema change.
 Implementation update: shared machine vocabulary and recipes are now in use.
 The historical storage description below records the original proposal;
 [the migration guide](METADATA_MIGRATION.md) and [current wire format](TAG_PAYLOAD_FORMAT.md)
-describe the implemented binary representations. Community-tag publication and
-the proposed style-question vocabulary remain separate work.
+describe the implemented binary representations. Verified community-tag
+publication is now implemented in the [catalog publisher](COMMUNITY_TAG_PUBLICATION.md).
+The proposed style-question vocabulary remains separate work.
 
 ## Retrieval purpose
 
