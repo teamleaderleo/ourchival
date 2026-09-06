@@ -13,9 +13,22 @@ import {
 } from "./referenceVaultModel";
 import { type VaultView } from "./VaultNavigation";
 import { appendPage } from "./viewPages";
+import { type ArchiveSort } from "../../../packages/shared/src/archiveSort";
+import {
+  browseViewKey,
+  clearPosition,
+  readBrowseView,
+  saveBrowseView,
+} from "./archivePosition";
+import { useArchivePosition } from "./useArchivePosition";
 
 type VaultCounts = Record<VaultView, number>;
-type CachedView = { references: SavedReference[]; cursor: string | null; hasMore: boolean; scroll: number };
+type CachedView = {
+  references: SavedReference[];
+  cursor: string | null;
+  hasMore: boolean;
+  scroll: number;
+};
 
 type ReferencesResponse = {
   ok: boolean;
@@ -74,13 +87,64 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeView, setActiveView] = useState<VaultView>("inbox");
   const [imagesOnly, setImagesOnly] = useState(true);
+  const [sort, setSort] = useState<ArchiveSort>("saved-desc");
+  const [positionReady, setPositionReady] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [undoMove, setUndoMove] = useState<UndoMove | null>(null);
   const requestSerial = useRef(0);
   const viewCache = useRef(new Map<string, CachedView>());
   const inFlight = useRef<string | null>(null);
-  const cacheKey = `${refreshKey}:${activeView}:${debouncedQuery}`;
+  const positionKey = browseViewKey(siteUrl ?? "", {
+    view: activeView,
+    query: debouncedQuery,
+    sort,
+    imagesOnly,
+  });
+  const cacheKey = `${refreshKey}:${positionKey}`;
+  const position = useArchivePosition(
+    positionKey,
+    references,
+    isLoading || isLoadingPage || statusTone === "error",
+  );
+  const { beginRestore } = position;
+  const pageRequest = useRef(requestReferencePage);
+  useEffect(() => {
+    pageRequest.current = requestReferencePage;
+  });
+
+  useEffect(() => {
+    if (!siteUrl) {
+      setPositionReady(true);
+      return;
+    }
+    try {
+      const saved = readBrowseView(window.localStorage, siteUrl);
+      if (saved) {
+        setActiveView(saved.view as VaultView);
+        setQuery(saved.query);
+        setDebouncedQuery(saved.query);
+        setSort(saved.sort);
+        setImagesOnly(saved.imagesOnly);
+      }
+    } catch {
+      /* Browsing also works without local storage. */
+    }
+    setPositionReady(true);
+  }, [siteUrl]);
+  useEffect(() => {
+    if (!positionReady || !siteUrl) return;
+    try {
+      saveBrowseView(window.localStorage, siteUrl, {
+        view: activeView,
+        query: debouncedQuery,
+        sort,
+        imagesOnly,
+      });
+    } catch {
+      /* Optional persistence. */
+    }
+  }, [positionReady, siteUrl, activeView, debouncedQuery, sort, imagesOnly]);
 
   function report(message: string, tone: StatusTone = "info") {
     setStatus(message);
@@ -93,13 +157,26 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const favoritesOnly = activeView === "favorites";
   const filteredReferences = useMemo(
     () =>
-      filterReferences(imagesOnly && activeView !== "links" ? references.filter(hasImageAsset) : references, {
-        query,
-        favoritesOnly,
-        lane,
-        collection,
-      }),
-    [query, references, favoritesOnly, lane, collection, imagesOnly, activeView],
+      filterReferences(
+        imagesOnly && activeView !== "links"
+          ? references.filter(hasImageAsset)
+          : references,
+        {
+          query,
+          favoritesOnly,
+          lane,
+          collection,
+        },
+      ),
+    [
+      query,
+      references,
+      favoritesOnly,
+      lane,
+      collection,
+      imagesOnly,
+      activeView,
+    ],
   );
   const selectedReference = getSelectedReference(
     filteredReferences,
@@ -113,6 +190,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   }, [query]);
 
   useEffect(() => {
+    if (!positionReady) return;
     if (!siteUrl) {
       report(
         "Add NEXT_PUBLIC_CONVEX_URL or NEXT_PUBLIC_CONVEX_SITE_URL in setup to load saved references.",
@@ -123,6 +201,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     }
 
     requestSerial.current++;
+    const marker = beginRestore();
     const cached = viewCache.current.get(cacheKey);
     if (cached) {
       setReferences(cached.references);
@@ -138,8 +217,16 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     setCursorHistory([]);
     setHasMore(false);
     setIsLoadingPage(false);
-    void requestReferencePage(null, []);
-  }, [siteUrl, refreshKey, activeView, debouncedQuery, cacheKey]);
+    void pageRequest.current(marker?.cursor ?? null, [], true);
+  }, [
+    siteUrl,
+    refreshKey,
+    activeView,
+    debouncedQuery,
+    cacheKey,
+    positionReady,
+    beginRestore,
+  ]);
 
   useEffect(() => {
     if (
@@ -166,8 +253,24 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     if (activeView !== "inbox" && activeView !== "later") return;
 
     function handleReviewKey(event: KeyboardEvent) {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.isComposing || document.querySelector("[aria-modal=true], .popover[open]")) return;
-      if (event.repeat && ["k", "l", "a", "o", "delete", "backspace"].includes(event.key.toLowerCase())) { event.preventDefault(); return; }
+      if (
+        event.defaultPrevented ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.isComposing ||
+        document.querySelector("[aria-modal=true], .popover[open]")
+      )
+        return;
+      if (
+        event.repeat &&
+        ["k", "l", "a", "o", "delete", "backspace"].includes(
+          event.key.toLowerCase(),
+        )
+      ) {
+        event.preventDefault();
+        return;
+      }
       const target = event.target as HTMLElement | null;
       if (
         target?.tagName === "INPUT" ||
@@ -217,6 +320,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   async function requestReferencePage(
     cursor: string | null,
     history: Array<string | null>,
+    replace = false,
   ) {
     if (!siteUrl) return;
     const flightKey = `${cacheKey}:${cursor}`;
@@ -225,7 +329,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     const serial = requestSerial.current + 1;
     requestSerial.current = serial;
 
-    if (history.length === 0 && cursor === null) setIsLoading(references.length === 0);
+    if (replace || (history.length === 0 && cursor === null))
+      setIsLoading(true);
     else setIsLoadingPage(true);
 
     try {
@@ -233,6 +338,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
         limit: String(pageSize),
         collection,
         lane,
+        sort,
+        imagesOnly: String(imagesOnly),
       });
       if (favoritesOnly) params.set("favorites", "true");
       if (debouncedQuery) params.set("query", debouncedQuery);
@@ -249,12 +356,17 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       }
 
       const incoming = body.references ?? [];
-      const combined = cursor
-        ? appendPage(references, incoming)
-        : incoming;
+      const combined =
+        cursor && !replace ? appendPage(references, incoming) : incoming;
       setReferences(combined);
-      viewCache.current.set(cacheKey, { references: combined, cursor: body.continueCursor ?? null, hasMore: Boolean(body.hasMore), scroll: window.scrollY });
-      if (viewCache.current.size > 10) viewCache.current.delete(viewCache.current.keys().next().value!);
+      viewCache.current.set(cacheKey, {
+        references: combined,
+        cursor: body.continueCursor ?? null,
+        hasMore: Boolean(body.hasMore),
+        scroll: window.scrollY,
+      });
+      if (viewCache.current.size > 10)
+        viewCache.current.delete(viewCache.current.keys().next().value!);
       setCurrentCursor(cursor);
       setCursorHistory(history);
       setContinueCursor(body.continueCursor ?? null);
@@ -505,20 +617,43 @@ export function useReferenceVault(pageSize = defaultPageSize) {
 
   function changeView(view: VaultView) {
     if (view === activeView) return;
+    position.capture();
     requestSerial.current++;
     const current = viewCache.current.get(cacheKey);
     if (current) current.scroll = window.scrollY;
-    const cached = viewCache.current.get(`${refreshKey}:${view}:${debouncedQuery}`);
+    const cached = viewCache.current.get(
+      `${refreshKey}:${browseViewKey(siteUrl ?? "", { view, query: debouncedQuery, sort, imagesOnly })}`,
+    );
     setReferences(cached?.references ?? []);
     setIsLoading(!cached);
-    requestAnimationFrame(() => window.scrollTo({ top: cached?.scroll ?? 0 }));
+    window.scrollTo({ top: 0, behavior: "instant" });
     setActiveView(view);
     setSelectedId(null);
     setUndoMove(null);
   }
 
   function retryLoad() {
+    position.reset();
+    try {
+      clearPosition(window.localStorage, positionKey);
+    } catch {
+      /* Optional persistence. */
+    }
+    setReferences([]);
+    setSelectedId(null);
+    window.scrollTo({ top: 0, behavior: "instant" });
     setRefreshKey((key) => key + 1);
+  }
+
+  function changeSort(next: ArchiveSort) {
+    if (next === sort) return;
+    position.capture();
+    requestSerial.current++;
+    setReferences([]);
+    setIsLoading(true);
+    setSelectedId(null);
+    window.scrollTo({ top: 0, behavior: "instant" });
+    setSort(next);
   }
 
   return {
@@ -538,6 +673,10 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     activeView,
     activeCount,
     imagesOnly,
+    sort,
+    changeSort,
+    positionNotice: position.notice,
+    restoreReferenceId: position.restoreReferenceId,
     setImagesOnly,
     selectedReference,
     filteredReferences,
@@ -676,7 +815,8 @@ function triageStatus(destination: TriageDestination) {
   if (destination === "keep") return "Kept in Library. Undo is available.";
   if (destination === "later") return "Moved to Later. Undo is available.";
   if (destination === "archive") return "Archived. Undo is available.";
-  if (destination === "trash") return "Moved to Trash; recapture blocked. Undo is available.";
+  if (destination === "trash")
+    return "Moved to Trash; recapture blocked. Undo is available.";
   return "Reference restored.";
 }
 

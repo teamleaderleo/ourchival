@@ -6,7 +6,12 @@ import {
 } from "./searchMatches";
 import type { QueryCtx } from "../_generated/server";
 import { slugifyTagName } from "./tags";
-import { indexedReferencePage, scheduleReferenceSearch } from "./searchIndex";
+import {
+  indexedReferencePage,
+  scheduleReferenceSearch,
+  chronologicalSearchMatches,
+} from "./searchIndex";
+import { chronologicalPage } from "./archiveOrder";
 
 type ReferenceCollection = "inbox" | "library" | "later" | "archive" | "trash";
 type ReferenceLane = "all" | "images" | "links";
@@ -82,18 +87,24 @@ export async function listReferencePage(ctx: any, request: Request | string) {
     snapshot: any | null | undefined;
     searchMatches: SearchMatch[];
   }> = [];
-  const indexedPage = options.query
-    ? await indexedReferencePage(ctx, options)
-    : null;
+  const chronological = url.searchParams.has("sort");
+  const indexedPage =
+    options.query && !chronological
+      ? await indexedReferencePage(ctx, options)
+      : null;
   const page =
     indexedPage ??
-    (await ctx.db
-      .query("references")
-      .withIndex("by_captured_at")
-      .order("desc")
-      .paginate({ numItems: options.pageSize, cursor: options.cursor }));
-  const candidates = page.page.filter((reference: any) =>
-    matchesReferenceFilters(reference, options),
+    (chronological
+      ? await chronologicalPage(ctx, url, options.pageSize)
+      : await ctx.db
+          .query("references")
+          .withIndex("by_captured_at")
+          .order("desc")
+          .paginate({ numItems: options.pageSize, cursor: options.cursor }));
+  const candidates = page.page.filter(
+    (reference: any) =>
+      (!("cutoff" in page) || reference._creationTime <= Number(page.cutoff)) &&
+      matchesReferenceFilters(reference, options),
   );
 
   if (!options.query) {
@@ -115,6 +126,15 @@ export async function listReferencePage(ctx: any, request: Request | string) {
   } else {
     const searchable = await Promise.all(
       candidates.map(async (reference: any) => {
+        if (chronological) {
+          const matches = await chronologicalSearchMatches(
+            ctx,
+            reference._id,
+            options.query,
+          );
+          if (matches !== null)
+            return { reference, snapshot: undefined, searchMatches: matches };
+        }
         const [snapshot, context] = await Promise.all([
           getLatestSnapshot(ctx, reference._id),
           getReferenceSearchContext(ctx, reference, searchCaches),
@@ -145,7 +165,13 @@ export async function listReferencePage(ctx: any, request: Request | string) {
   const counts = await getReferenceCounts(ctx);
 
   return {
-    references: hydrated,
+    references:
+      "startCursor" in page
+        ? hydrated.map((reference) => ({
+            ...reference,
+            browseCursor: page.startCursor,
+          }))
+        : hydrated,
     continueCursor: page.isDone ? null : page.continueCursor,
     hasMore: !page.isDone,
     searchMode: options.query

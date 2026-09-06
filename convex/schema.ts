@@ -50,6 +50,7 @@ export default defineSchema({
     .index("by_capture_session", ["captureSessionId"])
     .index("by_triage_state", ["triageState"])
     .index("by_captured_at", ["capturedAt"])
+    .index("by_published_at", ["publishedAt"])
     .searchIndex("search_references", {
       searchField: "title",
       filterFields: [

@@ -20,7 +20,11 @@
 .vault-heading h1 { margin: 0; font-size: clamp(1.85rem, 3.5vw, 2.65rem); font-weight: 560; line-height: 1; letter-spacing: -.06em; }
 .vault-count { display: flex; align-items: baseline; gap: 6px; color: var(--muted); font-size: .76rem; }
 .vault-count strong { color: var(--text); font-size: 1rem; font-variant-numeric: tabular-nums; }
-.vault-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; margin-top: 18px; }
+.vault-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 18px; position: sticky; top: 88px; z-index: 20; background: var(--bg); padding: 6px 0; }
+.vault-toolbar > label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.vault-toolbar select { max-width: 240px; min-height: 36px; }
+.browse-position { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 10px 0; color: var(--muted); font-size: 13px; }
+.browse-position p { flex-basis: 100%; margin: 0; }
 .search-field { position: relative; display: block; }
 .search-field input { min-height: 45px; padding: 11px 70px 11px 40px; background: color-mix(in srgb, var(--bg), transparent 5%); font-size: .88rem; }
 .search-icon { position: absolute; z-index: 1; top: 50%; left: 14px; color: var(--muted); font-size: 1.2rem; transform: translateY(-53%); }

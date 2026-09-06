@@ -62,7 +62,7 @@ export const searchTables = {
     .index("by_reference_id", ["referenceId"])
     .searchIndex("search_text", {
       searchField: "text",
-      filterFields: ["collection", "lane", "favorite", "kind"],
+      filterFields: ["collection", "lane", "favorite", "kind", "referenceId"],
     }),
   referenceSearchState: defineTable({
     key: v.string(),
