@@ -1,4 +1,7 @@
 "use client";
+import { ProjectPanel } from "./ProjectPanel";
+import { ProjectShortlistBar } from "./ProjectShortlistBar";
+import { Popover } from "./Popover";
 import {
   ArchiveSortPicker,
   ArchiveSourcePicker,
@@ -219,6 +222,9 @@ export function ReferenceVault() {
         <main className="vault-main">
           <div className="browse-context">
             <h1>{currentViewLabel}</h1>
+            <Popover className="browse-menu project-drawer" label="Projects">
+              <ProjectPanel query={vault.query} onChange={vault.setQuery} />
+            </Popover>
             <ActiveSourceFilters
               query={vault.query}
               onChange={vault.setQuery}
@@ -319,6 +325,7 @@ export function ReferenceVault() {
             </div>
           ) : null}
 
+          <ProjectShortlistBar />
           <section
             className={`reference-grid ${vault.activeView === "links" ? "link-grid" : ""} ${vault.filteredReferences.length === 0 ? "empty-grid" : ""}`}
           >

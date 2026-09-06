@@ -7,6 +7,7 @@ import {
   removeProjectUse,
   removeReferenceProject,
   saveProjectUse,
+  setProjectReferenceUsed,
   updateReferenceProject,
   useAllReferenceProjects,
   useProjectUses,
@@ -26,12 +27,22 @@ export function ProjectPanel({
   const [createName, setCreateName] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
-  const [editing, setEditing] = useState<{ id: string; name: string; description: string; status: ProjectStatus } | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    id: string;
+    name: string;
+    description: string;
+    status: ProjectStatus;
+  } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   function applyProject(projectId: string) {
     const text = stripProjectToken(query);
-    onChange([text, projectId ? `project:${projectId}` : ""].filter(Boolean).join(" "));
+    onChange(
+      [text, projectId ? `project:${projectId}` : ""].filter(Boolean).join(" "),
+    );
   }
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
@@ -45,13 +56,20 @@ export function ProjectPanel({
       setCreateName("");
       setStatus(`Created “${name}”.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not create project.");
+      setStatus(
+        error instanceof Error ? error.message : "Could not create project.",
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  function editProject(id: string, name: string, description: string | undefined, status: ProjectStatus) {
+  function editProject(
+    id: string,
+    name: string,
+    description: string | undefined,
+    status: ProjectStatus,
+  ) {
     setEditing({ id, name, description: description ?? "", status });
   }
 
@@ -60,12 +78,20 @@ export function ProjectPanel({
     if (!editing?.name.trim() || !isProjectStatus(editing.status)) return;
     setBusy(true);
     try {
-      await updateReferenceProject(editing.id, { name: editing.name.trim(), description: editing.description, status: editing.status });
+      await updateReferenceProject(editing.id, {
+        name: editing.name.trim(),
+        description: editing.description,
+        status: editing.status,
+      });
       setStatus("Project updated.");
       setEditing(null);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not update project.");
-    } finally { setBusy(false); }
+      setStatus(
+        error instanceof Error ? error.message : "Could not update project.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function deleteProject(projectId: string, name: string) {
@@ -81,11 +107,13 @@ export function ProjectPanel({
       if (activeProjectId === projectId) applyProject("");
       setStatus(
         result.removed
-          ? `Deleted project and ${result.usesRemoved} ${result.usesRemoved === 1 ? "reuse record" : "reuse records"}.`
+          ? `Deleted project and ${result.usesRemoved} ${result.usesRemoved === 1 ? "project link" : "project links"}.`
           : "Project was already removed.",
       );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not delete project.");
+      setStatus(
+        error instanceof Error ? error.message : "Could not delete project.",
+      );
     } finally {
       setBusy(false);
     }
@@ -93,10 +121,13 @@ export function ProjectPanel({
 
   if (projects.length === 0) {
     return (
-      <section className="project-panel project-panel-empty" aria-label="Projects">
+      <section
+        className="project-panel project-panel-empty"
+        aria-label="Projects"
+      >
         <div>
           <strong>Projects</strong>
-          <span>Track where a reference is actively being reused.</span>
+          <span>Build a shortlist for your next project.</span>
         </div>
         <form className="project-create-row" onSubmit={createProject}>
           <input
@@ -113,7 +144,11 @@ export function ProjectPanel({
             Create project
           </button>
         </form>
-        {status ? <p className="project-status" aria-live="polite">{status}</p> : null}
+        {status ? (
+          <p className="project-status" aria-live="polite">
+            {status}
+          </p>
+        ) : null}
       </section>
     );
   }
@@ -146,26 +181,96 @@ export function ProjectPanel({
               }
             >
               {project.name}
-              <span className={`project-status-dot ${project.status}`} title={project.status} />
+              <span
+                className={`project-status-dot ${project.status}`}
+                title={project.status}
+              />
               <span>{project.referenceCount}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {editing ? <form className="project-edit-form" onSubmit={saveProjectEdit}>
-        <label>Name<input value={editing.name} maxLength={100} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
-        <label>Purpose<textarea value={editing.description} onChange={(event) => setEditing({ ...editing, description: event.target.value })} /></label>
-        <label>Status<select value={editing.status} onChange={(event) => setEditing({ ...editing, status: event.target.value as ProjectStatus })}>
-          <option value="active">Active</option><option value="paused">Paused</option><option value="finished">Finished</option><option value="archived">Archived</option>
-        </select></label>
-        <div className="viewer-actions"><button className="button primary" disabled={busy || !editing.name.trim()}>Save</button><button type="button" className="button ghost" onClick={() => setEditing(null)}>Cancel</button></div>
-      </form> : null}
-      {pendingDelete ? <div className="project-delete-confirm">
-        <p>Delete “{pendingDelete.name}” and its project-use records? The saved references will remain.</p>
-        <button type="button" className="button danger" disabled={busy} onClick={() => void deleteProject(pendingDelete.id, pendingDelete.name)}>Delete project</button>
-        <button type="button" className="button ghost" onClick={() => setPendingDelete(null)}>Cancel</button>
-      </div> : null}
+      {editing ? (
+        <form className="project-edit-form" onSubmit={saveProjectEdit}>
+          <label>
+            Name
+            <input
+              value={editing.name}
+              maxLength={100}
+              onChange={(event) =>
+                setEditing({ ...editing, name: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            Purpose
+            <textarea
+              value={editing.description}
+              onChange={(event) =>
+                setEditing({ ...editing, description: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            Status
+            <select
+              value={editing.status}
+              onChange={(event) =>
+                setEditing({
+                  ...editing,
+                  status: event.target.value as ProjectStatus,
+                })
+              }
+            >
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="finished">Finished</option>
+              <option value="archived">Archived</option>
+            </select>
+          </label>
+          <div className="viewer-actions">
+            <button
+              className="button primary"
+              disabled={busy || !editing.name.trim()}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className="button ghost"
+              onClick={() => setEditing(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+      {pendingDelete ? (
+        <div className="project-delete-confirm">
+          <p>
+            Delete “{pendingDelete.name}” and its project-use records? The saved
+            references will remain.
+          </p>
+          <button
+            type="button"
+            className="button danger"
+            disabled={busy}
+            onClick={() =>
+              void deleteProject(pendingDelete.id, pendingDelete.name)
+            }
+          >
+            Delete project
+          </button>
+          <button
+            type="button"
+            className="button ghost"
+            onClick={() => setPendingDelete(null)}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
 
       <details className="project-manager">
         <summary>Manage projects</summary>
@@ -189,7 +294,9 @@ export function ProjectPanel({
             <div key={project._id}>
               <button type="button" onClick={() => applyProject(project._id)}>
                 <strong>{project.name}</strong>
-                <span>{project.status} · {project.referenceCount}</span>
+                <span>
+                  {project.status} · {project.referenceCount}
+                </span>
               </button>
               <button
                 type="button"
@@ -218,12 +325,20 @@ export function ProjectPanel({
           ))}
         </div>
       </details>
-      {status ? <p className="project-status" aria-live="polite">{status}</p> : null}
+      {status ? (
+        <p className="project-status" aria-live="polite">
+          {status}
+        </p>
+      ) : null}
     </section>
   );
 }
 
-export function ReferenceProjectAssignment({ reference }: { reference: SavedReference }) {
+export function ReferenceProjectAssignment({
+  reference,
+}: {
+  reference: SavedReference;
+}) {
   const projects = useAllReferenceProjects();
   const [uses, setUses] = useProjectUses(reference._id);
   const [projectId, setProjectId] = useState("");
@@ -243,21 +358,22 @@ export function ReferenceProjectAssignment({ reference }: { reference: SavedRefe
     [uses],
   );
   const availableProjects = projects.filter(
-    (project) => !usedProjectIds.has(project._id) && project.status !== "archived",
+    (project) =>
+      !usedProjectIds.has(project._id) && project.status !== "archived",
   );
 
   async function saveUse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!projectId) return;
     setBusy(true);
-    setStatus("Saving reuse record…");
+    setStatus("Saving to the project shortlist…");
     try {
       const saved = await saveProjectUse({
         projectId,
         referenceId: reference._id,
         assetId: reference.assets[0]?._id,
-        reason: reason.trim() || undefined,
-        notes: notes.trim() || undefined,
+        reason: reason.trim(),
+        notes: notes.trim(),
       });
       const project = projects.find((item) => item._id === projectId);
       if (project) {
@@ -269,9 +385,13 @@ export function ReferenceProjectAssignment({ reference }: { reference: SavedRefe
       setProjectId("");
       setReason("");
       setNotes("");
-      setStatus("Project reuse saved.");
+      setStatus("Project shortlist saved.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not save project reuse.");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Could not save to this project.",
+      );
     } finally {
       setBusy(false);
     }
@@ -285,13 +405,46 @@ export function ReferenceProjectAssignment({ reference }: { reference: SavedRefe
 
   async function removeUse(use: ProjectReferenceUse) {
     setBusy(true);
-    setStatus("Removing project reuse…");
+    setStatus("Removing from project…");
     try {
       await removeProjectUse(use.projectId, reference._id);
       setUses((items) => items.filter((item) => item._id !== use._id));
-      setStatus("Project reuse removed.");
+      setStatus("Removed from project.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not remove project reuse.");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Could not remove from project.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleUsed(use: ProjectReferenceUse) {
+    setBusy(true);
+    try {
+      const saved = await setProjectReferenceUsed(
+        use.projectId,
+        reference._id,
+        use.usageStatus !== "used",
+      );
+      setUses((items) =>
+        items.map((item) =>
+          item._id === use._id ? { ...item, ...saved } : item,
+        ),
+      );
+      setStatus(
+        saved.usageStatus === "used"
+          ? "Marked as used in this project."
+          : "Returned to the shortlist.",
+      );
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Could not update project usage.",
+      );
     } finally {
       setBusy(false);
     }
@@ -300,18 +453,50 @@ export function ReferenceProjectAssignment({ reference }: { reference: SavedRefe
   if (projects.length === 0) return null;
 
   return (
-    <div className="reference-project-assignment" aria-label="Selected reference projects">
+    <div
+      className="reference-project-assignment"
+      aria-label="Selected reference projects"
+    >
       <div className="reference-project-heading">
         <strong>Projects</strong>
-        <span>{uses.length}</span>
+        <span>
+          {uses.filter((use) => use.usageStatus === "used").length} used ·{" "}
+          {uses.length} linked
+        </span>
       </div>
+      <p className="project-usage-hint">
+        Shortlist possibilities here. Mark used only when you actually reference
+        one; favorites stay separate.
+      </p>
       {uses.length > 0 ? (
         <div className="project-use-list">
           {uses.map((use) => (
             <div key={use._id}>
-              <button type="button" onClick={() => editUse(use)}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => editUse(use)}
+              >
                 <strong>{use.project.name}</strong>
-                <span>{use.reason || "No reuse reason"}</span>
+                <span>
+                  {use.usageStatus === "used"
+                    ? use.usedAt
+                      ? `Used · ${new Date(use.usedAt).toLocaleDateString()}`
+                      : "Used in this project"
+                    : use.usageStatus === "shortlisted"
+                      ? "Shortlisted"
+                      : "Usage not recorded"}
+                </span>
+                {use.reason ? <span>{use.reason}</span> : null}
+              </button>
+              <button
+                className="button ghost project-used-toggle"
+                type="button"
+                aria-pressed={use.usageStatus === "used"}
+                disabled={busy}
+                onClick={() => void toggleUsed(use)}
+              >
+                {use.usageStatus === "used" ? "Undo used" : "Mark used"}
               </button>
               <button
                 type="button"
@@ -327,6 +512,7 @@ export function ReferenceProjectAssignment({ reference }: { reference: SavedRefe
       ) : null}
       <form className="project-use-form" onSubmit={saveUse}>
         <select
+          aria-label="Project for this reference"
           value={projectId}
           onChange={(event) => {
             const nextId = event.target.value;
@@ -352,12 +538,14 @@ export function ReferenceProjectAssignment({ reference }: { reference: SavedRefe
         {projectId ? (
           <>
             <input
+              aria-label="Reference purpose"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="Reuse reason: panel pose, color key…"
+              placeholder="What it helps with: pose, palette, lighting…"
               maxLength={120}
             />
             <textarea
+              aria-label="Project-specific notes"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Project-specific notes"
@@ -365,7 +553,7 @@ export function ReferenceProjectAssignment({ reference }: { reference: SavedRefe
               maxLength={1000}
             />
             <button type="submit" className="button secondary" disabled={busy}>
-              Save project reuse
+              Save to shortlist
             </button>
           </>
         ) : null}
@@ -392,5 +580,10 @@ function stripProjectToken(value: string) {
 }
 
 function isProjectStatus(value: string): value is ProjectStatus {
-  return value === "active" || value === "paused" || value === "finished" || value === "archived";
+  return (
+    value === "active" ||
+    value === "paused" ||
+    value === "finished" ||
+    value === "archived"
+  );
 }

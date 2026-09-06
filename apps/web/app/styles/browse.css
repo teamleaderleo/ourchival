@@ -196,6 +196,24 @@
   grid-row: 1;
   gap: 6px;
 }
+.project-drawer { margin-left: auto; }
+.project-drawer .popover-content { left: auto; right: 0; }
+.project-shortlist-bar { padding: 12px 0; border-block: 1px solid var(--line); margin-bottom: 16px; }
+.project-shortlist-bar form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.project-shortlist-bar select { max-width: 100%; min-height: 38px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); font: inherit; }
+.project-shortlist-bar p, .project-usage-hint { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.reference-project-assignment { border: 0; background: transparent; }
+.project-use-list > div { grid-template-columns: minmax(0,1fr) auto auto; border-bottom: 1px solid var(--line); padding: 10px 0; }
+.project-use-list > div > button:first-child { border: 0; background: transparent; padding: 0; }
+.project-use-list strong { font-size: 13px; }
+.project-use-list span { font-size: 12px; white-space: normal; }
+.project-used-toggle { min-height: 36px; padding: 7px; font-size: 12px; }
+.project-used-toggle[aria-pressed="true"] { color: var(--accent-strong); background: var(--accent-soft); }
+.reference-project-assignment .reference-project-heading { font-size: 14px; }
+.reference-project-assignment p { text-align: left; font-size: 13px; line-height: 1.5; }
+.reference-project-assignment .project-use-form select,
+.reference-project-assignment .project-use-form input,
+.reference-project-assignment .project-use-form textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--panel); font: inherit; font-size: 13px; }
 .vault-main .empty-card {
   border: 0;
   border-radius: 0;

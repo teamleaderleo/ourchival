@@ -1,5 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { requireOwnerAccess } from "./lib/privateAccess";
 import { scheduleReferenceSearch, startSearchRebuild } from "./lib/searchIndex";
 
@@ -163,8 +165,11 @@ export const upsertReferences = mutation({
   },
   handler: async (ctx, args) => {
     await requireOwnerAccess(args.accessKey);
-    if (!(await ctx.db.get(args.projectId))) throw new Error("Project not found.");
-    const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
+    if (!(await ctx.db.get(args.projectId)))
+      throw new Error("Project not found.");
+    if (args.referenceIds.length > 96)
+      throw new Error("Choose at most 96 references per batch.");
+    const referenceIds = Array.from(new Set(args.referenceIds));
     let updated = 0;
 
     for (const referenceId of referenceIds) {
@@ -178,6 +183,77 @@ export const upsertReferences = mutation({
       updated += 1;
     }
     return { updated };
+  },
+});
+
+// Explicit, idempotent evidence of use. Attaching a reference is only a shortlist.
+export const setReferenceUsage = mutation({
+  args: {
+    accessKey: v.string(),
+    projectId: v.id("projects"),
+    referenceId: v.id("references"),
+    used: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    const membership = await ctx.db
+      .query("projectReferences")
+      .withIndex("by_project_reference", (q) =>
+        q.eq("projectId", args.projectId).eq("referenceId", args.referenceId),
+      )
+      .unique();
+    if (!membership)
+      throw new Error("Add this reference to the project shortlist first.");
+    const usageStatus = args.used
+      ? ("used" as const)
+      : ("shortlisted" as const);
+    if (membership.usageStatus === usageStatus) return membership;
+    await ctx.db.patch(membership._id, {
+      usageStatus,
+      usedAt: args.used ? Date.now() : undefined,
+      updatedAt: Date.now(),
+    });
+    return await ctx.db.get(membership._id);
+  },
+});
+
+// A bounded source of truth for assistants and project exports: no image blobs or signed URLs.
+export const listReferences = query({
+  args: {
+    accessKey: v.string(),
+    projectId: v.id("projects"),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    if (!(await ctx.db.get(args.projectId)))
+      throw new Error("Project not found.");
+    if (args.paginationOpts.numItems > 96)
+      throw new Error("Request at most 96 references per page.");
+    const result = await ctx.db
+      .query("projectReferences")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .order("desc")
+      .paginate(args.paginationOpts);
+    const page = await Promise.all(
+      result.page.map(async (membership) => {
+        const reference = await ctx.db.get(membership.referenceId);
+        return {
+          ...membership,
+          reference: reference
+            ? {
+                id: reference._id,
+                title: reference.title ?? null,
+                sourceUrl: reference.sourceUrl,
+                authorName: reference.authorName ?? null,
+                favorite: reference.favorite,
+                deleted: reference.deleted,
+              }
+            : null,
+        };
+      }),
+    );
+    return { ...result, page };
   },
 });
 
@@ -201,36 +277,43 @@ export const removeReferences = mutation({
   },
   handler: async (ctx, args) => {
     await requireOwnerAccess(args.accessKey);
-    const referenceIds = Array.from(new Set(args.referenceIds)).slice(0, 96);
+    if (args.referenceIds.length > 96)
+      throw new Error("Choose at most 96 references per batch.");
+    const referenceIds = Array.from(new Set(args.referenceIds));
     let updated = 0;
     for (const referenceId of referenceIds) {
-      if (await removeProjectReference(ctx, args.projectId, referenceId)) updated += 1;
+      if (await removeProjectReference(ctx, args.projectId, referenceId))
+        updated += 1;
     }
     return { updated };
   },
 });
 
 async function upsertProjectReference(
-  ctx: any,
+  ctx: MutationCtx,
   args: {
-    projectId: any;
-    referenceId: any;
-    assetId?: any;
+    projectId: Id<"projects">;
+    referenceId: Id<"references">;
+    assetId?: Id<"assets">;
     reason?: string;
     notes?: string;
   },
 ) {
-  const existing = (
-    await ctx.db
-      .query("projectReferences")
-      .withIndex("by_reference", (q: any) => q.eq("referenceId", args.referenceId))
-      .collect()
-  ).find((use: any) => use.projectId === args.projectId);
+  const existing = await ctx.db
+    .query("projectReferences")
+    .withIndex("by_project_reference", (q) =>
+      q.eq("projectId", args.projectId).eq("referenceId", args.referenceId),
+    )
+    .unique();
   const now = Date.now();
   const patch = {
     ...(args.assetId ? { assetId: args.assetId } : {}),
-    reason: cleanOptional(args.reason, 120),
-    notes: cleanOptional(args.notes, 1000),
+    ...(args.reason !== undefined
+      ? { reason: cleanOptional(args.reason, 120) }
+      : {}),
+    ...(args.notes !== undefined
+      ? { notes: cleanOptional(args.notes, 1000) }
+      : {}),
     updatedAt: now,
   };
 
@@ -241,6 +324,7 @@ async function upsertProjectReference(
   }
 
   const useId = await ctx.db.insert("projectReferences", {
+    usageStatus: "shortlisted",
     projectId: args.projectId,
     referenceId: args.referenceId,
     ...(args.assetId ? { assetId: args.assetId } : {}),
@@ -257,12 +341,17 @@ async function upsertProjectReference(
   return await ctx.db.get(useId);
 }
 
-async function removeProjectReference(ctx: any, projectId: any, referenceId: any) {
-  const uses = await ctx.db
+async function removeProjectReference(
+  ctx: MutationCtx,
+  projectId: Id<"projects">,
+  referenceId: Id<"references">,
+) {
+  const use = await ctx.db
     .query("projectReferences")
-    .withIndex("by_reference", (q: any) => q.eq("referenceId", referenceId))
-    .collect();
-  const use = uses.find((candidate: any) => candidate.projectId === projectId);
+    .withIndex("by_project_reference", (q) =>
+      q.eq("projectId", projectId).eq("referenceId", referenceId),
+    )
+    .unique();
   if (!use) return false;
   await ctx.db.delete(use._id);
   await scheduleReferenceSearch(ctx, referenceId);
@@ -296,6 +385,8 @@ function compareProjects(left: any, right: any) {
     finished: 2,
     archived: 3,
   };
-  return (rank[left.status] ?? 4) - (rank[right.status] ?? 4) ||
-    right.updatedAt - left.updatedAt;
+  return (
+    (rank[left.status] ?? 4) - (rank[right.status] ?? 4) ||
+    right.updatedAt - left.updatedAt
+  );
 }

@@ -198,12 +198,15 @@ export default defineSchema({
     projectId: v.id("projects"),
     referenceId: v.id("references"),
     assetId: v.optional(v.id("assets")),
+    usageStatus: v.optional(v.union(v.literal("shortlisted"), v.literal("used"))),
+    usedAt: v.optional(v.number()),
     reason: v.optional(v.string()),
     notes: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_project", ["projectId"])
+    .index("by_project_reference", ["projectId", "referenceId"])
     .index("by_reference", ["referenceId"]),
 
   savedSearches: defineTable({
