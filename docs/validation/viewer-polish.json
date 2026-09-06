@@ -1,0 +1,27 @@
+{
+  "date": "2026-09-06",
+  "scope": "Image viewer usability",
+  "tests": {
+    "vitest": 250,
+    "typecheck": true,
+    "changedFileLint": true,
+    "productionBuild": true
+  },
+  "browser": {
+    "kind": "Actual React component in an unauthenticated local fixture",
+    "viewports": [
+      "1440x900",
+      "1280x720",
+      "700x900"
+    ],
+    "checks": [
+      "Tag panel hide/show",
+      "Forward and reverse focus wrap",
+      "Arrow keys in secondary controls do not navigate references",
+      "Escape closes the focused disclosure before the viewer",
+      "Failed preview offers retry"
+    ],
+    "allPassed": true
+  },
+  "live": "Local development app serves the changes; no backend migration needed"
+}

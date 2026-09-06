@@ -56,3 +56,45 @@ Natural thumbnail dimensions are cached locally for at most 2,048 asset IDs.
 This is additional, bounded layout metadata used to prepare later visits. It
 contains no image bytes and is separate from the tag-compression measurements
 above; it must not be counted as a compression saving.
+
+## September 6, 2026 — live lossless delta packing
+
+The local catalog now contains 9,216 visual-enrichment results, all using shared
+terms and recipes. The September 5 zero-result baseline above is historical.
+After a private metadata backup, the resumable payload migration completed with
+9,216 changed results and zero skipped rows. Each transaction verified exact
+reconstruction before writing; only `tagPayload` changed.
+
+| Measured scope | Before | After | Reduction |
+| --- | ---: | ---: | ---: |
+| 251,108 scored assertions, including per-result headers | 3,087,024 B | 2,380,881 B | 706,143 B / 22.87% |
+
+This is an additional reduction from already packed OTG-v1 payloads, achieved
+with variable-length ID differences and unchanged float64 scores. It does not
+add to the older sample percentages as a simple sum. All future submissions use
+the smaller supported format. No model rerun or search reindex was needed.
+
+The private pre-migration export also shows why this should not be presented as
+a large total-storage reduction: source-snapshot JSONL is 92,620,332 bytes and
+search-document JSONL is 53,495,821 bytes. Export framing and base64 encoding make
+these different measures from binary tag payloads; neither estimates billing or
+physical storage. This change leaves those records alone.
+
+Aggregate evidence: [preflight](validation/tag-storage-v2-preflight.json),
+[completed migration](validation/tag-storage-v2-live.json), and
+[authenticated inspector parity](validation/tag-storage-v2-inspector.json).
+Validation: 238 Vitest tests, 55 visual-worker tests, three launcher tests,
+five backup tests, and full typechecking passed. Shared Python/TypeScript fixtures
+cover both formats, malformed deltas, uint32 limits and full score precision.
+Migration tests cover interruptions, stale jobs, idempotence and atomic rollback.
+
+Repeat the payload audit against a private metadata export without exposing tags:
+
+```sh
+python3 workers/visual/measure_export_tag_storage.py /private/metadata.zip \
+  --output /private/tag-storage-receipt.json
+```
+
+The visible tag summary remains bounded. Danbooru matching receipts have not
+been published as catalog tags by this migration; candidate matches must remain
+distinct from confirmed community terms and model suggestions.

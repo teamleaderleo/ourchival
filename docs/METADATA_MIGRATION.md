@@ -1,7 +1,7 @@
 # Compact visual metadata rollout
 
 The catalog now stores machine tag definitions in `visualTerms`, model lists in
-`visualRecipes`, and scored per-image tag IDs in an OTG-v1 binary payload. Scores
+`visualRecipes`, and scored per-image tag IDs in a versioned OTG binary payload. Scores
 remain float64. Machine vocabulary stays separate from the owner-visible saved
 tag list. Both dictionaries allocate immutable codes from the same sequence.
 
@@ -14,6 +14,22 @@ The compatibility reader also accepts old inline tag/model records during
 migration. No original media bytes are written.
 
 ## Migration
+
+New submissions choose the smaller of OTG-v1 (fixed IDs) and OTG-v2 (delta IDs).
+Both preserve float64 scores exactly. For an already compact catalog, run the
+owner-authenticated `tagPayloadMigration:start` and read `tagPayloadMigration:status`.
+This separate migration processes 16 results per transaction, compares decoded
+values (including signed zero), and writes only when the payload shrinks. It
+preserves result timestamps/revisions, dictionaries, model recipes, corrections,
+search projections and media. Completed runs are idempotent; interrupted runs
+resume their committed cursor with a new generation fencing older jobs.
+
+The receipt counts observed results, changed results, skipped inline results,
+and before/after **binary payload** bytes. Inline results still need the original
+migration below. Receipt totals exclude database overhead, indexes and shared
+records. Preserve both decoders on rollback; a v1-only deployment requires
+re-encoding v2 payloads with `encodeTags(entries, 1)` first, or restoring a backup.
+See [the wire format](TAG_PAYLOAD_FORMAT.md).
 
 Export the deployment metadata before rollout. Deploy from a checkout that also
 contains the deployment's current Drive and capture behavior. In particular, the

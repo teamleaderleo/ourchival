@@ -16,6 +16,11 @@ export type VisualSearchInput = {
   hideCaption?: boolean;
 };
 export type SearchContext = {
+  community?: Array<{
+    assetId: string;
+    postId: number;
+    tags: Array<{ name: string; category: string }>;
+  }>;
   assets?: Array<{
     assetId: string;
     notes?: string;
@@ -151,6 +156,14 @@ export function buildSearchDocument(
       4_000,
     );
   }
+  for (const source of context.community ?? [])
+    add(
+      `community:${source.assetId}:${source.postId}`,
+      "Danbooru tags",
+      source.tags.map((t) => t.name.replaceAll("_", " ")).join(" "),
+      "source",
+      4000,
+    );
   for (const visual of context.visual) {
     const rejected = new Set((visual.rejectedTags ?? []).map(normalizedText));
     // Ratings and predicted artists never become search tags or factual attribution here.

@@ -1,0 +1,11 @@
+{
+  "phase": "complete",
+  "processed": 9216,
+  "changed": 9216,
+  "skipped": 0,
+  "beforePayloadBytes": 3087024,
+  "afterPayloadBytes": 2380881,
+  "savedBytes": 706143,
+  "updatedAt": 1788720932523,
+  "scope": "Local catalog tag payloads only; excludes database overhead, dictionaries, recipes, search and other metadata"
+}

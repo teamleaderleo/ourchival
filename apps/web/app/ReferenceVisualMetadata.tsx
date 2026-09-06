@@ -32,7 +32,7 @@ type Item = {
 type Metadata = { items: Item[]; truncated: boolean };
 const inspect = makeFunctionReference<
   "query",
-  { accessKey: string; referenceId: string },
+  { accessKey: string; referenceId: string; assetId?: string },
   Metadata
 >("visualEnrichment:inspect");
 const correct = makeFunctionReference<
@@ -59,9 +59,11 @@ function getClient() {
 export function ReferenceVisualMetadata({
   reference,
   compact = false,
+  assetId,
 }: {
   reference: SavedReference;
   compact?: boolean;
+  assetId?: string;
 }) {
   const [data, setData] = useState<Metadata | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,7 +76,7 @@ export function ReferenceVisualMetadata({
     try {
       const next = await getClient().query(
         inspect,
-        withOwnerAccess({ referenceId: reference._id }),
+        withOwnerAccess({ referenceId: reference._id, ...(assetId ? { assetId } : {}) }),
       );
       if (serial === requests.serial) {
         setData(next);
@@ -90,7 +92,7 @@ export function ReferenceVisualMetadata({
     } finally {
       if (serial === requests.serial) setLoading(false);
     }
-  }, [reference._id, requests]);
+  }, [reference._id, assetId, requests]);
   useEffect(() => {
     void load();
     return () => {
@@ -148,11 +150,11 @@ export function ReferenceVisualMetadata({
       {data?.items.length === 0 ? (
         <p>No saved images to analyze in this reference.</p>
       ) : null}
-      {data?.items.map((item, index) => (
+      {data?.items.map((item, index) => (!assetId || item.assetId === assetId) ? (
         <AssetMetadata
           key={item.assetId}
           item={item}
-          index={index}
+          index={assetId ? reference.assets.findIndex(asset => asset._id === assetId) : index}
           source={
             compact ? undefined : reference.assets.find((asset) => asset._id === item.assetId)
               ?.previewUrl ??
@@ -162,7 +164,7 @@ export function ReferenceVisualMetadata({
           disabled={busy || loading}
           onSave={(next) => save(item, next)}
         />
-      ))}
+      ) : null)}
       {data?.truncated ? (
         <p>Showing the first 32 images in this reference.</p>
       ) : null}

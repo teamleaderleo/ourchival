@@ -1,0 +1,26 @@
+{
+  "date": "2026-09-06",
+  "localBackend": true,
+  "inspected": 21,
+  "matched": 18,
+  "terms": 636,
+  "hidden": 0,
+  "selectedImageChecks": 21,
+  "tests": {
+    "vitest": 249,
+    "node": 6,
+    "backup": 5,
+    "visualWorker": 55,
+    "typecheck": true,
+    "productionBuild": true
+  },
+  "browser": {
+    "kind": "local component fixture, not authenticated end-to-end",
+    "viewports": [
+      "1280x720",
+      "1440x900",
+      "700x900"
+    ],
+    "hideRestoreInteraction": true
+  }
+}

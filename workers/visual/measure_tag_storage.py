@@ -44,7 +44,9 @@ def measure(images, model):
         "assertions": sum(map(len, rows)), "unique_terms": len(keys),
         "readable_tag_arrays_utf8_bytes": before,
         "shared_dictionary_utf8_bytes": dictionary_bytes,
-        "otg_v1_payload_bytes_including_headers": binary_bytes,
+        "otg_v1_payload_bytes_including_headers": sum(8 + 12 * len(row) for row in rows),
+        "adaptive_payload_bytes_including_headers": binary_bytes,
+        "encoding": "smallest of OTG-v1 and lossless delta OTG-v2",
         "compact_total_bytes": after,
         "saved_bytes": before - after,
         "saved_percent": round(100 * (before - after) / before, 2) if before else 0,
@@ -65,6 +67,6 @@ if __name__ == "__main__":
     source = args.input.read_bytes()
     result = measure(json.loads(source)["images"], args.model)
     result["input_sha256"] = hashlib.sha256(source).hexdigest()
-    result["measurement_version"] = 1
+    result["measurement_version"] = 2
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

@@ -1,0 +1,15 @@
+{
+  "scope": "Exported binary tag payloads only; excludes shared dictionaries, recipes, search projections, database overhead and billed storage",
+  "exportSha256": "d792150abf474058c8f6e7061621311a0ab132be8877c5aa461d5fe6b782a05d",
+  "results": 9216,
+  "inlineResults": 0,
+  "assertions": 251108,
+  "versions": {
+    "1": 9216
+  },
+  "beforePayloadBytes": 3087024,
+  "projectedAfterPayloadBytes": 2380881,
+  "savedBytes": 706143,
+  "savedPercent": 22.87,
+  "losslessRoundTrip": true
+}

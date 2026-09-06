@@ -34,6 +34,10 @@ export const searchTables = {
     ),
     cursor: v.union(v.string(), v.null()),
     processed: v.number(),
+    changed: v.optional(v.number()),
+    skipped: v.optional(v.number()),
+    beforeBytes: v.optional(v.number()),
+    afterBytes: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
   referenceSearchDocuments: defineTable({

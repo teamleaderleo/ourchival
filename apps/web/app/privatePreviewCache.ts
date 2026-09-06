@@ -11,6 +11,7 @@ export function createPreviewCache(load: (url: string) => Promise<Blob>, maxByte
   }
   return {
     clear: () => entries.clear(),
+    invalidate: (url: string) => entries.delete(url),
     get(url: string): Promise<Blob> {
       const cached = entries.get(url);
       if (cached) { entries.delete(url); entries.set(url, cached); return cached.promise; }

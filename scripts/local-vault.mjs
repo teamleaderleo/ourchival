@@ -180,12 +180,14 @@ async function dev() {
       env: {
         ...process.env,
         CONVEX_DEPLOYMENT: localEnv.CONVEX_DEPLOYMENT,
+        CONVEX_LOCAL_BACKEND_STARTUP_TIMEOUT_SECS:
+          process.env.CONVEX_LOCAL_BACKEND_STARTUP_TIMEOUT_SECS || "120",
       },
       stdio: "inherit",
     }),
   );
   try {
-    await waitFor(`${convexSiteUrl}/auth-check`, [401, 503]);
+    await waitFor(`${convexSiteUrl}/auth-check`, [401, 503], 150_000);
   } finally {
     await restoreFile(cloudEnvPath, cloudEnv);
   }

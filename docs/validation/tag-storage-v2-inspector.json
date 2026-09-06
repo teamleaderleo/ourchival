@@ -1,0 +1,7 @@
+{
+  "samples": 3,
+  "tagsCompared": 85,
+  "exactTagAndScoreParity": true,
+  "modelAndTimestampParity": true,
+  "scope": "Authenticated local image inspector compared against pre-migration export samples"
+}

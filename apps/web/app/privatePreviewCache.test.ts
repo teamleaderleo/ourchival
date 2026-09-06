@@ -25,6 +25,17 @@ it("bounds retained bytes and clears private previews when access changes", asyn
   expect(load).toHaveBeenCalledTimes(4);
 });
 
+it("retries one damaged preview without discarding other cached images", async () => {
+  const load = vi.fn(async () => new Blob(["pixels"]));
+  const cache = createPreviewCache(load);
+  await cache.get("a");
+  await cache.get("b");
+  cache.invalidate("a");
+  await cache.get("a");
+  await cache.get("b");
+  expect(load.mock.calls).toHaveLength(3);
+});
+
 it("retries failures and does not repopulate a cleared cache from a late response", async () => {
   const load = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(new Blob(["ok"]));
   const cache = createPreviewCache(load);
