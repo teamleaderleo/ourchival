@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { referenceTagGroups, filterReviewTags } from "./referenceTagGroups";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { withOwnerAccess } from "./privateAccess";
@@ -168,7 +169,7 @@ export function ReferenceVisualMetadata({
   );
 }
 
-function AssetMetadata({
+export function AssetMetadata({
   item,
   index,
   source,
@@ -182,9 +183,13 @@ function AssetMetadata({
   onSave: (next: Corrections) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [tagQuery, setTagQuery] = useState("");
   const [imageFailed, setImageFailed] = useState(false);
   const image = usePrivateImageUrl(source);
-  const visible = expanded ? item.tags : item.tags.slice(0, 12);
+  const groups = referenceTagGroups(item.tags);
+  const visibleGroups = expanded
+    ? [{ name: "All model terms", tags: filterReviewTags(item.tags, tagQuery) }]
+    : groups.map((group) => ({ ...group, tags: group.tags.slice(0, 3) }));
   useEffect(() => {
     setImageFailed(false);
   }, [source]);
@@ -221,7 +226,11 @@ function AssetMetadata({
         </p>
       ) : null}
       {item.state === "not_analyzed" ? (
-        <p>Source details and saved tags remain available for search.</p>
+        <p>
+          No model analysis has been saved for this image. Downloading it does
+          not automatically run image tagging. Source details and your saved
+          tags are still searchable.
+        </p>
       ) : null}
       {item.state === "ready" ? (
         <>
@@ -229,42 +238,76 @@ function AssetMetadata({
             Scores reflect model confidence, not verified facts. Select a term
             to exclude it; select it again to restore it.
           </p>
-          <div className="visual-metadata-tags">
-            {visible.map((tag) => (
-              <button
-                type="button"
-                key={tag.name}
-                disabled={disabled}
-                aria-pressed={tag.rejected}
-                aria-label={`${tag.rejected ? "Restore" : "Exclude"} ${tag.name.replace(/_/g, " ")} ${tag.rejected ? "in" : "from"} search`}
-                onClick={() =>
-                  void onSave({
-                    ...item.corrections,
-                    rejectedTags: tag.rejected
-                      ? item.corrections.rejectedTags.filter(
-                          (name) => name !== tag.name,
-                        )
-                      : [...item.corrections.rejectedTags, tag.name],
-                  })
-                }
-              >
-                <span>{tag.name.replace(/_/g, " ")}</span>
-                <small>
-                  {tag.rejected
-                    ? "Excluded"
-                    : `Score ${tag.confidence.toFixed(2)}`}
-                </small>
-              </button>
-            ))}
-          </div>
-          {item.tags.length > 12 ? (
+          {expanded ? (
+            <label>
+              Find a model term
+              <input
+                type="search"
+                value={tagQuery}
+                onChange={(event) => setTagQuery(event.target.value)}
+                placeholder="Pose, clothing, artist…"
+              />
+            </label>
+          ) : (
+            <p>
+              Reference details · up to three terms per group. All other terms
+              remain searchable unless excluded.
+            </p>
+          )}
+          {!expanded && !groups.length && item.tags.length > 0 ? (
+            <p>
+              No reference details were recognized. Open all terms to review the
+              remaining predictions.
+            </p>
+          ) : null}
+          {visibleGroups.map((group) => (
+            <section key={group.name} aria-label={group.name}>
+              <strong>{group.name}</strong>
+              <div className="visual-metadata-tags">
+                {group.tags.map((tag) => (
+                  <button
+                    type="button"
+                    key={tag.name}
+                    disabled={disabled}
+                    aria-pressed={tag.rejected}
+                    aria-label={`${tag.rejected ? "Restore" : "Exclude"} ${tag.name.replace(/_/g, " ")} ${tag.rejected ? "in" : "from"} search`}
+                    onClick={() =>
+                      void onSave({
+                        ...item.corrections,
+                        rejectedTags: tag.rejected
+                          ? item.corrections.rejectedTags.filter(
+                              (name) => name !== tag.name,
+                            )
+                          : [...item.corrections.rejectedTags, tag.name],
+                      })
+                    }
+                  >
+                    <span>{tag.name.replace(/_/g, " ")}</span>
+                    <small>
+                      {tag.rejected
+                        ? "Excluded"
+                        : `Score ${tag.confidence.toFixed(2)}`}
+                    </small>
+                  </button>
+                ))}
+              </div>
+              {expanded && !group.tags.length ? (
+                <p>No terms match this search.</p>
+              ) : null}
+            </section>
+          ))}
+          {item.tags.length > 0 ? (
             <button
               type="button"
               className="button ghost"
-              onClick={() => setExpanded(!expanded)}
+              onClick={() => {
+                setExpanded(!expanded);
+                setTagQuery("");
+              }}
+              aria-expanded={expanded}
             >
               {expanded
-                ? "Show fewer terms"
+                ? "Show reference details"
                 : `Show all ${item.tags.length} terms`}
             </button>
           ) : null}
