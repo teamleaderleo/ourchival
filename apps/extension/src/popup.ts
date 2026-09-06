@@ -102,7 +102,7 @@ async function render() {
         </div>
       </header>
 
-      ${renderSourceIntake(sourceIntake, sourceContext, sourceDisabled, sourceIntakes)}
+      ${renderSourceIntake(sourceIntake, sourceContext, sourceDisabled, sourceIntakes, batch)}
 
       <section class="x-likes-panel">
         <div class="section-heading">
@@ -222,7 +222,7 @@ async function render() {
   });
 
   document.getElementById("pause-source")?.addEventListener("click", () => {
-    transientMessage = "Pausing after the current source chunk…";
+    transientMessage = "Stopping the reader; saved originals and checkpoints are retained…";
     void sendRuntimeMessage({
       type: "OURCHIVAL_PAUSE_SOURCE",
       importId: sourceIntake?.importId,
@@ -437,6 +437,7 @@ function renderSourceIntake(
   context: SourceIntakeContext | undefined,
   disabled: string,
   states: SourceIntakeState[],
+  batch?: BatchCaptureState,
 ) {
   if (!state && !context) return "";
   const active = state?.running ? state : undefined;
@@ -446,23 +447,28 @@ function renderSourceIntake(
     state && context && state.sourceUrl === context.sourceUrl,
   );
   const button = active
-    ? '<button id="pause-source" type="button" class="secondary full-width">Pause after this chunk</button>'
+    ? '<button id="pause-source" type="button" class="secondary full-width">Stop and keep progress</button>'
     : context
-      ? `<button id="import-source" type="button" class="primary full-width" ${disabled}>${sameSource && !state?.exhausted ? "Continue import" : `Import ${escapeHtml(label)}`}</button>`
+      ? `<button id="import-source" type="button" class="primary full-width" ${disabled}>${context.provider === "pixiv_bookmarks" ? sameSource && !state?.exhausted ? "Resume original downloads" : "Download bookmark originals" : sameSource && !state?.exhausted ? "Continue import" : `Import ${escapeHtml(label)}`}</button>`
       : "";
+  const currentBatch = state && batch?.jobId === state.importId && batch.running ? batch : undefined;
   const progress = state
     ? `<div class="batch-counts source-progress">
         <span><strong>${state.observed}</strong> observed</span>
         <span><strong>${state.canonicalReferenceIds?.length ?? state.saved}</strong> references</span>
-        ${state.duplicates ? `<span><strong>${state.duplicates}</strong> existing</span>` : ""}
+        ${state.duplicates ? `<span><strong>${state.duplicates}</strong> reused captures</span>` : ""}
         ${state.failed ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
-        ${state.reportedCount ? `<span><strong>${state.unresolved}</strong> unresolved</span>` : ""}
+        ${state.reportedCount ? `<span><strong>${Math.max(0, state.reportedCount - state.observed)}</strong> artworks left to scan</span>` : ""}
+        ${Object.keys(state.gaps ?? {}).length ? `<span><strong>${Object.keys(state.gaps ?? {}).length}</strong> recorded gaps</span>` : ""}
         ${state.receiptVersion === 2 && (state.originalCandidates ?? 0) > 0 ? `<span><strong>${state.originalsStored ?? 0}/${state.originalCandidates}</strong> originals secured</span>` : state.originalCandidates ? `<span>Legacy receipt: rendition audit needed</span>` : ""}
         ${state.degradedStored ? `<span><strong>${state.degradedStored}</strong> degraded</span>` : ""}
         ${state.unknownStored ? `<span><strong>${state.unknownStored}</strong> unproven rendition</span>` : ""}
         ${(state.originalsLinked ?? 0) > 0 ? `<span><strong>${state.originalsLinked}</strong> link-only</span>` : ""}
       </div>
-      <p class="hint"><strong>${state.running ? "Importing" : state.exhausted ? "Source end reached" : "Paused"}</strong> · ${state.chunks} checkpointed ${state.chunks === 1 ? "chunk" : "chunks"} · ${escapeHtml(state.cursor)}</p>
+      <p class="hint"><strong>${state.running ? "Import in progress" : state.exhausted ? "Source end reached" : "Stopped"}</strong> · ${state.chunks} completed bookmark pages</p>
+      ${state.running && currentBatch ? `<p class="hint" role="status">Current page: ${currentBatch.completed}/${currentBatch.total} image captures processed. Page totals update after this finishes.</p>` : ""}
+      <p class="hint">Last completed-page update: ${escapeHtml(new Date(state.updatedAt).toLocaleString())}.</p>
+      ${state.running && Date.now() - Date.parse(state.updatedAt) > 300_000 ? '<p class="hint">No page completed recently. If the current capture count also stops, stop and resume to replay the unfinished page safely.</p>' : ""}
       ${state.message ? `<p class="hint">${escapeHtml(state.message)}</p>` : ""}`
     : "";
   const sealed =
@@ -488,6 +494,7 @@ function renderSourceIntake(
         </div>
       </div>
       ${button}
+      ${(context?.provider ?? state?.provider) === "pixiv_bookmarks" ? '<p class="hint">Downloads every original image page to Google Drive, along with artwork metadata. Existing artwork records can still receive missing images.</p>' : ""}
       ${progress}
       ${sealed}
       ${guidance}

@@ -2,6 +2,14 @@ import type { CapturePayload } from "@ourchival/shared";
 
 export type SourceIntakeProvider = "pixiv_bookmarks" | "pinterest_board";
 
+/** Recheck after downloads: Stop or a new reader invalidates an old chunk. */
+export function sourceReaderCanCommit(
+  state: { running: boolean; workerTabId?: number } | undefined,
+  senderTabId?: number,
+) {
+  return Boolean(state?.running && typeof senderTabId === "number" && state.workerTabId === senderTabId);
+}
+
 export type SourceIntakeContext = {
   provider: SourceIntakeProvider;
   scope: "bookmarks" | "profile" | "board";
