@@ -48,6 +48,12 @@ OURCHIVAL_GOOGLE_AUTH_USE_CONVEX=1 pnpm google:drive-auth
 
 It reads the existing client credentials from the development deployment and writes the new refresh token directly to both development and production through stdin. It never prints the client secret or refresh token. The browser begins at a localhost redirect so the one-time OAuth state also stays out of terminal output. The backend `GOOGLE_CLIENT_ID` must match the public `NEXT_PUBLIC_GOOGLE_CLIENT_ID` configured for the web app.
 
+For a local vault, set `OURCHIVAL_GOOGLE_AUTH_ENV_FILE` to a private, mode-0600
+Convex self-hosted env file instead. The helper reads and updates only that
+deployment, never development or production. Remove the temporary file afterward.
+On macOS the authorization opens in the existing Edge browser. Google approval
+must finish before the helper confirms that the credential was saved.
+
 ## 3. Optional: choose a Drive folder
 
 Create a folder in Google Drive, such as:

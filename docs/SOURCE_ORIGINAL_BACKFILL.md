@@ -80,10 +80,31 @@ Pixiv retry command and ugoira frame preservation are not implemented.
 Live Pixiv access was rejected by browser security policy during this work.
 No alternative browser, direct-network workaround, or live Pixiv backfill was
 attempted. API response contracts are fixture-tested, not live-verified. The
-existing 3,853-work catalog still has zero Pixiv assets; full archive execution,
+catalog had zero Pixiv assets at that audit; full archive execution,
 interruption testing in Edge, and final reconciliation remain required before
-merging this work. Rebuild and reload the existing unpacked extension when
+claiming the archive is complete. Rebuild and reload the existing unpacked extension when
 performing that authorized validation.
+
+### September 6 recovery
+
+A later user-run import produced 621 durable Pixiv image assets and 566 link-only
+assets. A read-only current-row ledger audit attributed 562 link-only cases to
+Google OAuth `invalid_grant`; Pixiv had returned HTTP 200 image data. The other
+four had different upload failures. These counts describe image assets, not
+artworks or full archive coverage.
+
+Local Drive authorization was reconnected in Edge. A small diagnostic upload,
+byte-for-byte readback and deletion passed. The original 621 assets were not
+changed. Reconnection does not itself repair missing image bytes.
+
+The reader now reloads its own tab once on a connection failure, with a persisted
+per-URL bound. An original that remains link-only stops Pixiv ingestion before
+advancing the page checkpoint. The popup offers **Repair missing originals**:
+start a fresh receipt and scan bookmarks from the beginning, reusing durable
+originals and preserving previous receipts. This is a bounded full rescan, not a
+gaps-only queue. **Resume original downloads** continues the current receipt;
+it does not revisit earlier acknowledged pages. Live completion of the repair
+pass remains unverified.
 
 ## Verified Pinterest sample — 2026-09-05
 

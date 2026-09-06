@@ -34,6 +34,16 @@ beforeEach(() => {
 });
 
 describe("asset fetch evidence", () => {
+  it("reports revoked Drive authorization separately from missing source images", async () => {
+    vi.mocked(fetchPublicResponse).mockImplementation(async (url) => ({ finalUrl: url, response: new Response(image, { headers: { "Content-Type": "image/png" } }) }));
+    vi.mocked(uploadBlobToDrive).mockRejectedValue(new Error("invalid_grant"));
+    const stored = await fetchAndStoreRemoteAsset(ctx, { sourceUrl: "https://www.pixiv.net/artworks/42", assetUrl: "https://i.pximg.net/img-original/42_p0.png" });
+    expect(stored.storageProvider).toBe("linked");
+    expect(stored.status).toContain("Google Drive needs reconnection");
+    expect(stored.quality).not.toBe("original");
+    expect(JSON.parse(stored.fetchReceipt!).attempts[0]).toMatchObject({ status: 200, error: "invalid_grant" });
+    expect(fetchPublicResponse).toHaveBeenCalledTimes(1);
+  });
   it("promotes the canonical PNG and records actual dimensions and bytes", async () => {
     vi.mocked(fetchPublicResponse).mockImplementation(async (url) => ({
       finalUrl: url,

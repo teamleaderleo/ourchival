@@ -156,6 +156,7 @@ export type XLikesObservationLedger = {
 };
 
 export type SourceIntakeState = {
+  readerRecoveryUrl?: string;
   importId: string;
   provider: SourceIntakeProvider;
   label: string;

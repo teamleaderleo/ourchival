@@ -12,7 +12,8 @@ const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
 const startUri = `http://127.0.0.1:${port}/start`;
 const scope = "https://www.googleapis.com/auth/drive.file";
 const useConvexCredentials =
-  process.env.OURCHIVAL_GOOGLE_AUTH_USE_CONVEX === "1";
+  process.env.OURCHIVAL_GOOGLE_AUTH_USE_CONVEX === "1" || Boolean(process.env.OURCHIVAL_GOOGLE_AUTH_ENV_FILE);
+const envFile = process.env.OURCHIVAL_GOOGLE_AUTH_ENV_FILE;
 const execFileAsync = promisify(execFile);
 
 const rl = readline.createInterface({
@@ -37,6 +38,10 @@ async function main() {
       tokenResponse.refresh_token,
       false,
     );
+    if (envFile) {
+      console.log("\nSuccess. Updated Google Drive authorization for the selected local vault only.\n");
+      return;
+    }
     await setConvexEnv(
       "GOOGLE_REFRESH_TOKEN",
       tokenResponse.refresh_token,
@@ -114,7 +119,7 @@ function listenForCode(clientId) {
 
         response.writeHead(200, { "Content-Type": "text/html" });
         response.end(
-          "<h1>Ourchival Google Drive connected.</h1><p>You can close this tab.</p>",
+          "<h1>Google approval received.</h1><p>Return to Ourchival while the connection is verified and saved. You can close this tab.</p>",
         );
         resolve(code);
         server.close();
@@ -134,7 +139,7 @@ function listenForCode(clientId) {
 async function readConvexEnv(name) {
   const { stdout } = await execFileAsync(
     "corepack",
-    ["pnpm", "exec", "convex", "env", "get", name],
+    ["pnpm", "exec", "convex", "env", "get", name, ...(envFile ? ["--env-file", envFile] : [])],
     { cwd: process.cwd() },
   );
   const value = stdout.trim();
@@ -151,6 +156,7 @@ function setConvexEnv(name, value, production) {
       "env",
       "set",
       ...(production ? ["--prod"] : []),
+      ...(envFile ? ["--env-file", envFile] : []),
       name,
     ];
     const child = spawn("corepack", args, {
@@ -210,7 +216,7 @@ function openBrowser(url) {
       : process.platform === "win32"
         ? "cmd"
         : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : process.platform === "darwin" ? ["-a", "Microsoft Edge", url] : [url];
 
   execFile(command, args, (error) => {
     if (error) {

@@ -1442,6 +1442,7 @@ export async function fetchAndStoreRemoteAsset(
       !args.promotionOnly || assetQuality({ fetchedUrl: url }) === "original",
   );
   const attempts: Array<Record<string, unknown>> = [];
+  let blockingFailure: string | undefined;
   let selectedUrl: string | undefined;
   let dimensions: { width: number; height: number } | undefined;
   const receipt = (result: StoredRemoteAsset): StoredRemoteAsset => ({
@@ -1639,11 +1640,15 @@ export async function fetchAndStoreRemoteAsset(
       } catch (error) {
         attempt.error =
           error instanceof Error ? error.message : "Asset request failed";
+        if (attempt.error === "invalid_grant") {
+          blockingFailure = "Google Drive needs reconnection (invalid_grant). Original not stored.";
+          break;
+        }
         if (controller.signal.aborted) break;
       }
     }
     return receipt({
-      status: "No complete original image secured; see fetch receipt",
+      status: blockingFailure ?? "No complete original image secured; see fetch receipt",
       storageProvider: "linked",
     });
   } finally {
