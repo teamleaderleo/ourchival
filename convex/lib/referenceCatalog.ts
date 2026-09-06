@@ -1,3 +1,4 @@
+import { readSourceFilters, matchesSourcePlatform } from "../../packages/shared/src/sourceFilters";
 import { getSourceContext } from "./sourceContext";
 import {
   findReferenceSearchMatches,
@@ -101,11 +102,24 @@ export async function listReferencePage(ctx: any, request: Request | string) {
           .withIndex("by_captured_at")
           .order("desc")
           .paginate({ numItems: options.pageSize, cursor: options.cursor }));
-  const candidates = page.page.filter(
+  let candidates = page.page.filter(
     (reference: any) =>
       (!("cutoff" in page) || reference._creationTime <= Number(page.cutoff)) &&
       matchesReferenceFilters(reference, options),
   );
+
+  const sourceFilters = readSourceFilters(url.searchParams.get("query") ?? "");
+  candidates = candidates.filter((reference: any) => matchesSourcePlatform(reference.platform, sourceFilters));
+  if (sourceFilters.origins.length || sourceFilters.excludedOrigins.length) {
+    if (sourceFilters.origins.length + sourceFilters.excludedOrigins.length > 32) throw new Error("Choose at most 32 source collections.");
+    const matching = await Promise.all(candidates.map(async (reference: any) => {
+      const has = async (key: string) => Boolean(await ctx.db.query("referenceOrigins").withIndex("by_reference_id_and_container_key", (q: any) => q.eq("referenceId", reference._id).eq("containerKey", key)).first());
+      const included = await Promise.all(sourceFilters.origins.map(has));
+      const excluded = await Promise.all(sourceFilters.excludedOrigins.map(has));
+      return (!included.length || included.some(Boolean)) && !excluded.some(Boolean);
+    }));
+    candidates = candidates.filter((_: any, i: number) => matching[i]);
+  }
 
   if (!options.query) {
     references.push(
@@ -541,6 +555,7 @@ export function parseReferenceFilterTokens(value: string) {
     const filterValue = token.slice(separator + 1).trim();
     if (!filterValue) continue;
 
+    if (["source", "-source", "origin", "-origin"].includes(key)) continue;
     if (key === "site" || key === "domain") domain = filterValue;
     else if (key === "type" || key === "kind") sourceType = filterValue;
     else if (key === "tag") tag = filterValue;

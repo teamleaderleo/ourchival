@@ -44,7 +44,7 @@ export function TagFilterBar({
   return (
     <Popover className="vault-tools" label={<>
         <span>
-          <strong>View & tools</strong>
+          <strong>Tags & tools</strong>
         </span>
         <span>
           {activeFilterCount ? `${activeFilterCount} active` : <span aria-hidden="true">+</span>}

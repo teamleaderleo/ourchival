@@ -413,7 +413,7 @@ export function SelectedReference({
           rel="noreferrer"
           onClick={() => void onOpen(reference)}
         >
-          Open source ↗
+          Source ↗
         </a>
         <div className="action-row">
           {reference.authorUrl ? (

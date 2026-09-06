@@ -1,0 +1,241 @@
+/* One continuous header, with the canvas directly below it. */
+.app-frame {
+  padding-inline: 16px;
+}
+.app-header {
+  display: grid;
+  grid-template-columns: 148px minmax(180px, 1fr) auto;
+  gap: 6px 18px;
+  padding: 10px 0 8px;
+  background: var(--bg);
+  backdrop-filter: none;
+}
+.brand-lockup {
+  gap: 6px;
+}
+.brand-mark.archive-mascot {
+  width: 42px;
+  height: 42px;
+}
+.brand-name {
+  font-size: 22px;
+}
+.header-search {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+}
+.header-search input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-raised);
+  font-size: 15px;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.header-search input:focus {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+.header-search kbd {
+  border: 1px solid var(--line);
+  padding: 1px 6px;
+  border-radius: 4px;
+  top: 12px;
+  font-size: 12px;
+}
+.vault-toolbar {
+  grid-column: 2 / -1;
+  position: static;
+  padding: 0;
+  margin: 0;
+  justify-content: flex-start;
+  gap: 4px;
+  background: transparent;
+}
+.vault-workspace {
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 8px;
+}
+.vault-workspace.has-inspector {
+  grid-template-columns: 148px minmax(0, 1fr) 310px;
+}
+.vault-main {
+  padding-top: 0;
+}
+.vault-sidebar,
+.inspector {
+  top: 114px;
+  max-height: calc(100vh - 130px);
+}
+.vault-sidebar {
+  padding-top: 0;
+}
+.sidebar-section {
+  margin-top: 18px;
+}
+.browse-position {
+  margin: 0 0 6px;
+  font-size: 12px;
+  min-height: 28px;
+}
+.browse-position .button {
+  padding: 3px 8px;
+  min-height: 26px;
+  font-size: 12px;
+}
+.popover > summary {
+  border-radius: 7px;
+  min-height: 34px;
+  padding: 7px 10px;
+}
+.popover-content {
+  border-radius: 12px;
+  background: var(--panel-raised);
+  padding: 14px;
+}
+.browse-menu .popover-content {
+  left: 0;
+  right: auto;
+  width: min(390px, calc(100vw - 32px));
+}
+.control-caption {
+  color: var(--muted);
+  font-size: 12px;
+}
+.sort-menu > summary {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.sort-options {
+  display: grid;
+  gap: 3px;
+}
+.sort-options button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.sort-options button[aria-pressed="true"],
+.source-choice button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.sort-options button:hover {
+  background: var(--panel-hover);
+}
+.menu-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+.source-choice {
+  border: 0;
+  padding: 8px 0;
+  margin: 0;
+  min-width: 0;
+}
+.source-choice legend {
+  font-size: 13px;
+  padding: 0;
+  color: var(--text);
+}
+.source-choice > div {
+  display: flex;
+  gap: 4px;
+}
+.source-choice button {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted-strong);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+}
+.source-collections {
+  margin: 0 0 14px 10px;
+}
+.source-collections > summary {
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.header-actions {
+  gap: 6px;
+}
+.reference-card,
+.reference-card .thumb-wrap {
+  border-radius: 0;
+}
+@media (max-width: 1100px) {
+  .app-header {
+    grid-template-columns: 118px minmax(160px, 1fr) auto;
+    gap: 6px 12px;
+  }
+  .brand-name {
+    font-size: 19px;
+  }
+  .vault-workspace,
+  .vault-workspace.has-inspector {
+    grid-template-columns: 118px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .vault-workspace.has-inspector .inspector {
+    grid-column: 2;
+    position: static;
+    max-height: none;
+  }
+  .nav-button {
+    padding-inline: 6px;
+    font-size: 12px;
+  }
+}
+@media (max-width: 720px) {
+  .app-header {
+    grid-template-columns: 1fr auto;
+  }
+  .header-search {
+    order: initial;
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .header-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .vault-toolbar {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+  .vault-workspace,
+  .vault-workspace.has-inspector {
+    display: block;
+  }
+  .vault-sidebar {
+    position: static;
+  }
+  .popover-content,
+  .browse-menu .popover-content {
+    position: fixed;
+    top: 158px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: calc(100dvh - 180px);
+  }
+}

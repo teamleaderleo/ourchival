@@ -11,12 +11,12 @@ export type VaultView =
   | "trash";
 
 export const viewLabels: Record<VaultView, string> = {
-  inbox: "New",
+  inbox: "Unreviewed",
   all: "Library",
   images: "Images",
   links: "Links",
   favorites: "Favorites",
-  later: "Later",
+  later: "Review later",
   archive: "Archive",
   trash: "Trash",
 };
@@ -34,7 +34,7 @@ export function VaultSidebar({
     <aside className="vault-sidebar" aria-label="Vault navigation">
       <nav aria-label="Review">
         <VaultNavButton
-          label="New"
+          label="Unreviewed"
           count={counts.inbox}
           active={activeView === "inbox"}
           onClick={() => onChange("inbox")}
@@ -75,7 +75,7 @@ export function VaultSidebar({
 
       <nav className="sidebar-section" aria-label="Workflow">
         <VaultNavButton
-          label="Later"
+          label="Review later"
           count={counts.later}
           active={activeView === "later"}
           onClick={() => onChange("later")}
@@ -118,6 +118,7 @@ function VaultNavButton({
       type="button"
       className={`nav-button ${active ? "active" : ""}`}
       aria-current={active ? "page" : undefined}
+      title={{ inbox: "All newly imported items are already saved. Browse them here before filing.", all: "Items you chose to add to your library.", images: "Image references filed in your library.", links: "Links filed in your library.", favorites: "References you starred.", later: "Items you set aside to review later.", archive: "Items stored away from your active library.", trash: "Removed from browsing and blocked from automatic recapture. Can be restored." }[icon]}
       onClick={onClick}
     >
       <span className="nav-button-label">

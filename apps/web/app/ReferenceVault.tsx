@@ -1,8 +1,5 @@
 "use client";
-import {
-  archiveSorts,
-  isArchiveSort,
-} from "../../../packages/shared/src/archiveSort";
+import { ArchiveSortPicker, ArchiveSourcePicker } from "./ArchiveBrowseControls";
 
 import { BrandMark } from "./BrandMark";
 import { ArchiveSearch } from "./ArchiveSearch";
@@ -135,6 +132,21 @@ export function ReferenceVault() {
             {vault.captureOpen ? "Close" : "Save a link"}
           </button>
         </div>
+          <div className="vault-toolbar">
+            <ArchiveSortPicker value={vault.sort} onChange={vault.changeSort} />
+            <ArchiveSourcePicker query={vault.query} onChange={vault.setQuery} />
+            <SavedSearchPanel
+              activeView={vault.activeView}
+              query={vault.query}
+              onApply={applySavedSearch}
+            />
+            <TagFilterBar
+              query={vault.query}
+              onChange={vault.setQuery}
+              imagesOnly={vault.imagesOnly}
+              onImagesOnly={vault.setImagesOnly}
+            />
+          </div>
       </header>
 
       {vault.captureOpen ? (
@@ -207,51 +219,22 @@ export function ReferenceVault() {
         />
         <main className="vault-main">
           <h1 className="sr-only">{currentViewLabel}</h1>
-          <div className="vault-toolbar">
-            <label>
-              Sort
-              <select
-                aria-label="Sort archive"
-                value={vault.sort}
-                onChange={(event) => {
-                  if (isArchiveSort(event.target.value))
-                    vault.changeSort(event.target.value);
-                }}
-              >
-                {archiveSorts.map((sort) => (
-                  <option key={sort.value} value={sort.value}>
-                    {sort.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <SavedSearchPanel
-              activeView={vault.activeView}
-              query={vault.query}
-              onApply={applySavedSearch}
-            />
-            <TagFilterBar
-              query={vault.query}
-              onChange={vault.setQuery}
-              imagesOnly={vault.imagesOnly}
-              onImagesOnly={vault.setImagesOnly}
-            />
-          </div>
+
 
           <div className="browse-position" aria-label="Browsing position">
             <span>
-              {vault.filteredReferences.length} loaded ·{" "}
+              {vault.filteredReferences.length} loaded{" "}
               {vault.sort.startsWith("published")
                 ? "Undated posts appear last. "
                 : ""}
-              New imports appear when you refresh.
+
             </span>
             <button
               className="button ghost"
               type="button"
               onClick={vault.retryLoad}
             >
-              Refresh from beginning
+              Refresh
             </button>
             {vault.positionNotice ? (
               <p role="status">{vault.positionNotice}</p>
@@ -320,7 +303,7 @@ export function ReferenceVault() {
                     )
                   }
                 >
-                  Keep <kbd>K</kbd>
+                  Add to library <kbd>K</kbd>
                 </button>
                 {vault.activeView !== "later" ? (
                   <button
@@ -333,7 +316,7 @@ export function ReferenceVault() {
                       )
                     }
                   >
-                    Later <kbd>L</kbd>
+                    Review later <kbd>L</kbd>
                   </button>
                 ) : null}
                 <button
@@ -411,9 +394,6 @@ export function ReferenceVault() {
                   <ReferenceCard
                     key={reference._id}
                     reference={reference}
-                    dateBasis={
-                      vault.sort.startsWith("published") ? "published" : "saved"
-                    }
                     priority={index < 4}
                     selected={reference._id === vault.selectedReference?._id}
                     onSelect={() => vault.setSelectedId(reference._id)}

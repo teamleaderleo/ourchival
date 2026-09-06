@@ -291,10 +291,10 @@ export function ReferenceQuickLook({
 
         <footer className="quick-look-footer">
           <div className="viewer-actions">
-            <button type="button" className="button primary" disabled={moving} onClick={() => void move("keep")} title="Keep (K)">Keep</button>
-            <button type="button" className="button ghost" disabled={moving} onClick={() => void move("later")} title="Later (L)">Later</button>
-            <button type="button" className="button ghost" disabled={moving} onClick={onInspect}>Organize</button>
-            <button type="button" className="button ghost" disabled={moving} onClick={() => void move("trash")} title="Trash and block recapture (Delete)">Trash</button>
+            <button type="button" className="button primary" disabled={moving} onClick={() => void move("keep")} title="Move from New to your library (K)">Add to library</button>
+            <button type="button" className="button ghost" disabled={moving} onClick={() => void move("later")} title="Set aside for another review (L)">Review later</button>
+            <button type="button" className="button ghost" disabled={moving} onClick={onInspect}>Tags & boards</button>
+            <button type="button" className="button ghost" disabled={moving} onClick={() => void move("trash")} title="Trash and block recapture (Delete)">Move to trash</button>
           </div>
           {reference.assets.length > 1 ? <div className="viewer-assets" aria-label="Images in this reference">
             <button type="button" className="button ghost" disabled={assetIndex === 0} onClick={() => setAssetIndex((value) => value - 1)} aria-label="Previous image" title="Previous image (↑)">‹</button>
@@ -311,7 +311,7 @@ export function ReferenceQuickLook({
             rel="noreferrer"
             onClick={() => void onOpen(reference)}
           >
-            Open source ↗
+            Source ↗
           </a>
         </footer>
       </section>

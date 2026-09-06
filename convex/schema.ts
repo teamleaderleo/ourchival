@@ -419,6 +419,7 @@ export default defineSchema({
   })
     .index("by_reference_id", ["referenceId"])
     .index("by_platform_and_container_key", ["platform", "containerKey"])
+    .index("by_reference_id_and_container_key", ["referenceId", "containerKey"])
     .index("by_platform_and_container_key_and_provider_item_id", [
       "platform",
       "containerKey",
