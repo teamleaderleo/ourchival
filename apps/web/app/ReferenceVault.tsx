@@ -1,5 +1,8 @@
 "use client";
-import { ArchiveSortPicker, ArchiveSourcePicker } from "./ArchiveBrowseControls";
+import {
+  ArchiveSortPicker,
+  ArchiveSourcePicker,
+} from "./ArchiveBrowseControls";
 
 import { BrandMark } from "./BrandMark";
 import { ArchiveSearch } from "./ArchiveSearch";
@@ -101,6 +104,21 @@ export function ReferenceVault() {
           </div>
         </div>
         <ArchiveSearch query={vault.query} onChange={vault.setQuery} />
+        <div className="vault-toolbar">
+          <ArchiveSortPicker value={vault.sort} onChange={vault.changeSort} />
+          <ArchiveSourcePicker query={vault.query} onChange={vault.setQuery} />
+          <SavedSearchPanel
+            activeView={vault.activeView}
+            query={vault.query}
+            onApply={applySavedSearch}
+          />
+          <TagFilterBar
+            query={vault.query}
+            onChange={vault.setQuery}
+            imagesOnly={vault.imagesOnly}
+            onImagesOnly={vault.setImagesOnly}
+          />
+        </div>
         <div className="header-actions">
           {vault.status ? (
             <div
@@ -128,21 +146,6 @@ export function ReferenceVault() {
             {vault.captureOpen ? "Close" : "Save a link"}
           </button>
         </div>
-          <div className="vault-toolbar">
-            <ArchiveSortPicker value={vault.sort} onChange={vault.changeSort} />
-            <ArchiveSourcePicker query={vault.query} onChange={vault.setQuery} />
-            <SavedSearchPanel
-              activeView={vault.activeView}
-              query={vault.query}
-              onApply={applySavedSearch}
-            />
-            <TagFilterBar
-              query={vault.query}
-              onChange={vault.setQuery}
-              imagesOnly={vault.imagesOnly}
-              onImagesOnly={vault.setImagesOnly}
-            />
-          </div>
       </header>
 
       {vault.captureOpen ? (
@@ -214,12 +217,12 @@ export function ReferenceVault() {
           onChange={vault.changeView}
         />
         <main className="vault-main">
-
-
-
           <div className="browse-context">
             <h1>{currentViewLabel}</h1>
-            <ActiveSourceFilters query={vault.query} onChange={vault.setQuery} />
+            <ActiveSourceFilters
+              query={vault.query}
+              onChange={vault.setQuery}
+            />
           </div>
 
           {vault.activeView === "links" ? (
@@ -355,15 +358,33 @@ export function ReferenceVault() {
                   ◇
                 </span>
                 <h2>
-                  {vault.hasMore ? "Finding saved items…" : vault.query
-                    ? "No matching saves"
-                    : emptyHeading(vault.activeView, currentViewLabel)}
+                  {vault.hasMore
+                    ? "Finding saved items…"
+                    : vault.query
+                      ? "No matching saves"
+                      : emptyHeading(vault.activeView, currentViewLabel)}
                 </h2>
                 <p>
-                  {vault.hasMore ? "Searching this view in the selected order." : vault.query
-                    ? "Try a source domain, artist name, title, note, tag, board, project, or reuse reason."
-                    : emptyMessage(vault.activeView)}
+                  {vault.hasMore
+                    ? "Searching this view in the selected order."
+                    : vault.query
+                      ? "Try fewer words, or clear the search and source filters to see your saves."
+                      : emptyMessage(vault.activeView)}
                 </p>
+                {!vault.hasMore && vault.query ? (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() => {
+                      setLinkDomain("");
+                      setLinkType("");
+                      vault.setImagesOnly(false);
+                      vault.setQuery("");
+                    }}
+                  >
+                    Clear search and filters
+                  </button>
+                ) : null}
               </article>
             ) : (
               <Masonry restoreId={vault.restoreReferenceId}>
@@ -495,6 +516,7 @@ function emptyMessage(view: string) {
     return "Archived references stay available without filling the Library.";
   if (view === "trash") return "Items in Trash can be restored to New.";
   if (view === "favorites") return "Star any saved item to find it here.";
-  if (view === "links") return "Saved links, including OneTab imports, appear here automatically.";
+  if (view === "links")
+    return "Saved links, including OneTab imports, appear here automatically.";
   return "Saved items appear here automatically, including unreviewed imports.";
 }

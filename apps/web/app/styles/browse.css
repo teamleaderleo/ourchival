@@ -7,8 +7,10 @@
   grid-template-columns: 148px minmax(180px, 1fr) auto;
   gap: 6px 18px;
   padding: 10px 0 8px;
-  background: var(--bg);
-  backdrop-filter: none;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
 }
 .brand-lockup {
   gap: 6px;
@@ -29,9 +31,9 @@
 .header-search input {
   width: 100%;
   min-height: 46px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel-raised);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-raised) 80%, var(--bg));
   font-size: 15px;
   transition:
     border-color 0.15s,
@@ -40,6 +42,7 @@
 .header-search input:focus {
   border-color: var(--accent);
   background: var(--panel);
+  outline-offset: 2px;
 }
 .header-search kbd {
   border: 1px solid var(--line);
@@ -50,6 +53,7 @@
 }
 .vault-toolbar {
   grid-column: 2 / -1;
+  grid-row: 2;
   position: static;
   padding: 0;
   margin: 0;
@@ -90,14 +94,16 @@
   font-size: 12px;
 }
 .popover > summary {
-  border-radius: 7px;
-  min-height: 34px;
+  border-radius: 10px;
+  min-height: 36px;
   padding: 7px 10px;
 }
 .popover-content {
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--panel-raised);
-  padding: 14px;
+  border-color: color-mix(in srgb, var(--line-strong) 75%, transparent);
+  padding: 16px;
+  box-shadow: 0 16px 48px #0005;
 }
 .browse-menu .popover-content {
   left: 0;
@@ -108,9 +114,19 @@
   color: var(--muted);
   font-size: 12px;
 }
-.sort-menu > summary {
-  color: var(--text);
-  background: var(--accent-soft);
+.sort-menu > summary { color: var(--text); background: transparent; }
+.popover[open] > summary { background: var(--accent-soft); color: var(--accent-strong); }
+.header-search .clear-search { display:grid; place-items:center; min-width:32px; min-height:32px; border-radius:50%; }
+.header-search input::-webkit-search-cancel-button { -webkit-appearance:none; }
+.nav-button { border-radius:10px; }
+.popover summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.source-choice button { min-height:36px; }
+@media (prefers-reduced-transparency: reduce) {
+  .app-header { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
+}
+@media (prefers-contrast: more) {
+  .header-search input, .popover-content, .nav-button.active { border:1px solid var(--muted-strong); }
+  .control-caption, .menu-hint { color:var(--muted-strong); }
 }
 .sort-options {
   display: grid;
@@ -176,11 +192,37 @@
   cursor: pointer;
 }
 .header-actions {
+  grid-column: 3;
+  grid-row: 1;
   gap: 6px;
+}
+.vault-main .empty-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-height: min(380px, 48vh);
+  padding: 32px 20px;
+}
+@media (pointer: coarse) {
+  .vault-toolbar .popover > summary,
+  .header-actions .button,
+  .source-choice button,
+  .sort-options button {
+    min-height: 44px;
+  }
+  .header-search .clear-search { min-width: 44px; min-height: 44px; }
 }
 .reference-card,
 .reference-card .thumb-wrap {
   border-radius: 0;
+}
+/* Wide windows keep the browse controls on one line to leave more room for artwork. */
+@media (min-width: 1280px) {
+  .app-header { grid-template-columns: 148px minmax(180px, 1fr) auto auto; gap: 12px; }
+  .vault-toolbar { grid-column: 3; grid-row: 1; flex-wrap: nowrap; }
+  .header-actions { grid-column: 4; grid-row: 1; }
+  .header-actions .sync-status { max-width: 120px; }
+  .vault-sidebar, .inspector { top: 82px; max-height: calc(100vh - 100px); }
 }
 @media (max-width: 1100px) {
   .app-header {
@@ -220,6 +262,7 @@
   }
   .vault-toolbar {
     grid-column: 1 / -1;
+    grid-row: 3;
     flex-wrap: wrap;
   }
   .vault-workspace,

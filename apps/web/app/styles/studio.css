@@ -157,12 +157,12 @@ body { background: var(--bg); }
 .popover .vault-tools-content { padding: 0; }
 .media-preference { display: flex; gap: 10px; align-items: center; font-size: 13px; }
 .media-preference input { width: auto; accent-color: var(--accent); }
-.button, .search-field input, .clear-search, .project-edit-form input, .project-edit-form textarea, .project-edit-form select { border-radius: 0; box-shadow: none; }
+.button, .search-field input, .clear-search, .project-edit-form input, .project-edit-form textarea, .project-edit-form select { border-radius: 10px; box-shadow: none; }
 .button.ghost { border-color: transparent; }
 .button.secondary { border-color: transparent; background: transparent; color: var(--accent); }
 .button:hover:not(:disabled) { transform: none; }
 .button.ghost:hover, .popover > summary:hover { background: var(--panel-hover); }
-.batch-select-toggle, .favorite-toggle, .quick-look-toggle { border-radius: 0; }
+.batch-select-toggle, .favorite-toggle, .quick-look-toggle { border-radius: 8px; }
 .browser-connection > summary { padding-block: 14px; cursor: pointer; }
 @media (max-width: 720px) {
   .popover-content { position: fixed; top: 126px; right: 12px; }

@@ -32,9 +32,12 @@ export function Popover({
   }, []);
   return (
     <details
+      name="archive-popovers"
       ref={root}
       className={`popover ${className}`}
-      onToggle={(event) => { if (event.currentTarget.open) setOpen(true); }}
+      onToggle={(event) => {
+        if (event.currentTarget.open) setOpen(true);
+      }}
     >
       <summary>{label}</summary>
       {open ? <div className="popover-content">{children}</div> : null}
