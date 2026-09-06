@@ -2,6 +2,14 @@ import type { CapturePayload } from "@ourchival/shared";
 
 export type SourceIntakeProvider = "pixiv_bookmarks" | "pinterest_board";
 
+export function originalDownloadFailure(source: string, hasImage: boolean, result?: {
+  blocked?: boolean; storageProvider?: string; storageStatus?: string;
+}) {
+  return source === "pixiv_bookmarks" && hasImage && !result?.blocked && result?.storageProvider === "linked"
+    ? result.storageStatus || "Original upload failed"
+    : undefined;
+}
+
 /** Recheck after downloads: Stop or a new reader invalidates an old chunk. */
 export function sourceReaderCanCommit(
   state: { running: boolean; workerTabId?: number } | undefined,
@@ -65,7 +73,7 @@ export function detectSourceIntakeContext(
 
   if (/(^|\.)pixiv\.net$/i.test(url.hostname)) {
     const match = url.pathname.match(
-      /^\/en\/users\/(\d+)\/bookmarks\/artworks\/?$/i,
+      /^\/(?:en\/)?users\/(\d+)\/bookmarks\/artworks\/?$/i,
     );
     if (!match?.[1]) return undefined;
     const page = positiveInteger(url.searchParams.get("p")) ?? 1;

@@ -220,6 +220,10 @@ async function render() {
     transientMessage = "Starting the resumable source import…";
     void sendRuntimeMessage({ type: "OURCHIVAL_IMPORT_SOURCE" });
   });
+  document.getElementById("repair-source")?.addEventListener("click", () => {
+    transientMessage = "Rechecking bookmarks from the beginning; durable originals will be reused…";
+    void sendRuntimeMessage({ type: "OURCHIVAL_IMPORT_SOURCE", restart: true });
+  });
 
   document.getElementById("pause-source")?.addEventListener("click", () => {
     transientMessage = "Stopping the reader; saved originals and checkpoints are retained…";
@@ -494,6 +498,7 @@ function renderSourceIntake(
         </div>
       </div>
       ${button}
+      ${!active && sameSource && state?.provider === "pixiv_bookmarks" && ((state.originalsLinked ?? 0) > 0 || state.failed > 0 || Object.keys(state.gaps ?? {}).length > 0) ? '<button id="repair-source" type="button" class="secondary full-width">Repair missing originals</button><p class="hint">Rechecks bookmarks from the beginning and reuses saved originals. Keeps the previous receipt.</p>' : ""}
       ${(context?.provider ?? state?.provider) === "pixiv_bookmarks" ? '<p class="hint">Downloads every original image page to Google Drive, along with artwork metadata. Existing artwork records can still receive missing images.</p>' : ""}
       ${progress}
       ${sealed}

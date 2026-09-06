@@ -11,6 +11,7 @@ import {
   sourceIntakePayloads,
   sourceIntakeItemKey,
   sourceReaderCanCommit,
+  originalDownloadFailure,
   type SourceIntakeChunk,
 } from "./sourceIntake";
 import {
@@ -56,6 +57,7 @@ type ContextCapture = {
 };
 
 type CaptureResponse = {
+  blocked?: boolean;
   ok?: boolean;
   error?: string;
   code?: string;
@@ -121,7 +123,7 @@ type ExtensionMessage =
   | { type: "OURCHIVAL_CLOSE_SAVED_TABS"; tabIds: number[] }
   | { type: "OURCHIVAL_IMPORT_X_LIKES" }
   | { type: "OURCHIVAL_PAUSE_X_LIKES" }
-  | { type: "OURCHIVAL_IMPORT_SOURCE" }
+  | { type: "OURCHIVAL_IMPORT_SOURCE"; restart?: boolean }
   | { type: "OURCHIVAL_PAUSE_SOURCE"; importId?: string }
   | {
       type: "OURCHIVAL_SOURCE_INTAKE_CHUNK";
@@ -321,7 +323,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (message?.type === "OURCHIVAL_IMPORT_SOURCE") {
-      void startSourceIntake()
+      void startSourceIntake(message.restart === true)
         .then((state) => sendResponse({ ok: true, state }))
         .catch((error) =>
           sendResponse({
@@ -553,7 +555,7 @@ async function pauseXLikesImport() {
   return state;
 }
 
-async function startSourceIntake() {
+async function startSourceIntake(restart = false) {
   const [tab] = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true,
@@ -585,6 +587,7 @@ async function startSourceIntake() {
 
   const now = new Date().toISOString();
   const resumable = Boolean(
+    !restart &&
     previous &&
     previous.receiptVersion === 2 &&
     !previous.exhausted &&
@@ -611,7 +614,7 @@ async function startSourceIntake() {
             ? context.sourceUrl
             : context.currentUrl),
         receiptVersion: 2,
-        cursor: context.cursor,
+        cursor: context.provider === "pixiv_bookmarks" ? "page:1" : context.cursor,
         sensitiveDefault: context.sensitiveDefault,
         running: true,
         exhausted: false,
@@ -885,9 +888,20 @@ async function dispatchSourceIntake(tabId: number) {
   } catch (error) {
     const latest = await getSourceIntakeState(state.importId);
     if (!latest?.running || latest.workerTabId !== tabId) return;
+    const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+    const context = detectSourceIntakeContext(tab?.url);
+    if (context?.sourceUrl === state.sourceUrl && latest.readerRecoveryUrl !== tab?.url) {
+      latest.readerRecoveryUrl = tab?.url;
+      latest.message = "Reader disconnected. Reloading its tab once; checkpoint retained.";
+      await saveSourceIntakeState(latest);
+      try {
+        await chrome.tabs.reload(tabId);
+        return;
+      } catch { /* Persist the stopped state below if reloading is unavailable. */ }
+    }
     latest.running = false;
     latest.stopReason = "error";
-    latest.message = errorMessage(error, "Could not start the source reader.");
+    latest.message = "Reader did not reconnect after a reload. Stop and resume to open a fresh reader; completed pages and saved originals are retained.";
     latest.updatedAt = new Date().toISOString();
     await saveSourceIntakeState(latest);
     await reportSourceIntakeSession(latest, "interrupted").catch(
@@ -1483,6 +1497,22 @@ async function continueBatch(
       const outcomes = await Promise.all(
         windowItems.map((item) => captureBatchItem(connection, state, item)),
       );
+      const missingOriginal = outcomes.map(outcome => originalDownloadFailure(state.source, Boolean(outcome.payload?.assetUrl), outcome.result?.body)).find(Boolean);
+      if (missingOriginal) {
+        state.running = false;
+        await saveBatchState({ ...state });
+        const sourceState = await getSourceIntakeState(state.jobId);
+        const reason = missingOriginal;
+        if (sourceState?.running) {
+          sourceState.running = false;
+          sourceState.stopReason = "error";
+          sourceState.message = `${reason} Stopped before advancing this page. Resume after fixing storage; saved originals will be reused.`;
+          sourceState.updatedAt = new Date().toISOString();
+          await saveSourceIntakeState(sourceState);
+          await reportSourceIntakeSession(sourceState, "interrupted").catch(() => undefined);
+        }
+        throw new Error("Original storage failed; page checkpoint retained.");
+      }
       let latestSuccessful: BatchItemOutcome | undefined;
       for (const outcome of outcomes) {
         applyBatchItemOutcome(state, outcome);
