@@ -1,5 +1,56 @@
 # Reuse existing tags before predicting them
 
+## Twitter / Pixiv matching, September 6, 2026
+
+The lookup worker now accepts several observed artwork URLs per image. It queries
+the image MD5, then the Twitter post and Pixiv artwork identities, preserving
+earlier candidates when a later route has no results. A source-post match alone
+does not identify an individual page of a multi-image work.
+
+If the image is still unmatched, it can look up the recorded author profile in
+Danbooru's artist API. It verifies that the returned artist record actually lists
+that profile before querying the artist's posts. The linked Twitter/Pixiv profiles
+are retained as attributed identity evidence; names alone do not join artists.
+At most four source identities, two profiles and two artist tags are queried per
+image, with capped result sets, truncation flags, and omitted-route counts.
+
+Each receipt separates exact MD5 matches, same-post candidates, artist candidates,
+bounded no-match results and errors. Only exact matches contain `communityTags`
+and `verifiedMirrorSources`; a matching artist or source post cannot silently
+transfer tags. General, artist, character, copyright and meta tags keep their
+Danbooru post ID, post URL and provider update timestamp. Image SHA-256 remains in
+the receipt, and optional reference/asset IDs and page indices survive lookup.
+
+Sources-manifest records may contain `file`, `sourceUrl`, `sourceUrls`, `authorUrl`
+and `authorUrls`. URLs are observations for that image; linked author profiles are
+not artwork URLs. Existing single-source manifests continue to work. The runner
+uses a shared query cache and one request per second; denial or rate limiting
+checkpoints and stops. `--resume` requires the exact same input manifests, retries
+unfinished images, preserves previous errors, and skips completed images.
+
+This implements the matching and receipt layer. It does not yet publish community
+tags to the catalog or run a whole-archive lookup automatically. It uploads no
+image files to third-party services.
+
+### Learning from partial coverage
+
+Use exact matches as attributed community-labeled examples. Keep community labels,
+model predictions and owner corrections separate. Start with the existing WD
+tagger and embedding/nearest-neighbor evaluation; compare a small regularized
+multi-label classifier before introducing a larger vision-language model.
+
+Evaluate by artwork family so Twitter/Pixiv mirrors and resized copies cannot
+leak between training and testing. Also hold out artists and manually inspect
+unmatched images: booru coverage is selective, and absent tags are not reliable
+negative labels. Report precision/coverage by tag category rather than claiming
+that transferred tags are canonical facts. A vision-language model can provide
+additional predictions on uncertain cases, subject to a measured local memory
+budget and explicit provenance. No cloud image upload or model installation is
+part of this change.
+
+API references: [posts](https://safebooru.donmai.us/wiki_pages/api:posts),
+[artist profiles and URL lookup](https://safebooru.donmai.us/wiki_pages/api:artists).
+
 Ourchival should first look for the same saved image in an existing tagged source.
 This avoids spending inference time recreating community metadata and can recover
 useful reference terms that models miss. The source's tags remain attributed
