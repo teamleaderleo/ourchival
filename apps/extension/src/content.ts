@@ -12,6 +12,7 @@ import type { PageSnapshot } from "@ourchival/shared";
 import {
   detectSourceIntakeContext,
   pinterestOriginalImageUrl,
+  sourceIntakeItemKey,
   type SourceIntakeChunk,
   type SourceIntakeItem,
   type SourceIntakeProvider,
@@ -447,6 +448,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       String(message.importId ?? ""),
       provider,
       String(message.sourceUrl ?? ""),
+      message.purpose === "sync" && Array.isArray(message.knownProviderIds)
+        ? new Set<string>(message.knownProviderIds)
+        : undefined,
     ).finally(() => {
       activeSourceIntake = undefined;
     });
@@ -515,6 +519,7 @@ async function runSourceIntake(
   importId: string,
   provider: SourceIntakeProvider,
   sourceUrl: string,
+  known?: Set<string>,
 ) {
   if (!importId || !sourceUrl) return;
   const pinterestScan = {
@@ -528,33 +533,67 @@ async function runSourceIntake(
     window.scrollTo(0, 0);
     await wait(750);
   }
-  while (!stopSourceIntake) {
-    const scanned =
-      provider === "pixiv_bookmarks"
-        ? await scanPixivBookmarksPage()
-        : await scanPinterestPage(pinterestScan);
-    const chunk = { ...scanned, sourceUrl };
-    const response = (await chrome.runtime.sendMessage({
-      type: "OURCHIVAL_SOURCE_INTAKE_CHUNK",
-      importId,
-      chunk,
-    })) as
-      | { ok?: boolean; continue?: boolean; nextUrl?: string; error?: string }
-      | undefined;
-    if (!response?.ok || !response.continue || stopSourceIntake) return;
-    if (response.nextUrl && response.nextUrl !== location.href) {
-      location.assign(response.nextUrl);
-      return;
+  const heartbeat = beginReaderHeartbeat(importId);
+  try {
+    while (!stopSourceIntake) {
+      heartbeat.reading();
+      const scanned =
+        provider === "pixiv_bookmarks"
+          ? await scanPixivBookmarksPage(known)
+          : await scanPinterestPage(pinterestScan, known);
+      const chunk = { ...scanned, sourceUrl };
+      heartbeat.saving();
+      const response = (await chrome.runtime.sendMessage({
+        type: "OURCHIVAL_SOURCE_INTAKE_CHUNK",
+        importId,
+        chunk,
+      })) as
+        | { ok?: boolean; continue?: boolean; nextUrl?: string; error?: string }
+        | undefined;
+      if (!response?.ok || !response.continue || stopSourceIntake) return;
+      if (response.nextUrl && response.nextUrl !== location.href) {
+        location.assign(response.nextUrl);
+        return;
+      }
+      if (provider === "pixiv_bookmarks") return;
+      await wait(200);
     }
-    if (provider === "pixiv_bookmarks") return;
-    await wait(200);
+  } finally {
+    heartbeat.stop();
   }
 }
 
-async function scanPinterestPage(scan: {
-  providerIds: Set<string>;
-  recoveryProbes: number;
-}): Promise<SourceIntakeChunk> {
+function beginReaderHeartbeat(importId: string) {
+  let phase: "reading" | "saving" = "reading";
+  const send = () => {
+    void chrome.runtime
+      .sendMessage({ type: "OURCHIVAL_READER_HEARTBEAT", importId, phase })
+      .catch(() => undefined);
+  };
+  send();
+  const timer = window.setInterval(send, 20_000);
+  return {
+    reading() {
+      phase = "reading";
+      send();
+    },
+    saving() {
+      phase = "saving";
+      send();
+    },
+    stop() {
+      window.clearInterval(timer);
+    },
+  };
+}
+
+async function scanPinterestPage(
+  scan: {
+    providerIds: Set<string>;
+    recoveryProbes: number;
+  },
+  known?: Set<string>,
+): Promise<SourceIntakeChunk> {
   const context = detectSourceIntakeContext(location.href);
   if (context?.provider !== "pinterest_board") {
     throw new Error(
@@ -563,7 +602,7 @@ async function scanPinterestPage(scan: {
   }
   return context.scope === "profile"
     ? scanPinterestProfile(context)
-    : scanPinterestBoardChunk(scan);
+    : scanPinterestBoardChunk(scan, known);
 }
 
 async function scanPinterestProfile(
@@ -612,7 +651,9 @@ async function scanPinterestProfile(
   };
 }
 
-async function scanPixivBookmarksPage(): Promise<SourceIntakeChunk> {
+async function scanPixivBookmarksPage(
+  known?: Set<string>,
+): Promise<SourceIntakeChunk> {
   const context = detectSourceIntakeContext(location.href);
   if (context?.provider !== "pixiv_bookmarks")
     throw new Error("Open a Pixiv artwork-bookmarks page before importing.");
@@ -654,6 +695,7 @@ async function scanPixivBookmarksPage(): Promise<SourceIntakeChunk> {
   const items: SourceIntakeItem[] = [];
   const gaps: Array<{ key: string; message: string; ordinal: number }> = [];
   for (const [index, bookmark] of listing.works.entries()) {
+    if (known?.has(String(bookmark.id))) continue;
     if (stopSourceIntake)
       throw new Error("Paused; current bookmark page will be replayed.");
     const ordinal = offset + index;
@@ -667,7 +709,15 @@ async function scanPixivBookmarksPage(): Promise<SourceIntakeChunk> {
     }
     items.push(await pixivArtwork(bookmark, context, ordinal, page, request));
   }
-  const exhausted = offset + listing.works.length >= listing.total;
+  const exhausted =
+    offset + listing.works.length >= listing.total ||
+    Boolean(
+      known &&
+      listing.works.length &&
+      listing.works.every((work: { id?: number | string }) =>
+        known.has(String(work.id)),
+      ),
+    );
   return {
     provider: "pixiv_bookmarks",
     sourceUrl: context.sourceUrl,
@@ -726,10 +776,13 @@ async function resolvePinterestOriginal(item: SourceIntakeItem) {
   item.metadata = { ...item.metadata, originalResolution: evidence };
 }
 
-async function scanPinterestBoardChunk(scan: {
-  providerIds: Set<string>;
-  recoveryProbes: number;
-}): Promise<SourceIntakeChunk> {
+async function scanPinterestBoardChunk(
+  scan: {
+    providerIds: Set<string>;
+    recoveryProbes: number;
+  },
+  known?: Set<string>,
+): Promise<SourceIntakeChunk> {
   const context = detectSourceIntakeContext(location.href);
   if (context?.provider !== "pinterest_board") {
     throw new Error("Open one Pinterest board before importing.");
@@ -815,7 +868,9 @@ async function scanPinterestBoardChunk(scan: {
   }
   const exhausted =
     settledAtBottom && (expectedPinsObserved || scan.recoveryProbes >= 6);
-  const capturedItems = Array.from(items.values());
+  const capturedItems = Array.from(items.values()).filter(
+    (item) => !known?.has(sourceIntakeItemKey("pinterest_board", item)),
+  );
   for (let start = 0; start < capturedItems.length; start += 3) {
     await Promise.all(
       capturedItems.slice(start, start + 3).map(resolvePinterestOriginal),
@@ -826,7 +881,7 @@ async function scanPinterestBoardChunk(scan: {
     sourceUrl: context.sourceUrl,
     currentUrl: location.href,
     cursor: `scroll:${Math.round(window.scrollY)}`,
-    items: Array.from(items.values()),
+    items: capturedItems,
     ...(reportedCount ? { reportedCount } : {}),
     exhausted,
   };
@@ -951,6 +1006,7 @@ async function runXLikesImport(args: {
     | "error" = "round_limit";
   let finishMessage: string | undefined;
 
+  const heartbeat = beginReaderHeartbeat(args.importId);
   try {
     if (
       !isXPage() ||
@@ -1053,7 +1109,9 @@ async function runXLikesImport(args: {
         consecutiveKnown = 0;
         pending.push(snapshot);
         if (pending.length >= xLikesChunkSize) {
+          heartbeat.saving();
           await sendXLikesChunk(args, pending, lastSourceUrl);
+          heartbeat.reading();
           positionedXLikesCursor = lastSourceUrl;
           pending = [];
         }
@@ -1122,7 +1180,9 @@ async function runXLikesImport(args: {
         "The saved Likes cursor was not found. Leave the Likes page at the last imported position and continue again.";
     }
     if (pending.length > 0 && !seekingCursor) {
+      heartbeat.saving();
       await sendXLikesChunk(args, pending, lastSourceUrl);
+      heartbeat.reading();
       positionedXLikesCursor = lastSourceUrl;
     }
   } catch (error) {
@@ -1130,6 +1190,7 @@ async function runXLikesImport(args: {
     finishMessage =
       error instanceof Error ? error.message : "The X Likes import stopped.";
   } finally {
+    heartbeat.stop();
     if (xLikesObservationTimer !== undefined) {
       window.clearTimeout(xLikesObservationTimer);
       xLikesObservationTimer = undefined;

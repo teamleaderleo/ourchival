@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Import failures · Ourchival</title>
+    <link rel="stylesheet" href="failures.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Import failures</h1>
+        <button id="export">Export history</button>
+      </header>
+      <p>
+        Stored in this Edge extension profile. Errors remain here after
+        recovery. Export a copy for a durable backup or investigation. This
+        history contains source links; no image previews are displayed.
+      </p>
+      <label
+        >Show
+        <select id="filter">
+          <option value="open">Unresolved</option>
+          <option value="all">All history</option>
+          <option value="resolved">Recovered</option>
+        </select></label
+      >
+      <p id="summary" role="status"></p>
+      <section id="records" aria-label="Failure records"></section>
+      <button id="more" hidden>Show more</button>
+      <p>
+        Automatic imports retry temporary errors with increasing delays. Sign-in
+        problems and repeated failures need attention. Stopping a source pauses
+        its automatic retries.
+      </p>
+    </main>
+    <script type="module" src="failures.js"></script>
+  </body>
+</html>

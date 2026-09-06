@@ -47,6 +47,7 @@ export type BatchCaptureFailure = {
 };
 
 export type BatchCaptureState = {
+  updatedAt?: string;
   receiptVersion?: number;
   jobId: string;
   source: BatchCaptureSource;
@@ -93,6 +94,11 @@ export type XLikesImportStopReason =
   | "error";
 
 export type XLikesImportState = {
+  purpose?: "history" | "sync" | "repair";
+  workerTabId?: number;
+  retryAt?: number;
+  automationAttempts?: number;
+  needsAttention?: boolean;
   receiptVersion?: number;
   importId: string;
   profileUrl: string;
@@ -156,6 +162,11 @@ export type XLikesObservationLedger = {
 };
 
 export type SourceIntakeState = {
+  purpose?: "history" | "sync" | "repair";
+  retryAt?: number;
+  automationAttempts?: number;
+  needsAttention?: boolean;
+  knownProviderIds?: string[];
   readerRecoveryUrl?: string;
   importId: string;
   provider: SourceIntakeProvider;
@@ -265,8 +276,40 @@ export async function getBatchStates() {
   return Object.values(jobs);
 }
 
+let xStateWrite = Promise.resolve();
 export async function saveXLikesImportState(state: XLikesImportState) {
-  await chrome.storage.local.set({ [X_LIKES_IMPORT_KEY]: state });
+  const snapshot = structuredClone(state);
+  xStateWrite = xStateWrite
+    .catch(() => undefined)
+    .then(async () => {
+      const values = await chrome.storage.local.get("xLikesImportHistory");
+      const history = (values.xLikesImportHistory ?? {}) as Record<
+        string,
+        XLikesImportState
+      >;
+      history[snapshot.importId] = snapshot;
+      await chrome.storage.local.set({
+        [X_LIKES_IMPORT_KEY]: snapshot,
+        xLikesImportHistory: history,
+      });
+    });
+  await xStateWrite;
+}
+
+export async function getXLikesImportStates() {
+  const values = await chrome.storage.local.get([
+    "xLikesImportHistory",
+    X_LIKES_IMPORT_KEY,
+  ]);
+  const history = (values.xLikesImportHistory ?? {}) as Record<
+    string,
+    XLikesImportState
+  >;
+  const current = values[X_LIKES_IMPORT_KEY] as XLikesImportState | undefined;
+  if (current) history[current.importId] = current;
+  return Object.values(history).sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
 }
 
 export async function recordXLikesObservationsLocally(
@@ -391,6 +434,7 @@ export async function saveSourceIntakeState(state: SourceIntakeState) {
 export async function getSourceIntakeStates() {
   const values = await chrome.storage.local.get([
     SOURCE_INTAKES_KEY,
+    "importAutomation",
     SOURCE_INTAKE_KEY,
   ]);
   const imports =
@@ -419,6 +463,8 @@ export async function getXLikesImportState() {
 
 export async function getPopupState() {
   const values = await chrome.storage.local.get([
+    "importAutomation",
+    "captureFailureLog",
     SETTINGS_KEY,
     LAST_CAPTURE_KEY,
     LAST_RESULT_KEY,
