@@ -22,6 +22,8 @@ export type ProjectReferenceUse = {
   projectId: string;
   referenceId: string;
   assetId?: string;
+  usageStatus?: "shortlisted" | "used";
+  usedAt?: number;
   reason?: string;
   notes?: string;
   createdAt: number;
@@ -117,11 +119,15 @@ let projectsCache: ReferenceProject[] | undefined;
 const listeners = new Set<(projects: ReferenceProject[]) => void>();
 
 export function useAllReferenceProjects() {
-  const [projects, setProjects] = useState<ReferenceProject[]>(projectsCache ?? []);
+  const [projects, setProjects] = useState<ReferenceProject[]>(
+    projectsCache ?? [],
+  );
 
   useEffect(() => {
     listeners.add(setProjects);
-    void loadProjects().then(setProjects).catch(() => undefined);
+    void loadProjects()
+      .then(setProjects)
+      .catch(() => undefined);
     return () => {
       listeners.delete(setProjects);
     };
@@ -148,7 +154,10 @@ export function useProjectUses(referenceId: string) {
     };
   }, [referenceId]);
 
-  return [uses, setUses] as const;
+  return [
+    uses.filter((use) => use.referenceId === referenceId),
+    setUses,
+  ] as const;
 }
 
 export async function createReferenceProject(
@@ -183,7 +192,9 @@ export async function removeReferenceProject(projectId: string) {
   return result;
 }
 
-export async function saveProjectUse(args: Omit<UpsertReferenceArgs, "accessKey">) {
+export async function saveProjectUse(
+  args: Omit<UpsertReferenceArgs, "accessKey">,
+) {
   const result = await getClient().mutation(
     upsertReferenceReference,
     withOwnerAccess(args),
@@ -192,7 +203,9 @@ export async function saveProjectUse(args: Omit<UpsertReferenceArgs, "accessKey"
   return result;
 }
 
-export async function saveProjectUses(args: Omit<UpsertReferencesArgs, "accessKey">) {
+export async function saveProjectUses(
+  args: Omit<UpsertReferencesArgs, "accessKey">,
+) {
   const result = await getClient().mutation(
     upsertReferencesReference,
     withOwnerAccess(args),
@@ -210,7 +223,10 @@ export async function removeProjectUse(projectId: string, referenceId: string) {
   return result;
 }
 
-export async function removeProjectUses(projectId: string, referenceIds: string[]) {
+export async function removeProjectUses(
+  projectId: string,
+  referenceIds: string[],
+) {
   const result = await getClient().mutation(
     removeReferencesReference,
     withOwnerAccess({ projectId, referenceIds }),
@@ -243,7 +259,24 @@ async function loadProjects() {
 function getClient() {
   if (client) return client;
   const url = process.env.NEXT_PUBLIC_CONVEX_URL?.trim();
-  if (!url) throw new Error("Add NEXT_PUBLIC_CONVEX_URL before editing projects.");
+  if (!url)
+    throw new Error("Add NEXT_PUBLIC_CONVEX_URL before editing projects.");
   client = new ConvexHttpClient(url);
   return client;
+}
+
+export async function setProjectReferenceUsed(
+  projectId: string,
+  referenceId: string,
+  used: boolean,
+) {
+  const endpoint = makeFunctionReference<
+    "mutation",
+    AccessArgs & { projectId: string; referenceId: string; used: boolean },
+    Omit<ProjectReferenceUse, "project">
+  >("projects:setReferenceUsage");
+  return await getClient().mutation(
+    endpoint,
+    withOwnerAccess({ projectId, referenceId, used }),
+  );
 }

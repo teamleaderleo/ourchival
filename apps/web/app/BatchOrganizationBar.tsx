@@ -95,7 +95,7 @@ export function BatchOrganizationBar() {
     if (!projectId || selectedCount === 0) return;
 
     setBusy(true);
-    setStatus(`${projectAction === "add" ? "Saving" : "Removing"} project reuse…`);
+    setStatus(`${projectAction === "add" ? "Saving" : "Removing"} project shortlist…`);
     try {
       const result =
         projectAction === "add"
@@ -108,10 +108,10 @@ export function BatchOrganizationBar() {
           : await removeProjectUses(projectId, selectedIds);
       const project = projects.find((item) => item._id === projectId);
       setStatus(
-        `${projectAction === "add" ? "Saved reuse in" : "Removed reuse from"} “${project?.name ?? "project"}” for ${referenceCountLabel(result.updated)}.`,
+        `${projectAction === "add" ? "Added to shortlist in" : "Removed from shortlist in"} “${project?.name ?? "project"}” for ${referenceCountLabel(result.updated)}.`,
       );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not update project reuse.");
+      setStatus(error instanceof Error ? error.message : "Could not update project shortlist.");
     } finally {
       setBusy(false);
     }
@@ -238,8 +238,8 @@ export function BatchOrganizationBar() {
                 }}
                 disabled={busy}
               >
-                <option value="add">Save reuse</option>
-                <option value="remove">Remove reuse</option>
+                <option value="add">Add to shortlist</option>
+                <option value="remove">Remove from project</option>
               </select>
               <select
                 value={projectId}
@@ -258,7 +258,7 @@ export function BatchOrganizationBar() {
                   <input
                     value={reason}
                     onChange={(event) => setReason(event.target.value)}
-                    placeholder="Shared reuse reason"
+                    placeholder="Shared reference purpose"
                     maxLength={120}
                     disabled={busy}
                   />
