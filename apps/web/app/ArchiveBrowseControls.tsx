@@ -64,6 +64,74 @@ const providers = [
   { value: "pixiv", label: "Pixiv bookmarks" },
 ] as const;
 type Provider = (typeof providers)[number]["value"];
+export function ActiveSourceFilters({
+  query,
+  onChange,
+}: {
+  query: string;
+  onChange: (query: string) => void;
+}) {
+  const filters = readSourceFilters(query);
+  const entries = [
+    ...filters.include.map((value) => ({
+      kind: "source" as const,
+      value,
+      hidden: false,
+    })),
+    ...filters.exclude.map((value) => ({
+      kind: "source" as const,
+      value,
+      hidden: true,
+    })),
+    ...filters.origins.map((value) => ({
+      kind: "origin" as const,
+      value,
+      hidden: false,
+    })),
+    ...filters.excludedOrigins.map((value) => ({
+      kind: "origin" as const,
+      value,
+      hidden: true,
+    })),
+  ];
+  if (!entries.length) return null;
+  return (
+    <div className="active-source-filters" aria-label="Active source filters">
+      {entries.map(({ kind, value, hidden }) => {
+        const label =
+          kind === "source"
+            ? (providers.find((p) => p.value === value)?.label ?? value)
+            : (value.split("/").filter(Boolean).at(-1)?.replaceAll("-", " ") ??
+              value);
+        return (
+          <button
+            type="button"
+            key={`${kind}:${value}`}
+            title={`Remove ${label} filter`}
+            onClick={() => onChange(setSourceFilter(query, kind, value, "all"))}
+          >
+            {hidden ? "Hidden: " : ""}
+            {label} <span aria-hidden="true">×</span>
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        className="clear-filters"
+        onClick={() =>
+          onChange(
+            query
+              .split(/\s+/)
+              .filter((token) => !/^-?(source|origin):/.test(token))
+              .join(" "),
+          )
+        }
+      >
+        Clear filters
+      </button>
+    </div>
+  );
+}
 type Container = { key: string; name: string };
 const list = makeFunctionReference<
   "query",

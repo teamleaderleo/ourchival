@@ -3,8 +3,7 @@ import { ArchiveSortPicker, ArchiveSourcePicker } from "./ArchiveBrowseControls"
 
 import { BrandMark } from "./BrandMark";
 import { ArchiveSearch } from "./ArchiveSearch";
-import { ProjectPanel } from "./ProjectPanel";
-import { Popover } from "./Popover";
+import { ActiveSourceFilters } from "./ArchiveBrowseControls";
 import { Masonry } from "./Masonry";
 import { LoadMore } from "./LoadMore";
 
@@ -103,9 +102,6 @@ export function ReferenceVault() {
         </div>
         <ArchiveSearch query={vault.query} onChange={vault.setQuery} />
         <div className="header-actions">
-          <Popover className="project-menu" label="Projects">
-            <ProjectPanel query={vault.query} onChange={vault.setQuery} />
-          </Popover>
           {vault.status ? (
             <div
               className={`sync-status status-${vault.statusTone}`}
@@ -218,27 +214,12 @@ export function ReferenceVault() {
           onChange={vault.changeView}
         />
         <main className="vault-main">
-          <h1 className="sr-only">{currentViewLabel}</h1>
 
 
-          <div className="browse-position" aria-label="Browsing position">
-            <span>
-              {vault.filteredReferences.length} loaded{" "}
-              {vault.sort.startsWith("published")
-                ? "Undated posts appear last. "
-                : ""}
 
-            </span>
-            <button
-              className="button ghost"
-              type="button"
-              onClick={vault.retryLoad}
-            >
-              Refresh
-            </button>
-            {vault.positionNotice ? (
-              <p role="status">{vault.positionNotice}</p>
-            ) : null}
+          <div className="browse-context">
+            <h1>{currentViewLabel}</h1>
+            <ActiveSourceFilters query={vault.query} onChange={vault.setQuery} />
           </div>
 
           {vault.activeView === "links" ? (
@@ -303,7 +284,7 @@ export function ReferenceVault() {
                     )
                   }
                 >
-                  Add to library <kbd>K</kbd>
+                  Mark reviewed <kbd>K</kbd>
                 </button>
                 {vault.activeView !== "later" ? (
                   <button
@@ -374,17 +355,13 @@ export function ReferenceVault() {
                   ◇
                 </span>
                 <h2>
-                  {vault.query
-                    ? vault.hasMore
-                      ? "No matches yet"
-                      : "No matching saves"
+                  {vault.hasMore ? "Finding saved items…" : vault.query
+                    ? "No matching saves"
                     : emptyHeading(vault.activeView, currentViewLabel)}
                 </h2>
                 <p>
-                  {vault.query
-                    ? vault.hasMore
-                      ? "Searching farther through this view in the selected order."
-                      : "Try a source domain, artist name, title, note, tag, board, project, or reuse reason."
+                  {vault.hasMore ? "Searching this view in the selected order." : vault.query
+                    ? "Try a source domain, artist name, title, note, tag, board, project, or reuse reason."
                     : emptyMessage(vault.activeView)}
                 </p>
               </article>
@@ -410,6 +387,7 @@ export function ReferenceVault() {
           {!vault.isLoading && vault.hasMore ? (
             <LoadMore
               busy={vault.isLoadingPage}
+              failed={vault.statusTone === "error"}
               auto={vault.statusTone !== "error" && !vault.restoreReferenceId}
               onLoad={vault.loadOlderPage}
             />
@@ -516,5 +494,7 @@ function emptyMessage(view: string) {
   if (view === "archive")
     return "Archived references stay available without filling the Library.";
   if (view === "trash") return "Items in Trash can be restored to New.";
-  return "Keep a new reference to add it to this collection.";
+  if (view === "favorites") return "Star any saved item to find it here.";
+  if (view === "links") return "Saved links, including OneTab imports, appear here automatically.";
+  return "Saved items appear here automatically, including unreviewed imports.";
 }

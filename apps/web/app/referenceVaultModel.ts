@@ -122,6 +122,7 @@ export type ReferenceFilterOptions = {
   favoritesOnly?: boolean;
   lane?: ReferenceLane;
   collection?: ReferenceCollection;
+  includeUnreviewed?: boolean;
 };
 
 export function filterReferences(
@@ -132,7 +133,9 @@ export function filterReferences(
 
   if (options.collection) {
     list = list.filter(
-      (reference) => referenceCollection(reference) === options.collection,
+      (reference) => options.collection === "library" && options.includeUnreviewed
+        ? !reference.deleted && !reference.archived
+        : referenceCollection(reference) === options.collection,
     );
   }
 

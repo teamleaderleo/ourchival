@@ -102,7 +102,6 @@ export function VaultSidebar({
 
 function VaultNavButton({
   label,
-  count,
   active,
   onClick,
   icon,
@@ -118,7 +117,7 @@ function VaultNavButton({
       type="button"
       className={`nav-button ${active ? "active" : ""}`}
       aria-current={active ? "page" : undefined}
-      title={{ inbox: "All newly imported items are already saved. Browse them here before filing.", all: "Items you chose to add to your library.", images: "Image references filed in your library.", links: "Links filed in your library.", favorites: "References you starred.", later: "Items you set aside to review later.", archive: "Items stored away from your active library.", trash: "Removed from browsing and blocked from automatic recapture. Can be restored." }[icon]}
+      title={{ inbox: "All newly imported items are already saved. Browse them here before filing.", all: "All saved items, including unreviewed imports.", images: "All saved images.", links: "All saved links, including OneTab imports.", favorites: "References you starred.", later: "Items you set aside to review later.", archive: "Items stored away from your active library.", trash: "Removed from browsing and blocked from automatic recapture. Can be restored." }[icon]}
       onClick={onClick}
     >
       <span className="nav-button-label">
@@ -127,7 +126,7 @@ function VaultNavButton({
         </span>
         {label}
       </span>
-      {count > 0 && !active ? <span className="nav-count">{count.toLocaleString("en-US")}</span> : null}
+
     </button>
   );
 }

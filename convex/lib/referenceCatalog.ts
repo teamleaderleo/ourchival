@@ -32,6 +32,7 @@ type ReferenceListOptions = {
   cursor: string | null;
   pageSize: number;
   collection: ReferenceCollection;
+  includeUnreviewed: boolean;
   lane: ReferenceLane;
   favoritesOnly: boolean;
   query: string;
@@ -90,7 +91,7 @@ export async function listReferencePage(ctx: any, request: Request | string) {
   }> = [];
   const chronological = url.searchParams.has("sort");
   const indexedPage =
-    options.query && !chronological
+    options.query && !chronological && !options.includeUnreviewed
       ? await indexedReferencePage(ctx, options)
       : null;
   const page =
@@ -213,6 +214,9 @@ export async function applyReferenceStatsDelta(
   after: any | null | undefined,
 ) {
   const referenceId = (after ?? before)?._id;
+  if (after && after.browseLane !== referenceLane(after.kind)) {
+    await ctx.db.patch(after._id, { browseLane: referenceLane(after.kind) });
+  }
   if (referenceId) await scheduleReferenceSearch(ctx, referenceId);
   const stats = await getReferenceStatsDocument(ctx);
   if (!stats) {
@@ -519,6 +523,7 @@ function parseReferenceListOptions(url: URL): ReferenceListOptions {
       ? Math.min(96, Math.max(12, Math.floor(requestedPageSize)))
       : 48,
     collection: isCollection(collection) ? collection : "inbox",
+    includeUnreviewed: url.searchParams.get("scope") === "active",
     lane: isLane(lane) ? lane : "all",
     favoritesOnly: url.searchParams.get("favorites") === "true",
     query: normalizeSearchText(queryFilters.query),
@@ -571,7 +576,9 @@ function matchesReferenceFilters(
   reference: any,
   options: ReferenceListOptions,
 ) {
-  if (referenceCollection(reference) !== options.collection) return false;
+  if (options.collection === "library" && options.includeUnreviewed) {
+    if (reference.deleted || reference.archived) return false;
+  } else if (referenceCollection(reference) !== options.collection) return false;
   if (
     options.lane !== "all" &&
     referenceLane(reference.kind) !== options.lane

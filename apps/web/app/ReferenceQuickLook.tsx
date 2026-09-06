@@ -291,7 +291,7 @@ export function ReferenceQuickLook({
 
         <footer className="quick-look-footer">
           <div className="viewer-actions">
-            <button type="button" className="button primary" disabled={moving} onClick={() => void move("keep")} title="Move from New to your library (K)">Add to library</button>
+            <button type="button" className="button primary" disabled={moving} onClick={() => void move("keep")} title="Move from New to your library (K)">Mark reviewed</button>
             <button type="button" className="button ghost" disabled={moving} onClick={() => void move("later")} title="Set aside for another review (L)">Review later</button>
             <button type="button" className="button ghost" disabled={moving} onClick={onInspect}>Tags & boards</button>
             <button type="button" className="button ghost" disabled={moving} onClick={() => void move("trash")} title="Trash and block recapture (Delete)">Move to trash</button>

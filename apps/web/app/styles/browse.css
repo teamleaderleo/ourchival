@@ -239,3 +239,101 @@
     max-height: calc(100dvh - 180px);
   }
 }
+
+/* Keep browsing context visible without exposing pagination machinery. */
+.browse-context {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 6px 0 12px;
+}
+.browse-context h1 {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0;
+  color: var(--muted);
+}
+.active-source-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.active-source-filters button {
+  border: 0;
+  border-radius: 16px;
+  padding: 5px 10px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.active-source-filters .clear-filters {
+  background: transparent;
+  color: var(--muted);
+}
+.load-more {
+  height: 48px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.scroll-progress {
+  font-size: 12px;
+  color: var(--muted);
+  animation: show-scroll-progress 0s 0.7s both;
+}
+@keyframes show-scroll-progress {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
+.scroll-fallback:not(:focus-visible) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.vault-session-controls .button {
+  border-radius: 50%;
+  font-size: 21px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+.project-menu .project-panel,
+.tool-section .project-panel,
+.inspector-organization-body > section {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 10px 0;
+}
+.tool-section > summary {
+  padding: 10px 0;
+  cursor: pointer;
+}
+.vault-toolbar > .popover > summary {
+  background: transparent;
+  border: 0;
+  font-weight: 400;
+}
+.vault-toolbar > .popover[open] > summary,
+.vault-toolbar > .popover > summary:hover {
+  background: var(--panel-raised);
+}
+
+.reference-project-assignment,
+.reference-board-assignment,
+.project-use-form {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}

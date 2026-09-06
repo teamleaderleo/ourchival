@@ -5,6 +5,7 @@ import { searchTables } from "./lib/searchSchema";
 export default defineSchema({
   ...searchTables,
   references: defineTable({
+    browseLane: v.optional(v.union(v.literal("images"), v.literal("links"))),
     kind: v.union(
       v.literal("image"),
       v.literal("post"),
@@ -50,6 +51,8 @@ export default defineSchema({
     .index("by_capture_session", ["captureSessionId"])
     .index("by_triage_state", ["triageState"])
     .index("by_captured_at", ["capturedAt"])
+    .index("by_browse_lane_and_captured_at", ["browseLane", "capturedAt"])
+    .index("by_browse_lane_and_published_at", ["browseLane", "publishedAt"])
     .index("by_published_at", ["publishedAt"])
     .searchIndex("search_references", {
       searchField: "title",

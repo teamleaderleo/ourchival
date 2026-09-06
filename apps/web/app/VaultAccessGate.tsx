@@ -392,11 +392,13 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           className="button ghost"
+          aria-label="Settings"
+          title="Settings"
           aria-expanded={panelOpen}
           aria-controls="vault-account-panel"
           onClick={() => setPanelOpen((open) => !open)}
         >
-          Settings
+          <span aria-hidden="true">⚙</span>
         </button>
       </div>
 
@@ -486,13 +488,13 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
 
           </details>
           <div className="clipper-access-footer">
-            <span>Finished on this device?</span>
+            <span>Remove access from this browser</span>
             <button
               type="button"
               className="button ghost"
               onClick={lockVault}
             >
-              Lock vault
+              Sign out
             </button>
           </div>
         </aside>

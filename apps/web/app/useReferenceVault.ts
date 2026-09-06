@@ -85,8 +85,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const [isSaving, setIsSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [activeView, setActiveView] = useState<VaultView>("inbox");
-  const [imagesOnly, setImagesOnly] = useState(true);
+  const [activeView, setActiveView] = useState<VaultView>("all");
+  const [imagesOnly, setImagesOnly] = useState(false);
   const [sort, setSort] = useState<ArchiveSort>("saved-desc");
   const [positionReady, setPositionReady] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -166,6 +166,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
           favoritesOnly,
           lane,
           collection,
+          includeUnreviewed: true,
         },
       ),
     [
@@ -231,7 +232,6 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   useEffect(() => {
     if (
       (imagesOnly || activeView === "inbox" || activeView === "later") &&
-      activeCount > 0 &&
       filteredReferences.length === 0 &&
       hasMore &&
       !isLoading &&
@@ -337,6 +337,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       const params = new URLSearchParams({
         limit: String(pageSize),
         collection,
+        scope: "active",
         lane,
         sort,
         imagesOnly: String(imagesOnly),
@@ -680,7 +681,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     setImagesOnly,
     selectedReference,
     filteredReferences,
-    libraryCount: counts.all,
+    libraryCount: counts.all + counts.inbox + counts.later,
     inboxCount: counts.inbox,
     laterCount: counts.later,
     archiveCount: counts.archive,

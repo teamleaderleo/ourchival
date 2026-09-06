@@ -63,15 +63,35 @@ export async function chronologicalPage(
   );
   const direction = sort.endsWith("asc") ? "asc" : "desc";
   const published = sort.startsWith("published");
-  const query = published
-    ? ctx.db
-        .query("references")
-        .withIndex("by_published_at", (q) =>
-          state.phase === "known"
-            ? q.gt("publishedAt", undefined)
-            : q.eq("publishedAt", undefined),
-        )
-    : ctx.db.query("references").withIndex("by_captured_at");
+  const lane = url.searchParams.get("lane");
+  const indexedLane =
+    url.searchParams.get("scope") === "active" &&
+    (lane === "images" || lane === "links")
+      ? lane
+      : null;
+  const query = indexedLane
+    ? published
+      ? ctx.db
+          .query("references")
+          .withIndex("by_browse_lane_and_published_at", (q) =>
+            state.phase === "known"
+              ? q.eq("browseLane", indexedLane).gt("publishedAt", undefined)
+              : q.eq("browseLane", indexedLane).eq("publishedAt", undefined),
+          )
+      : ctx.db
+          .query("references")
+          .withIndex("by_browse_lane_and_captured_at", (q) =>
+            q.eq("browseLane", indexedLane),
+          )
+    : published
+      ? ctx.db
+          .query("references")
+          .withIndex("by_published_at", (q) =>
+            state.phase === "known"
+              ? q.gt("publishedAt", undefined)
+              : q.eq("publishedAt", undefined),
+          )
+      : ctx.db.query("references").withIndex("by_captured_at");
   const page = await query
     .order(direction)
     .paginate({ numItems, cursor: state.cursor });

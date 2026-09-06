@@ -34,6 +34,14 @@ const marker = {
   savedAt: 123,
 };
 describe("durable archive positions", () => {
+  it("clears legacy hidden source filters once, then preserves deliberate new filters", () => {
+    const storage = store();
+    storage.setItem("ourchival:browse:v1:view:local", JSON.stringify({ ...view, query: "pose origin:hands -source:x" }));
+    expect(readBrowseView(storage, "local")).toEqual({ ...view, view: "all", query: "pose", imagesOnly: false });
+    const filtered = { ...view, query: "origin:hands" };
+    saveBrowseView(storage, "local", filtered);
+    expect(readBrowseView(storage, "local")).toEqual(filtered);
+  });
   it("remembers anchors independently by origin, collection, filters, and sort", () => {
     const storage = store();
     const key = browseViewKey("local", view);

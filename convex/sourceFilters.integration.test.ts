@@ -13,6 +13,37 @@ import {
 const modules = import.meta.glob("./**/*.ts");
 afterEach(() => vi.unstubAllEnvs());
 
+it("restores hosted links idempotently and preserves archive state", async () => {
+  const t = convexTest(schema, modules);
+  const reference = { _id: "old-id", _creationTime: 1, kind: "link", platform: "generic", sourceUrl: "https://example.com/restored", title: "Original wording", notes: "My note", capturedAt: 12, archived: true, deleted: false, favorite: true, boardIds: [], tagIds: [] };
+  const rows = [{ reference, snapshots: [] }];
+  const result = await t.mutation(internal.browseMigration.restoreLinks, { rows });
+  expect(result[0]?.restored).toBe(true);
+  expect(await t.run(ctx => ctx.db.get(result[0]!.referenceId))).toMatchObject({ title: reference.title, notes: reference.notes, capturedAt: 12, archived: true, favorite: true, browseLane: "links" });
+  expect((await t.mutation(internal.browseMigration.restoreLinks, { rows }))[0]?.restored).toBe(false);
+});
+
+it("browses unreviewed images, imported links and favorites without changing filing", async () => {
+  const t = convexTest(schema, modules);
+  await t.run(async ctx => {
+    for (const entry of [
+      { kind: "image", triageState: "inbox" as const, favorite: true },
+      { kind: "link", triageState: "later" as const, favorite: false },
+      { kind: "image", triageState: "kept" as const, favorite: false },
+      { kind: "image", triageState: "inbox" as const, favorite: true, deleted: true },
+    ]) await ctx.db.insert("references", { platform: "generic", sourceUrl: "https://example.com", capturedAt: 1, boardIds: [], tagIds: [], archived: false, deleted: false, ...entry });
+  });
+  const migration = await t.mutation(internal.browseMigration.backfill, { cursor: null });
+  expect(migration).toMatchObject({ done: true, changed: 4, links: 1 });
+  expect(await t.mutation(internal.browseMigration.backfill, { cursor: null })).toMatchObject({ changed: 0 });
+  const browse = (suffix = "") => t.query(internal.httpDb.listReferences, { url: `https://example.com/references?collection=library&scope=active&sort=saved-desc${suffix}` });
+  expect((await browse()).references).toHaveLength(3);
+  expect((await browse("&lane=links")).references).toHaveLength(1);
+  expect((await browse("&favorites=true")).references).toHaveLength(1);
+  expect((await browse("&lane=images")).references).toHaveLength(2);
+  expect((await t.query(internal.httpDb.listReferences, { url: "https://example.com/references?collection=inbox&sort=saved-desc" })).references).toHaveLength(1);
+});
+
 it("combines source inclusions, honors exclusions and imported board membership before returning a page", async () => {
   const t = convexTest(schema, modules);
   const ids = await t.run(async (ctx) => {

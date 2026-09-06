@@ -10,6 +10,7 @@
 
 import type * as archiveSearch from "../archiveSearch.js";
 import type * as boards from "../boards.js";
+import type * as browseMigration from "../browseMigration.js";
 import type * as captureObservations from "../captureObservations.js";
 import type * as captureSessions from "../captureSessions.js";
 import type * as crons from "../crons.js";
@@ -68,6 +69,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   archiveSearch: typeof archiveSearch;
   boards: typeof boards;
+  browseMigration: typeof browseMigration;
   captureObservations: typeof captureObservations;
   captureSessions: typeof captureSessions;
   crons: typeof crons;
