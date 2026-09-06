@@ -2,6 +2,12 @@
 
 Proposed design, September 5, 2026. This is not a deployed schema change.
 
+Implementation update: shared machine vocabulary and recipes are now in use.
+The historical storage description below records the original proposal;
+[the migration guide](METADATA_MIGRATION.md) and [current wire format](TAG_PAYLOAD_FORMAT.md)
+describe the implemented binary representations. Community-tag publication and
+the proposed style-question vocabulary remain separate work.
+
 ## Retrieval purpose
 
 Reuse attributed community tags for subjects, characters and existing visual

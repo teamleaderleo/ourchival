@@ -37,7 +37,7 @@ test("binary codec preserves uint32 boundaries and rejects malformed values", ()
   expect(() => encodeTags([[1, NaN]])).toThrow();
   expect(() => decodeTags(new ArrayBuffer(7))).toThrow();
   const bad = encodeTags(entries);
-  new DataView(bad).setUint8(3, 2);
+  new DataView(bad).setUint8(3, 3);
   expect(() => decodeTags(bad)).toThrow();
 });
 

@@ -57,6 +57,7 @@ import type * as references from "../references.js";
 import type * as relatedReferences from "../relatedReferences.js";
 import type * as savedSearches from "../savedSearches.js";
 import type * as suggestedTags from "../suggestedTags.js";
+import type * as tagPayloadMigration from "../tagPayloadMigration.js";
 import type * as tags from "../tags.js";
 import type * as visualEnrichment from "../visualEnrichment.js";
 
@@ -116,6 +117,7 @@ declare const fullApi: ApiFromModules<{
   relatedReferences: typeof relatedReferences;
   savedSearches: typeof savedSearches;
   suggestedTags: typeof suggestedTags;
+  tagPayloadMigration: typeof tagPayloadMigration;
   tags: typeof tags;
   visualEnrichment: typeof visualEnrichment;
 }>;
