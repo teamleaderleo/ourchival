@@ -10,6 +10,7 @@ import {
   reconcilePinterestQueue,
   sourceIntakePayloads,
   sourceIntakeItemKey,
+  sourceReaderCanCommit,
   type SourceIntakeChunk,
 } from "./sourceIntake";
 import {
@@ -579,6 +580,8 @@ async function startSourceIntake() {
       candidate.sourceUrl === context.sourceUrl,
   );
   if (previous?.running) return previous;
+  if (previous && activeJobIds.has(previous.importId))
+    throw new Error("Finishing the current image request. Your checkpoint is safe; resume shortly.");
 
   const now = new Date().toISOString();
   const resumable = Boolean(
@@ -672,16 +675,13 @@ async function pauseSourceIntake(importId?: string) {
   if (!state) throw new Error("No source import is active.");
   state.running = false;
   state.stopReason = "paused";
-  state.message = "Paused after the last acknowledged chunk.";
+  state.message = "Stopped. Resume replays the unfinished page and reuses originals already saved.";
   state.updatedAt = new Date().toISOString();
+  const workerTabId = state.workerTabId;
+  state.workerTabId = undefined;
   await saveSourceIntakeState(state);
-  if (typeof state.workerTabId === "number") {
-    await chrome.tabs
-      .sendMessage(state.workerTabId, {
-        type: "OURCHIVAL_STOP_SOURCE_INTAKE",
-      })
-      .catch(() => undefined);
-  }
+  if (typeof workerTabId === "number")
+    await chrome.tabs.remove(workerTabId).catch(() => undefined);
   await reportSourceIntakeSession(state, "interrupted");
   return state;
 }
@@ -740,6 +740,10 @@ async function acceptSourceIntakeChunk(
   const batch = payloads.length
     ? await runPayloadBatch(payloads, state.provider, state.importId)
     : undefined;
+  // A stopped reader must never overwrite a newer pause or resumed worker.
+  const latest = await getSourceIntakeState(state.importId);
+  if (!sourceReaderCanCommit(latest, sender.tab?.id))
+    throw new Error("Stopped; unfinished page will be replayed on resume.");
   const now = new Date().toISOString();
   const queue = reconcilePinterestQueue({
     pendingUrls: state.pendingUrls,
@@ -1463,6 +1467,14 @@ async function continueBatch(
 
   try {
     while (state.nextIndex < state.items.length) {
+      if (state.source === "pixiv_bookmarks" || state.source === "pinterest_board") {
+        const sourceState = await getSourceIntakeState(state.jobId);
+        if (!sourceState?.running) {
+          state.running = false;
+          await saveBatchState({ ...state });
+          throw new Error("Stopped; saved images are retained. Resume the source import to replay this page.");
+        }
+      }
       const captureConcurrency = captureConcurrencyFor(connection);
       const windowItems = state.items.slice(
         state.nextIndex,
@@ -1747,6 +1759,7 @@ async function capturePayload(
 ) {
   const response = await fetch(connection.endpoint, {
     method: "POST",
+    signal: AbortSignal.timeout(120_000),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${connection.deviceToken}`,
