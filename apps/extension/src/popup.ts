@@ -1,3 +1,5 @@
+import { FAILURE_LOG_KEY, type FailureRecord } from "./failureLog";
+import { AUTOMATION_KEY, type AutomationState } from "./importAutomation";
 import type { CapturePayload } from "@ourchival/shared";
 import {
   parseBookmarksHtml,
@@ -88,6 +90,11 @@ async function render() {
     return;
   }
 
+  const automation = (state[AUTOMATION_KEY] ?? {}) as AutomationState;
+  const failures = Object.values(
+    (state[FAILURE_LOG_KEY] ?? {}) as Record<string, FailureRecord>,
+  );
+  const syncUrl = sourceIntake?.sourceUrl ?? xLikesImport?.profileUrl;
   const disabled = savedLinkImportActive ? "disabled" : "";
   const xLikesDisabled = "";
   const sourceDisabled = "";
@@ -103,6 +110,14 @@ async function render() {
       </header>
 
       ${renderSourceIntake(sourceIntake, sourceContext, sourceDisabled, sourceIntakes, batch)}
+      <section class="x-likes-panel">
+        <button id="failure-history" type="button" class="secondary">Failure history · ${failures.filter((f) => !f.resolvedAt).length} unresolved</button>
+        <details><summary>Automatic imports · ${automation.enabled === false ? "paused" : "on"}</summary>
+          <p class="hint">Temporary interruptions resume automatically. New saves are checked every 6 hours; completed sources with gaps are checked daily while Edge and this Mac are running.</p>
+          <button id="automatic-imports" type="button" class="secondary full-width">${automation.enabled === false ? "Enable automatic imports" : "Pause automatic imports"}</button>
+          ${syncUrl ? '<button id="sync-new-saves" type="button" class="secondary">Check for new saves</button>' : ""}
+        </details>
+      </section>
 
       <section class="x-likes-panel">
         <div class="section-heading">
@@ -206,6 +221,27 @@ async function render() {
       });
     });
 
+  document.getElementById("failure-history")?.addEventListener("click", () => {
+    void chrome.tabs.create({ url: chrome.runtime.getURL("failures.html") });
+  });
+  document
+    .getElementById("automatic-imports")
+    ?.addEventListener("click", () => {
+      void chrome.runtime
+        .sendMessage({
+          type: "OURCHIVAL_AUTOMATION",
+          enabled: automation.enabled === false,
+        })
+        .then(() => render());
+    });
+  document.getElementById("sync-new-saves")?.addEventListener("click", () => {
+    void chrome.runtime
+      .sendMessage({ type: "OURCHIVAL_AUTOMATION", syncUrl })
+      .then(() => {
+        transientMessage = "New-save check queued after the current import.";
+        void render();
+      });
+  });
   document.getElementById("import-x-likes")?.addEventListener("click", () => {
     transientMessage = "Starting the resumable X Likes import…";
     void sendRuntimeMessage({ type: "OURCHIVAL_IMPORT_X_LIKES" });
@@ -221,12 +257,14 @@ async function render() {
     void sendRuntimeMessage({ type: "OURCHIVAL_IMPORT_SOURCE" });
   });
   document.getElementById("repair-source")?.addEventListener("click", () => {
-    transientMessage = "Rechecking bookmarks from the beginning; durable originals will be reused…";
+    transientMessage =
+      "Rechecking bookmarks from the beginning; durable originals will be reused…";
     void sendRuntimeMessage({ type: "OURCHIVAL_IMPORT_SOURCE", restart: true });
   });
 
   document.getElementById("pause-source")?.addEventListener("click", () => {
-    transientMessage = "Stopping the reader; saved originals and checkpoints are retained…";
+    transientMessage =
+      "Stopping the reader; saved originals and checkpoints are retained…";
     void sendRuntimeMessage({
       type: "OURCHIVAL_PAUSE_SOURCE",
       importId: sourceIntake?.importId,
@@ -453,9 +491,12 @@ function renderSourceIntake(
   const button = active
     ? '<button id="pause-source" type="button" class="secondary full-width">Stop and keep progress</button>'
     : context
-      ? `<button id="import-source" type="button" class="primary full-width" ${disabled}>${context.provider === "pixiv_bookmarks" ? sameSource && !state?.exhausted ? "Resume original downloads" : "Download bookmark originals" : sameSource && !state?.exhausted ? "Continue import" : `Import ${escapeHtml(label)}`}</button>`
+      ? `<button id="import-source" type="button" class="primary full-width" ${disabled}>${context.provider === "pixiv_bookmarks" ? (sameSource && !state?.exhausted ? "Resume original downloads" : "Download bookmark originals") : sameSource && !state?.exhausted ? "Continue import" : `Import ${escapeHtml(label)}`}</button>`
       : "";
-  const currentBatch = state && batch?.jobId === state.importId && batch.running ? batch : undefined;
+  const currentBatch =
+    state && batch?.jobId === state.importId && batch.running
+      ? batch
+      : undefined;
   const progress = state
     ? `<div class="batch-counts source-progress">
         <span><strong>${state.observed}</strong> observed</span>
@@ -472,7 +513,8 @@ function renderSourceIntake(
       <p class="hint"><strong>${state.running ? "Import in progress" : state.exhausted ? "Source end reached" : "Stopped"}</strong> · ${state.chunks} completed bookmark pages</p>
       ${state.running && currentBatch ? `<p class="hint" role="status">Current page: ${currentBatch.completed}/${currentBatch.total} image captures processed. Page totals update after this finishes.</p>` : ""}
       <p class="hint">Last completed-page update: ${escapeHtml(new Date(state.updatedAt).toLocaleString())}.</p>
-      ${state.running && Date.now() - Date.parse(state.updatedAt) > 300_000 ? '<p class="hint">No page completed recently. If the current capture count also stops, stop and resume to replay the unfinished page safely.</p>' : ""}
+      ${state.running && Date.now() - Date.parse(state.updatedAt) > 300_000 ? '<p class="hint">This page is taking longer. Automatic recovery checks for a stalled reader and retains the last completed checkpoint.</p>' : ""}
+      ${state.needsAttention ? '<p class="hint"><strong>Needs attention.</strong> Automatic retries stopped after repeated errors or an authentication problem. See failure history before resuming.</p>' : state.retryAt ? `<p class="hint">Automatic retry after ${escapeHtml(new Date(state.retryAt).toLocaleTimeString())}.</p>` : ""}
       ${state.message ? `<p class="hint">${escapeHtml(state.message)}</p>` : ""}`
     : "";
   const sealed =

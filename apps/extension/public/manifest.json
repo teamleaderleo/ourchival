@@ -9,7 +9,7 @@
     "128": "icons/cat-128.png"
   },
   "description": "Save images, X Likes, tabs, links, and source metadata to your private Ourchival vault.",
-  "permissions": ["contextMenus", "activeTab", "storage", "tabs"],
+  "permissions": ["contextMenus", "activeTab", "storage", "tabs", "alarms"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",
