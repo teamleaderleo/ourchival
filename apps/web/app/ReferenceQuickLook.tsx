@@ -8,6 +8,7 @@ import {
 } from "./referenceVaultModel";
 import { getDomain, getInitial } from "./ReferenceCards";
 import { isProtectedDriveUrl, usePrivateImageUrl } from "./usePrivateImageUrl";
+import { ReferenceVisualMetadata } from "./ReferenceVisualMetadata";
 
 export function ReferenceQuickLook({
   reference,
@@ -261,7 +262,7 @@ export function ReferenceQuickLook({
               {referenceMode(reference.kind) === "links" ? (
                 <span>{getInitial(title)}</span>
               ) : (
-                <span aria-hidden="true">◇</span>
+                <span>{reference.sealed ? "Sensitive or private content — preview hidden by default" : imageLoading ? "Loading preview…" : "No preview available"}</span>
               )}
             </div>
           )}
@@ -289,11 +290,16 @@ export function ReferenceQuickLook({
           </button>
         </div>
 
+        <aside className="quick-look-tag-panel" aria-label="Image tags">
+          <h2>Tags</h2>
+          {reference.tags?.length ? <div className="viewer-saved-tags">{reference.tags.map(tag => <span key={tag._id}>{tag.name}</span>)}</div> : <p className="menu-hint">No accepted tags yet.</p>}
+          {reference.assets.length > 0 ? <ReferenceVisualMetadata key={reference._id} reference={reference} compact /> : <p className="menu-hint">Model tags need a captured image. This item currently has none.</p>}
+        </aside>
         <footer className="quick-look-footer">
           <div className="viewer-actions">
             <button type="button" className="button primary" disabled={moving} onClick={() => void move("keep")} title="Move from New to your library (K)">Mark reviewed</button>
             <button type="button" className="button ghost" disabled={moving} onClick={() => void move("later")} title="Set aside for another review (L)">Review later</button>
-            <button type="button" className="button ghost" disabled={moving} onClick={onInspect}>Tags & boards</button>
+            <button type="button" className="button ghost" disabled={moving} onClick={onInspect}>Edit details</button>
             <button type="button" className="button ghost" disabled={moving} onClick={() => void move("trash")} title="Trash and block recapture (Delete)">Move to trash</button>
           </div>
           {reference.assets.length > 1 ? <div className="viewer-assets" aria-label="Images in this reference">

@@ -58,8 +58,10 @@ function getClient() {
 /** Mounted only when the owner opens the metadata disclosure. No idle polling. */
 export function ReferenceVisualMetadata({
   reference,
+  compact = false,
 }: {
   reference: SavedReference;
+  compact?: boolean;
 }) {
   const [data, setData] = useState<Metadata | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,7 +130,7 @@ export function ReferenceVisualMetadata({
   return (
     <section className="visual-metadata" aria-label="Image metadata">
       <div className="visual-metadata-heading">
-        <strong>Generated image metadata</strong>
+        <strong>{compact ? "Model suggestions" : "Generated image metadata"}</strong>
         <button
           type="button"
           className="button ghost"
@@ -139,8 +141,7 @@ export function ReferenceVisualMetadata({
         </button>
       </div>
       <p>
-        Keep useful search terms and exclude mistakes. These are model
-        predictions, separate from your saved tags and source credit.
+        {compact ? "Predictions, separate from your accepted tags." : "Keep useful search terms and exclude mistakes. These are model predictions, separate from your saved tags and source credit."}
       </p>
       {loading && !data ? <p role="status">Loading image metadata…</p> : null}
       {message ? <p role="status">{message}</p> : null}
@@ -153,7 +154,7 @@ export function ReferenceVisualMetadata({
           item={item}
           index={index}
           source={
-            reference.assets.find((asset) => asset._id === item.assetId)
+            compact ? undefined : reference.assets.find((asset) => asset._id === item.assetId)
               ?.previewUrl ??
             reference.assets.find((asset) => asset._id === item.assetId)
               ?.storedUrl

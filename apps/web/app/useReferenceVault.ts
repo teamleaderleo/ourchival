@@ -158,7 +158,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const filteredReferences = useMemo(
     () =>
       filterReferences(
-        imagesOnly && activeView !== "links"
+        (imagesOnly && activeView !== "links") || activeView === "images"
           ? references.filter(hasImageAsset)
           : references,
         {

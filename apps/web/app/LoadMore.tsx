@@ -15,14 +15,34 @@ export function LoadMore({
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (busy || !auto || !root.current) return;
+    let requested = false;
+    let frame = 0;
+    const load = () => {
+      if (requested) return;
+      requested = true;
+      void onLoad().finally(() => { requested = false; });
+    };
+    const check = () => {
+      frame = 0;
+      if (root.current && root.current.getBoundingClientRect().top <= window.innerHeight + 1200) load();
+    };
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(check); };
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry?.isIntersecting) void onLoad();
+        if (entry?.isIntersecting) load();
       },
-      { rootMargin: "800px" },
+      { rootMargin: "1200px" },
     );
     observer.observe(root.current);
-    return () => observer.disconnect();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    check();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
   }, [busy, onLoad, auto]);
   return (
     <div ref={root} className="load-more" aria-busy={busy}>
