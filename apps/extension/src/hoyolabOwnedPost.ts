@@ -7,6 +7,11 @@ export type HoYoLabArticleIdentity = {
   sourceUrl: string;
 };
 
+export type HoYoLabPublisherIdentity = {
+  uid: string;
+  nickname?: string;
+};
+
 export function detectHoYoLabArticle(value: string | undefined) {
   if (!value) return undefined;
   let url: URL;
@@ -24,6 +29,25 @@ export function detectHoYoLabArticle(value: string | undefined) {
   } satisfies HoYoLabArticleIdentity;
 }
 
+export function hoyolabPostPublisherIdentity(
+  value: unknown,
+  identity: HoYoLabArticleIdentity,
+): HoYoLabPublisherIdentity {
+  const { aggregate, post } = validatedPostEnvelope(value, identity);
+  const uid = String(post.uid ?? aggregate.user?.uid ?? "");
+  if (!/^\d+$/.test(uid)) {
+    throw new Error("HoYoLAB post publisher UID is unavailable.");
+  }
+  if (aggregate.user?.uid !== undefined && String(aggregate.user.uid) !== uid) {
+    throw new Error("HoYoLAB post author metadata has conflicting UIDs.");
+  }
+  const nickname =
+    typeof aggregate.user?.nickname === "string" && aggregate.user.nickname.trim()
+      ? aggregate.user.nickname.trim()
+      : undefined;
+  return { uid, ...(nickname ? { nickname } : {}) };
+}
+
 export function hoyolabOwnedPost(
   value: unknown,
   identity: HoYoLabArticleIdentity,
@@ -32,26 +56,10 @@ export function hoyolabOwnedPost(
   if (!/^\d+$/.test(expectedUid)) {
     throw new Error("HoYoLAB owned-profile UID is invalid.");
   }
-  const envelope = asObject(value);
-  if (Number(envelope.retcode ?? 0) !== 0 || !envelope.data) {
-    throw new Error(String(envelope.message || "HoYoLAB post metadata unavailable."));
-  }
-  const data = asObject(envelope.data);
-  const aggregate = asObject(data.post);
-  const post = asObject(aggregate.post);
-  const postId = String(post.post_id ?? "");
-  if (postId !== identity.postId) {
-    throw new Error("HoYoLAB post metadata identity mismatch.");
-  }
-  const authorUid = String(post.uid ?? aggregate.user?.uid ?? "");
-  if (authorUid !== expectedUid) {
+  const { aggregate, post } = validatedPostEnvelope(value, identity);
+  const publisher = hoyolabPostPublisherIdentity(value, identity);
+  if (publisher.uid !== expectedUid) {
     throw new Error("HoYoLAB post publisher does not match the owned profile.");
-  }
-  if (aggregate.user?.uid !== undefined && String(aggregate.user.uid) !== expectedUid) {
-    throw new Error("HoYoLAB post author metadata disagrees with the owned profile.");
-  }
-  if (Number(post.is_deleted ?? 0) !== 0) {
-    throw new Error("HoYoLAB post is deleted.");
   }
 
   const images = orderedImages(aggregate.image_list, post.images);
@@ -74,9 +82,7 @@ export function hoyolabOwnedPost(
     ...(typeof post.subject === "string" && post.subject.trim()
       ? { title: post.subject.trim() }
       : {}),
-    ...(typeof aggregate.user?.nickname === "string" && aggregate.user.nickname.trim()
-      ? { authorName: aggregate.user.nickname.trim() }
-      : {}),
+    ...(publisher.nickname ? { authorName: publisher.nickname } : {}),
     ...(createdAt ? { publishedAt: createdAt } : {}),
     ...(images.length ? { assetUrls: images.map((image) => image.url) } : {}),
     sensitive: "unknown",
@@ -112,6 +118,24 @@ export function hoyolabOwnedPost(
 export function hoyolabFullPostEndpoint(postId: string) {
   if (!/^\d+$/.test(postId)) throw new Error("HoYoLAB post ID is invalid.");
   return `https://bbs-api-os.hoyolab.com/community/post/wapi/getPostFull?post_id=${postId}`;
+}
+
+function validatedPostEnvelope(value: unknown, identity: HoYoLabArticleIdentity) {
+  const envelope = asObject(value);
+  if (Number(envelope.retcode ?? 0) !== 0 || !envelope.data) {
+    throw new Error(String(envelope.message || "HoYoLAB post metadata unavailable."));
+  }
+  const data = asObject(envelope.data);
+  const aggregate = asObject(data.post);
+  const post = asObject(aggregate.post);
+  const postId = String(post.post_id ?? "");
+  if (postId !== identity.postId) {
+    throw new Error("HoYoLAB post metadata identity mismatch.");
+  }
+  if (Number(post.is_deleted ?? 0) !== 0) {
+    throw new Error("HoYoLAB post is deleted.");
+  }
+  return { aggregate, post };
 }
 
 function orderedImages(primary: unknown, fallback: unknown) {
