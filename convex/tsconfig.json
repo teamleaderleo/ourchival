@@ -13,6 +13,7 @@
   },
   "files": [
     "./archiveSearch.ts",
+    "./artworkIntake.ts",
     "./artworks.ts",
     "./visualEnrichment.ts",
     "./httpDb.ts",
