@@ -3,6 +3,7 @@
 import { convexTest } from "convex-test";
 import { makeFunctionReference } from "convex/server";
 import { afterEach, expect, it, vi } from "vitest";
+import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { slugifyTagName } from "./lib/tags";
 
@@ -40,7 +41,7 @@ async function seedReference(
   args: {
     sourceUrl: string;
     platform: "x" | "pixiv" | "generic";
-    tagIds: string[];
+    tagIds: Id<"tags">[];
     capturedAt: number;
     title?: string;
     deleted?: boolean;
