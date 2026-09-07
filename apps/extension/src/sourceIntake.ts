@@ -1,11 +1,23 @@
 import type { CapturePayload } from "@ourchival/shared";
 
-export type SourceIntakeProvider = "pixiv_bookmarks" | "pinterest_board";
+export type SourceIntakeProvider =
+  | "pixiv_bookmarks"
+  | "pixiv_owned_profile"
+  | "pinterest_board";
 
-export function originalDownloadFailure(source: string, hasImage: boolean, result?: {
-  blocked?: boolean; storageProvider?: string; storageStatus?: string;
-}) {
-  return source === "pixiv_bookmarks" && hasImage && !result?.blocked && result?.storageProvider === "linked"
+export function originalDownloadFailure(
+  source: string,
+  hasImage: boolean,
+  result?: {
+    blocked?: boolean;
+    storageProvider?: string;
+    storageStatus?: string;
+  },
+) {
+  return source.startsWith("pixiv_") &&
+    hasImage &&
+    !result?.blocked &&
+    result?.storageProvider === "linked"
     ? result.storageStatus || "Original upload failed"
     : undefined;
 }
@@ -15,7 +27,11 @@ export function sourceReaderCanCommit(
   state: { running: boolean; workerTabId?: number } | undefined,
   senderTabId?: number,
 ) {
-  return Boolean(state?.running && typeof senderTabId === "number" && state.workerTabId === senderTabId);
+  return Boolean(
+    state?.running &&
+      typeof senderTabId === "number" &&
+      state.workerTabId === senderTabId,
+  );
 }
 
 export type SourceIntakeContext = {
@@ -72,30 +88,49 @@ export function detectSourceIntakeContext(
   }
 
   if (/(^|\.)pixiv\.net$/i.test(url.hostname)) {
-    const match = url.pathname.match(
+    const bookmarkMatch = url.pathname.match(
       /^\/(?:en\/)?users\/(\d+)\/bookmarks\/artworks\/?$/i,
     );
-    if (!match?.[1]) return undefined;
-    const page = positiveInteger(url.searchParams.get("p")) ?? 1;
-    const rest = url.searchParams.get("rest") === "hide" ? "hide" : "show";
-    const mode = cleanMode(url.searchParams.get("mode"));
-    const source = new URL(
-      `/en/users/${match[1]}/bookmarks/artworks`,
-      "https://www.pixiv.net",
+    if (bookmarkMatch?.[1]) {
+      const page = positiveInteger(url.searchParams.get("p")) ?? 1;
+      const rest =
+        url.searchParams.get("rest") === "hide" ? "hide" : "show";
+      const mode = cleanMode(url.searchParams.get("mode"));
+      const source = new URL(
+        `/en/users/${bookmarkMatch[1]}/bookmarks/artworks`,
+        "https://www.pixiv.net",
+      );
+      source.searchParams.set("rest", rest);
+      source.searchParams.set("mode", mode);
+      const current = new URL(source);
+      if (page > 1) current.searchParams.set("p", String(page));
+      return {
+        provider: "pixiv_bookmarks",
+        scope: "bookmarks",
+        sourceUrl: source.toString(),
+        currentUrl: current.toString(),
+        cursor: `page:${page}`,
+        sensitiveDefault: rest === "hide",
+        label: rest === "hide" ? "Private Pixiv bookmarks" : "Pixiv bookmarks",
+      };
+    }
+
+    const profileMatch = url.pathname.match(
+      /^\/(?:en\/)?users\/(\d+)(?:\/artworks)?\/?$/i,
     );
-    source.searchParams.set("rest", rest);
-    source.searchParams.set("mode", mode);
-    const current = new URL(source);
-    if (page > 1) current.searchParams.set("p", String(page));
-    return {
-      provider: "pixiv_bookmarks",
-      scope: "bookmarks",
-      sourceUrl: source.toString(),
-      currentUrl: current.toString(),
-      cursor: `page:${page}`,
-      sensitiveDefault: rest === "hide",
-      label: rest === "hide" ? "Private Pixiv bookmarks" : "Pixiv bookmarks",
-    };
+    if (profileMatch?.[1]) {
+      const source = `https://www.pixiv.net/en/users/${profileMatch[1]}/artworks`;
+      return {
+        provider: "pixiv_owned_profile",
+        scope: "profile",
+        sourceUrl: source,
+        currentUrl: source,
+        cursor: "works:0",
+        sensitiveDefault: false,
+        label: "Pixiv creator works",
+      };
+    }
+    return undefined;
   }
 
   if (/(^|\.)pinterest\.[a-z.]+$/i.test(url.hostname)) {
@@ -208,8 +243,7 @@ export function sourceIntakePayload(
     args.sensitiveDefault ||
     item.sensitive === "explicit" ||
     item.sensitive === "suggestive";
-  const providerLabel =
-    args.provider === "pixiv_bookmarks" ? "Pixiv bookmarks" : "Pinterest board";
+  const providerLabel = sourceIntakeProviderLabel(args.provider);
   const rawMetadata = {
     version: 1,
     provider: args.provider,
@@ -254,6 +288,12 @@ export function sourceIntakePayload(
     captureSessionId: args.importId,
     capturedAt: new Date().toISOString(),
   };
+}
+
+export function sourceIntakeProviderLabel(provider: SourceIntakeProvider) {
+  if (provider === "pixiv_bookmarks") return "Pixiv bookmarks";
+  if (provider === "pixiv_owned_profile") return "Pixiv creator works";
+  return "Pinterest board";
 }
 
 export function pinterestOriginalImageUrl(value: string | undefined) {
