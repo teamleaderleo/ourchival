@@ -47,6 +47,10 @@
     {
       "matches": ["https://www.hoyolab.com/article/*"],
       "js": ["hoyolab-owned.js"]
+    },
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["x-owned-profile.js"]
     }
   ],
   "action": {

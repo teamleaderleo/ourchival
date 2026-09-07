@@ -4,8 +4,8 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "node ../../scripts/build-extension-icons.mjs && vite build --mode extension && vite build --mode content && vite build --mode pixiv-owned-content && vite build --mode hoyolab-owned-content && (vite build --mode extension-watch --watch & vite build --mode content-watch --watch & vite build --mode pixiv-owned-content-watch --watch & vite build --mode hoyolab-owned-content-watch --watch & wait)",
-    "build": "node ../../scripts/build-extension-icons.mjs && vite build --mode extension && vite build --mode content && vite build --mode pixiv-owned-content && vite build --mode hoyolab-owned-content && node ../../scripts/sync-installed-extension.mjs",
+    "dev": "node ../../scripts/build-extension-icons.mjs && vite build --mode extension && vite build --mode content && vite build --mode pixiv-owned-content && vite build --mode hoyolab-owned-content && vite build --mode x-owned-content && (vite build --mode extension-watch --watch & vite build --mode content-watch --watch & vite build --mode pixiv-owned-content-watch --watch & vite build --mode hoyolab-owned-content-watch --watch & vite build --mode x-owned-content-watch --watch & wait)",
+    "build": "node ../../scripts/build-extension-icons.mjs && vite build --mode extension && vite build --mode content && vite build --mode pixiv-owned-content && vite build --mode hoyolab-owned-content && vite build --mode x-owned-content && node ../../scripts/sync-installed-extension.mjs",
     "lint": "echo \"lint extension\"",
     "typecheck": "tsc --noEmit"
   },
