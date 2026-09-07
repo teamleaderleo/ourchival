@@ -42,6 +42,22 @@ export default defineConfig(({ mode }) => {
     };
   }
 
+  if (mode === "hoyolab-owned-content" || mode === "hoyolab-owned-content-watch") {
+    return {
+      resolve,
+      build: {
+        outDir: "dist",
+        emptyOutDir: false,
+        lib: {
+          entry: "src/hoyolabOwnedContent.ts",
+          formats: ["iife"],
+          name: "OurchivalHoYoLabOwned",
+          fileName: () => "hoyolab-owned.js",
+        },
+      },
+    };
+  }
+
   return {
     resolve,
     build: {
