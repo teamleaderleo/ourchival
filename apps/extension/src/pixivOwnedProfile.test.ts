@@ -4,6 +4,10 @@ import {
   pixivOwnedArtwork,
   pixivOwnedProfileWorkIds,
 } from "./pixivOwnedProfile";
+import {
+  detectSourceIntakeContext,
+  sourceIntakePayload,
+} from "./sourceIntake";
 
 describe("detectPixivOwnedProfile", () => {
   it("normalizes supported creator profile URLs", () => {
@@ -28,6 +32,48 @@ describe("detectPixivOwnedProfile", () => {
     expect(
       detectPixivOwnedProfile("https://www.pixiv.net/en/artworks/123456"),
     ).toBeUndefined();
+  });
+});
+
+describe("Pixiv owned-profile source intake", () => {
+  it("normalizes a creator profile separately from bookmark intake", () => {
+    expect(
+      detectSourceIntakeContext("https://www.pixiv.net/en/users/17656036"),
+    ).toEqual({
+      provider: "pixiv_owned_profile",
+      scope: "profile",
+      sourceUrl: "https://www.pixiv.net/en/users/17656036/artworks",
+      currentUrl: "https://www.pixiv.net/en/users/17656036/artworks",
+      cursor: "works:0",
+      sensitiveDefault: false,
+      label: "Pixiv creator works",
+    });
+    expect(
+      detectSourceIntakeContext(
+        "https://www.pixiv.net/en/users/17656036/bookmarks/artworks",
+      )?.provider,
+    ).toBe("pixiv_bookmarks");
+  });
+
+  it("labels captured profile work distinctly from bookmarks", () => {
+    const payload = sourceIntakePayload(
+      {
+        providerId: "500",
+        sourceUrl: "https://www.pixiv.net/en/artworks/500",
+        title: "Costume study",
+      },
+      {
+        provider: "pixiv_owned_profile",
+        importId: "source-import:owned-pixiv",
+        ordinal: 0,
+        sensitiveDefault: false,
+      },
+    );
+    expect(payload.tags).toEqual(["Pixiv creator works"]);
+    expect(JSON.parse(payload.rawMetadata ?? "{}")).toMatchObject({
+      provider: "pixiv_owned_profile",
+      providerId: "500",
+    });
   });
 });
 
