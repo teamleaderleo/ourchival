@@ -481,13 +481,69 @@ export async function getPopupState() {
   return values;
 }
 
-function normalizeXLikesImportState(state: XLikesImportState | undefined) {
-  if (!state) return undefined;
-  return {
-    ...state,
-    exhausted:
-      state.exhausted ||
-      state.stopReason === "timeline_end" ||
-      state.stopReason === "known_boundary",
-  };
+export function normalizeXLikesImportState(
+  state: XLikesImportState | undefined,
+) {
+  if (!state) return state;
+  const normalized =
+    typeof state.attachedMedia === "number"
+      ? state
+      : (() => {
+          const extraMedia = Math.min(
+            state.duplicates,
+            Math.max(0, state.captureAttempts - state.discoveredPosts),
+          );
+          return {
+            ...state,
+            attachedMedia: extraMedia,
+            duplicates: Math.max(0, state.duplicates - extraMedia),
+          };
+        })();
+
+  // Older builds treated a temporarily stable virtualized X timeline as a
+  // genuine end. Keep that checkpoint resumable: X can expose more rows after
+  // another scroll pulse or a manual nudge.
+  if (normalized.stopReason === "timeline_end") {
+    return {
+      ...normalized,
+      exhausted: false,
+      completedAt: undefined,
+      stopReason: "stalled" as const,
+      message:
+        normalized.message ??
+        "X paused loading more Likes. Your checkpoint is safe; continue to probe for older posts.",
+    };
+  }
+
+  return normalized;
+}
+
+export function normalizeCaptureEndpoint(value: string | undefined) {
+  const root = normalizeSiteRoot(value);
+  return root ? `${root}/capture` : undefined;
+}
+
+export function normalizePairingEndpoint(value: string | undefined) {
+  const root = normalizeSiteRoot(value);
+  return root ? `${root}/clipper-exchange` : undefined;
+}
+
+export function normalizeSiteRoot(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const normalized = trimmed
+    .replace(/\/(capture|clipper-exchange)\/?$/i, "")
+    .replace(/\/$/, "");
+  try {
+    const url = new URL(normalized);
+    const localHttp =
+      url.protocol === "http:" &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+    if (url.protocol !== "https:" && !localHttp) return undefined;
+    if (url.username || url.password || url.search || url.hash)
+      return undefined;
+    return `${url.origin}${url.pathname === "/" ? "" : url.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return undefined;
+  }
 }
