@@ -29,7 +29,7 @@ export const reconcileCapturedReferenceInternal = internalMutation({
     await reconcileCapturedReferenceCore(ctx, args.referenceId),
 });
 
-async function reconcileCapturedReferenceCore(
+export async function reconcileCapturedReferenceCore(
   ctx: MutationCtx,
   referenceId: Id<"references">,
 ) {
