@@ -30,6 +30,7 @@ export type BatchCaptureSource =
   | "x_post"
   | "x_likes"
   | "pixiv_bookmarks"
+  | "pixiv_owned_profile"
   | "pinterest_board";
 
 export type BatchCaptureItem = {
