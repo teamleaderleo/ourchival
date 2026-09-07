@@ -61,6 +61,7 @@ it("backfills multiple Pixiv assets on one sealed reference and replays without 
       assets: await ctx.db.query("assets").collect(),
       origins: await ctx.db.query("referenceOrigins").collect(),
       hydrated: await hydrateReference(ctx, "http://localhost:3211", reference),
+      revealed: await hydrateReference(ctx, "http://localhost:3211", reference, undefined, [], true),
     };
   });
   expect(result.reference?.sealed).toBe(true);
@@ -82,4 +83,7 @@ it("backfills multiple Pixiv assets on one sealed reference and replays without 
     ),
   ).toBe(true);
   expect(result.assets.every((a) => Boolean(a.driveFileId))).toBe(true);
+  expect(result.revealed.sealed).toBe(true);
+  expect(result.revealed.previewsRevealed).toBe(true);
+  expect(result.revealed.assets.every((a: { storedUrl?: string }) => a.storedUrl?.startsWith("http://localhost:3211/drive-file?id="))).toBe(true);
 });

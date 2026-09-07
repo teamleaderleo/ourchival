@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useBatchSelectionItem } from "./batchSelection";
 import {
   referenceDisplayTitle,
@@ -78,7 +78,8 @@ export function ReferenceCard({
       >
         <div className="thumb-wrap" style={dimensions ? { aspectRatio: `${dimensions.width} / ${dimensions.height}` } : undefined}>
           <ThumbImage
-            hidden={reference.sealed}
+            hidden={reference.sealed && !reference.previewsRevealed}
+            fallbackUrls={nearViewport ? [asset?.previewUrl, asset?.storedUrl, asset?.originalUrl, snapshot?.previewImageUrl] : []}
             deferred={!nearViewport}
             imageUrl={nearViewport ? imageUrl : undefined}
             title={title}
@@ -180,7 +181,33 @@ export function ReferenceCard({
   );
 }
 
-export function ThumbImage({
+export function ThumbImage(props: ThumbImageProps) {
+  return <ThumbImageCandidates key={JSON.stringify([props.imageUrl, props.fallbackUrls])} {...props} />;
+}
+
+function ThumbImageCandidates(props: ThumbImageProps) {
+  const [failedUrls, setFailedUrls] = useState<string[]>([]);
+  const candidates = [...new Set([props.imageUrl, ...(props.fallbackUrls ?? [])].filter((url): url is string => Boolean(url)))];
+  const candidate = props.hidden ? undefined : candidates.find(url => !failedUrls.includes(url));
+  return <ThumbImageAttempt key={candidate ?? "placeholder"} {...props} imageUrl={candidate} onFailure={() => {
+    if (candidate) setFailedUrls(urls => urls.includes(candidate) ? urls : [...urls, candidate]);
+  }} />;
+}
+
+type ThumbImageProps = {
+  hidden?: boolean;
+  deferred?: boolean;
+  imageUrl?: string | null;
+  fallbackUrls?: Array<string | null | undefined>;
+  title?: string;
+  kind: string;
+  priority?: boolean;
+  width?: number;
+  height?: number;
+  onDimensions?: (width: number, height: number) => void;
+};
+
+function ThumbImageAttempt({
   hidden = false,
   deferred = false,
   imageUrl,
@@ -190,33 +217,22 @@ export function ThumbImage({
   width,
   height,
   onDimensions,
-}: {
-  hidden?: boolean;
-  deferred?: boolean;
-  imageUrl?: string | null;
-  title?: string;
-  kind: string;
-  priority?: boolean;
-  width?: number;
-  height?: number;
-  onDimensions?: (width: number, height: number) => void;
-}) {
+  onFailure,
+}: ThumbImageProps & { onFailure: () => void }) {
   const [failed, setFailed] = useState(false);
-  const { resolvedUrl, loading } = usePrivateImageUrl(imageUrl);
+  const { resolvedUrl, loading, error } = usePrivateImageUrl(imageUrl);
+  useEffect(() => { if (error) onFailure(); }, [error, onFailure]);
   const linkLike = kind === "link" || kind === "article" || kind === "page";
-
-  useEffect(() => {
-    setFailed(false);
-  }, [resolvedUrl]);
 
   if (!resolvedUrl || failed) {
     return (
       <div
         className={`thumb placeholder ${linkLike ? "link-placeholder" : ""}`}
-        aria-hidden={!title}
-        aria-busy={loading}
+        role="img"
+        aria-label={hidden ? "Sensitive image hidden. Use Show sensitive images in the toolbar." : loading || deferred ? "Loading image" : title ?? "Saved reference"}
+        aria-busy={loading || deferred}
       >
-        {hidden ? <span className="preview-status">Sensitive or private<br /><small>Preview hidden by default</small></span> : linkLike ? <span>{getInitial(title)}</span> : <span className="preview-status">{loading || deferred ? "Loading preview…" : failed || imageUrl ? "Preview unavailable" : "No image captured"}</span>}
+        {hidden ? <span className="preview-status">Sensitive image hidden<br /><small>Show sensitive images in the toolbar</small></span> : linkLike ? <span>{getInitial(title)}</span> : <svg className="preview-placeholder-icon" aria-hidden="true" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.25"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/></svg>}
       </div>
     );
   }
@@ -232,7 +248,7 @@ export function ThumbImage({
       loading={priority ? "eager" : "lazy"}
       decoding="async"
       fetchPriority={priority ? "high" : "auto"}
-      onError={() => setFailed(true)}
+      onError={() => { setFailed(true); onFailure(); }}
       onLoad={(event) => onDimensions?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
     />
   );

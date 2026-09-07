@@ -80,6 +80,7 @@ export type ReferenceCollection =
 export type SavedReference = {
   browseCursor?: string;
   sealed?: boolean;
+  previewsRevealed?: boolean;
   _id: string;
   kind: string;
   title?: string;
