@@ -59,6 +59,7 @@ export const artworkTables = {
     updatedAt: v.number(),
   })
     .index("by_artwork_id", ["artworkId"])
+    .index("by_storage_id", ["storageId"])
     .index("by_drive_file_id", ["driveFileId"])
     .index("by_linked_url", ["linkedUrl"])
     .index("by_content_hash", ["contentHash"]),
