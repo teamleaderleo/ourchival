@@ -2,10 +2,12 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { searchTables } from "./lib/searchSchema";
 import { communityTables } from "./lib/communitySchema";
+import { artworkTables } from "./lib/artworkSchema";
 
 export default defineSchema({
   ...searchTables,
   ...communityTables,
+  ...artworkTables,
   references: defineTable({
     browseLane: v.optional(v.union(v.literal("images"), v.literal("links"))),
     kind: v.union(
