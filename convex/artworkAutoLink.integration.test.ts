@@ -77,6 +77,8 @@ async function capturedAsset(
   options: {
     contentHash?: string;
     storageProvider?: "google_drive" | "convex" | "linked";
+    sourceCount?: number;
+    sourceIndex?: number;
   } = {},
 ) {
   return await t.run((ctx) =>
@@ -88,8 +90,8 @@ async function capturedAsset(
           ? `captured-${referenceId}-${index}`
           : undefined,
       originalUrl: `https://example.test/captured-${index}.png`,
-      sourceIndex: index,
-      sourceCount: 1,
+      sourceIndex: options.sourceIndex ?? index,
+      sourceCount: options.sourceCount ?? 1,
       mimeType: "image/png",
       ...(options.contentHash ? { contentHash: options.contentHash } : {}),
       dominantColors: [],
@@ -123,6 +125,7 @@ it("auto-links a single durable captured image when its exact bytes identify one
     changed: true,
     artworkId: String(art!._id),
     assetCount: 1,
+    expectedAssetCount: 1,
   });
   const links = await publicationLinks(t, referenceId);
   expect(links).toHaveLength(1);
@@ -135,8 +138,14 @@ it("auto-links a multi-image publication only when every exact hash resolves to 
   await representation(t, art!._id, "page-a", "sha256:page-a");
   await representation(t, art!._id, "page-b", "sha256:page-b");
   const referenceId = await capturedReference(t, "502");
-  await capturedAsset(t, referenceId, 0, { contentHash: "sha256:page-a" });
-  await capturedAsset(t, referenceId, 1, { contentHash: "sha256:page-b" });
+  await capturedAsset(t, referenceId, 0, {
+    contentHash: "sha256:page-a",
+    sourceCount: 2,
+  });
+  await capturedAsset(t, referenceId, 1, {
+    contentHash: "sha256:page-b",
+    sourceCount: 2,
+  });
 
   const result = await t.mutation(reconcileCapturedReference, {
     accessKey,
@@ -147,8 +156,64 @@ it("auto-links a multi-image publication only when every exact hash resolves to 
     status: "linked",
     artworkId: String(art!._id),
     assetCount: 2,
+    expectedAssetCount: 2,
   });
   expect(await publicationLinks(t, referenceId)).toHaveLength(1);
+});
+
+it("waits for a complete source asset set before linking", async () => {
+  const t = fixture();
+  const art = await artwork(t, "Chunked artwork");
+  await representation(t, art!._id, "chunk-a", "sha256:chunk-a");
+  const referenceId = await capturedReference(t, "5021");
+  await capturedAsset(t, referenceId, 0, {
+    contentHash: "sha256:chunk-a",
+    sourceCount: 2,
+  });
+
+  const result = await t.mutation(reconcileCapturedReference, {
+    accessKey,
+    referenceId,
+  });
+
+  expect(result).toMatchObject({
+    status: "review",
+    changed: false,
+    assetCount: 1,
+    expectedAssetCount: 2,
+  });
+  expect(result.message).toContain("incomplete");
+  expect(await publicationLinks(t, referenceId)).toEqual([]);
+});
+
+it("refuses duplicate or inconsistent source indexes", async () => {
+  const t = fixture();
+  const art = await artwork(t, "Index guard artwork");
+  await representation(t, art!._id, "index-a", "sha256:index-a");
+  const referenceId = await capturedReference(t, "5022");
+  await capturedAsset(t, referenceId, 0, {
+    contentHash: "sha256:index-a",
+    sourceCount: 2,
+    sourceIndex: 0,
+  });
+  await capturedAsset(t, referenceId, 1, {
+    contentHash: "sha256:index-a",
+    sourceCount: 2,
+    sourceIndex: 0,
+  });
+
+  const result = await t.mutation(reconcileCapturedReference, {
+    accessKey,
+    referenceId,
+  });
+
+  expect(result).toMatchObject({
+    status: "review",
+    changed: false,
+    expectedAssetCount: 2,
+  });
+  expect(result.message).toContain("duplicate or missing");
+  expect(await publicationLinks(t, referenceId)).toEqual([]);
 });
 
 it("refuses to link a carousel whose exact hashes resolve to different artworks", async () => {
@@ -160,8 +225,14 @@ it("refuses to link a carousel whose exact hashes resolve to different artworks"
   await representation(t, artA!._id, "mixed-a", "sha256:mixed-a");
   await representation(t, artB!._id, "mixed-b", "sha256:mixed-b");
   const referenceId = await capturedReference(t, "503");
-  await capturedAsset(t, referenceId, 0, { contentHash: "sha256:mixed-a" });
-  await capturedAsset(t, referenceId, 1, { contentHash: "sha256:mixed-b" });
+  await capturedAsset(t, referenceId, 0, {
+    contentHash: "sha256:mixed-a",
+    sourceCount: 2,
+  });
+  await capturedAsset(t, referenceId, 1, {
+    contentHash: "sha256:mixed-b",
+    sourceCount: 2,
+  });
 
   const result = await t.mutation(reconcileCapturedReference, {
     accessKey,
@@ -177,8 +248,14 @@ it("requires complete durable hash evidence for every captured asset", async () 
   const art = await artwork(t, "Partial evidence artwork");
   await representation(t, art!._id, "partial", "sha256:partial");
   const referenceId = await capturedReference(t, "504");
-  await capturedAsset(t, referenceId, 0, { contentHash: "sha256:partial" });
-  await capturedAsset(t, referenceId, 1, { storageProvider: "linked" });
+  await capturedAsset(t, referenceId, 0, {
+    contentHash: "sha256:partial",
+    sourceCount: 2,
+  });
+  await capturedAsset(t, referenceId, 1, {
+    storageProvider: "linked",
+    sourceCount: 2,
+  });
 
   const result = await t.mutation(reconcileCapturedReference, {
     accessKey,
@@ -189,6 +266,7 @@ it("requires complete durable hash evidence for every captured asset", async () 
     status: "review",
     changed: false,
     assetCount: 2,
+    expectedAssetCount: 2,
     hashedDurableAssetCount: 1,
   });
   expect(await publicationLinks(t, referenceId)).toEqual([]);
