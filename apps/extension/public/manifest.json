@@ -43,6 +43,10 @@
         "https://www.pixiv.net/users/*/artworks*"
       ],
       "js": ["pixiv-owned-profile.js"]
+    },
+    {
+      "matches": ["https://www.hoyolab.com/article/*"],
+      "js": ["hoyolab-owned.js"]
     }
   ],
   "action": {
