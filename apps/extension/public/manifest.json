@@ -24,7 +24,25 @@
     },
     {
       "matches": ["<all_urls>"],
+      "exclude_globs": [
+        "*://www.pixiv.net/en/users/*/artworks*",
+        "*://www.pixiv.net/users/*/artworks*"
+      ],
       "js": ["content.js"]
+    },
+    {
+      "matches": [
+        "https://www.pixiv.net/en/users/*/bookmarks/artworks*",
+        "https://www.pixiv.net/users/*/bookmarks/artworks*"
+      ],
+      "js": ["content.js"]
+    },
+    {
+      "matches": [
+        "https://www.pixiv.net/en/users/*/artworks*",
+        "https://www.pixiv.net/users/*/artworks*"
+      ],
+      "js": ["pixiv-owned-profile.js"]
     }
   ],
   "action": {

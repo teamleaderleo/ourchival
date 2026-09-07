@@ -26,6 +26,22 @@ export default defineConfig(({ mode }) => {
     };
   }
 
+  if (mode === "pixiv-owned-content" || mode === "pixiv-owned-content-watch") {
+    return {
+      resolve,
+      build: {
+        outDir: "dist",
+        emptyOutDir: false,
+        lib: {
+          entry: "src/pixivOwnedProfileContent.ts",
+          formats: ["iife"],
+          name: "OurchivalPixivOwnedProfile",
+          fileName: () => "pixiv-owned-profile.js",
+        },
+      },
+    };
+  }
+
   return {
     resolve,
     build: {
