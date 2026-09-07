@@ -87,13 +87,30 @@ type CreateArgs = AccessArgs & {
   notes?: string;
   status?: ArtworkStatus;
 };
-type AddRepresentationArgs = AccessArgs & {
+type AttachDriveArgs = AccessArgs & {
   artworkId: string;
   kind: ArtworkRepresentationKind;
-  storageProvider: "google_drive";
   driveFileId: string;
   fileName?: string;
   sourceApplication?: ArtworkSourceApplication;
+};
+type AttachDriveResult = {
+  representation: ArtworkRepresentation;
+  hashStatus:
+    | "skipped_editable_source"
+    | "already_hashed"
+    | "ready"
+    | "unavailable";
+  contentHash?: string;
+  fileSize?: number;
+  error?: string;
+  reconciliation?: {
+    contentHash: string;
+    matchedAssets: number;
+    referencesChecked: number;
+    linked: number;
+    truncated: boolean;
+  } | null;
 };
 type RepresentationIdArgs = AccessArgs & { representationId: string };
 type PublicationArgs = AccessArgs & { artworkId: string; referenceId: string };
@@ -118,11 +135,11 @@ const getReference = makeFunctionReference<"query", ArtworkIdArgs, ArtworkDetail
 const createReference = makeFunctionReference<"mutation", CreateArgs, Artwork>(
   "artworks:create",
 );
-const addRepresentationReference = makeFunctionReference<
-  "mutation",
-  AddRepresentationArgs,
-  ArtworkRepresentation
->("artworks:addRepresentation");
+const attachDriveReference = makeFunctionReference<
+  "action",
+  AttachDriveArgs,
+  AttachDriveResult
+>("artworkDriveRepresentationNode:attachDrive");
 const removeRepresentationReference = makeFunctionReference<
   "mutation",
   RepresentationIdArgs,
@@ -168,9 +185,9 @@ export async function attachDriveRepresentation(args: {
   fileName?: string;
   sourceApplication?: ArtworkSourceApplication;
 }) {
-  return await getClient().mutation(
-    addRepresentationReference,
-    withOwnerAccess({ ...args, storageProvider: "google_drive" as const }),
+  return await getClient().action(
+    attachDriveReference,
+    withOwnerAccess(args),
   );
 }
 
