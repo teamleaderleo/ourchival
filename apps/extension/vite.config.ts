@@ -58,6 +58,22 @@ export default defineConfig(({ mode }) => {
     };
   }
 
+  if (mode === "x-owned-content" || mode === "x-owned-content-watch") {
+    return {
+      resolve,
+      build: {
+        outDir: "dist",
+        emptyOutDir: false,
+        lib: {
+          entry: "src/xOwnedProfileContent.ts",
+          formats: ["iife"],
+          name: "OurchivalXOwnedProfile",
+          fileName: () => "x-owned-profile.js",
+        },
+      },
+    };
+  }
+
   return {
     resolve,
     build: {
