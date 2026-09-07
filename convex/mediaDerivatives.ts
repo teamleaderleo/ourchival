@@ -7,6 +7,7 @@ import {
 import { v } from "convex/values";
 import { scheduleReferenceSearch } from "./lib/searchIndex";
 import { requireOwnerAccess } from "./lib/privateAccess";
+import { reconcileCapturedReferenceCore } from "./artworkAutoLink";
 
 const defaultBatchSize = 4;
 const maxBatchSize = 12;
@@ -147,7 +148,23 @@ export const complete = internalMutation({
       updatedAt: Date.now(),
     });
 
-    return { status: "succeeded" as const };
+    let artworkAutoLinkStatus = "not_attempted";
+    try {
+      const autoLink = await reconcileCapturedReferenceCore(
+        ctx,
+        asset.referenceId,
+      );
+      artworkAutoLinkStatus = autoLink.status;
+    } catch {
+      // Exact artwork reconciliation is opportunistic. A reconciliation defect
+      // must never roll back successful media derivatives or their hashes.
+      artworkAutoLinkStatus = "error";
+    }
+
+    return {
+      status: "succeeded" as const,
+      artworkAutoLinkStatus,
+    };
   },
 });
 
