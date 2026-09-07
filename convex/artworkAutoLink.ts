@@ -9,6 +9,7 @@ import { requireOwnerAccess } from "./lib/privateAccess";
 
 const maxAssetsPerReference = 64;
 const maxRepresentationsPerHash = 12;
+const maxHistoricalHashAssets = 200;
 
 export const reconcileCapturedReference = mutation({
   args: {
@@ -27,6 +28,64 @@ export const reconcileCapturedReferenceInternal = internalMutation({
   },
   handler: async (ctx, args) =>
     await reconcileCapturedReferenceCore(ctx, args.referenceId),
+});
+
+export const reconcileReferencesForContentHashInternal = internalMutation({
+  args: {
+    contentHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const contentHash = args.contentHash.trim().toLowerCase();
+    if (!contentHash) {
+      return {
+        contentHash,
+        matchedAssets: 0,
+        referencesChecked: 0,
+        linked: 0,
+        truncated: false,
+        results: [],
+      };
+    }
+
+    // Personal-archive bounded scan for the first implementation. This stays
+    // correctness-safe without a schema migration; add an assets hash index
+    // once usage proves this path deserves a dedicated performance lane.
+    const matchingAssets = await ctx.db
+      .query("assets")
+      .filter((q) => q.eq(q.field("contentHash"), contentHash))
+      .take(maxHistoricalHashAssets + 1);
+    const truncated = matchingAssets.length > maxHistoricalHashAssets;
+    const boundedAssets = matchingAssets.slice(0, maxHistoricalHashAssets);
+    const referenceIds = Array.from(
+      new Set(boundedAssets.map((asset) => String(asset.referenceId))),
+    )
+      .map((value) => ctx.db.normalizeId("references", value))
+      .filter((value): value is Id<"references"> => Boolean(value));
+
+    const results = [];
+    let linked = 0;
+    for (const referenceId of referenceIds) {
+      const reconciliation = await reconcileCapturedReferenceCore(
+        ctx,
+        referenceId,
+      );
+      if (reconciliation.status === "linked") linked += 1;
+      results.push({
+        referenceId: String(referenceId),
+        status: reconciliation.status,
+        changed: reconciliation.changed,
+      });
+    }
+
+    return {
+      contentHash,
+      matchedAssets: boundedAssets.length,
+      referencesChecked: referenceIds.length,
+      linked,
+      truncated,
+      results,
+    };
+  },
 });
 
 export async function reconcileCapturedReferenceCore(
@@ -93,7 +152,7 @@ export async function reconcileCapturedReferenceCore(
 
   const byHash = new Map<string, typeof usable>();
   for (const asset of usable) {
-    const hash = asset.contentHash!.trim();
+    const hash = asset.contentHash!.trim().toLowerCase();
     const rows = byHash.get(hash) ?? [];
     rows.push(asset);
     byHash.set(hash, rows);
