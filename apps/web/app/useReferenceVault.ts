@@ -87,6 +87,16 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeView, setActiveView] = useState<VaultView>("all");
   const [imagesOnly, setImagesOnly] = useState(false);
+  const [revealSensitive, setRevealSensitive] = useState(true);
+  useEffect(() => {
+    try { setRevealSensitive(localStorage.getItem("ourchival-sensitive-previews") !== "hide"); } catch { /* Session preference still works. */ }
+  }, []);
+  function changeSensitiveVisibility(show: boolean) {
+    requestSerial.current++;
+    setReferences([]);
+    setRevealSensitive(show);
+    try { localStorage.setItem("ourchival-sensitive-previews", show ? "show" : "hide"); } catch { /* Session preference still works. */ }
+  }
   const [sort, setSort] = useState<ArchiveSort>("saved-desc");
   const [positionReady, setPositionReady] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -101,7 +111,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     sort,
     imagesOnly,
   });
-  const cacheKey = `${refreshKey}:${positionKey}`;
+  const cacheKey = `${refreshKey}:${revealSensitive}:${positionKey}`;
   const position = useArchivePosition(
     positionKey,
     references,
@@ -341,6 +351,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
         lane,
         sort,
         imagesOnly: String(imagesOnly),
+        revealSensitive: String(revealSensitive),
       });
       if (favoritesOnly) params.set("favorites", "true");
       if (debouncedQuery) params.set("query", debouncedQuery);
@@ -623,7 +634,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     const current = viewCache.current.get(cacheKey);
     if (current) current.scroll = window.scrollY;
     const cached = viewCache.current.get(
-      `${refreshKey}:${browseViewKey(siteUrl ?? "", { view, query: debouncedQuery, sort, imagesOnly })}`,
+      `${refreshKey}:${revealSensitive}:${browseViewKey(siteUrl ?? "", { view, query: debouncedQuery, sort, imagesOnly })}`,
     );
     setReferences(cached?.references ?? []);
     setIsLoading(!cached);
@@ -679,6 +690,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     positionNotice: position.notice,
     restoreReferenceId: position.restoreReferenceId,
     setImagesOnly,
+    revealSensitive,
+    changeSensitiveVisibility,
     selectedReference,
     filteredReferences,
     libraryCount: counts.all + counts.inbox + counts.later,

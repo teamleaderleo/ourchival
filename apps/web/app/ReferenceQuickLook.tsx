@@ -314,7 +314,7 @@ export function ReferenceQuickLook({
         <aside id={tagPanelId} hidden={!showTags} className="quick-look-tag-panel" aria-label="Image tags">
           <h2>Tags</h2>
           {reference.tags?.length ? <div className="viewer-saved-tags">{reference.tags.map(tag => <span key={tag._id}>{tag.name}</span>)}</div> : null}
-          {reference.assets[assetIndex] ? <ReferenceCommunityTags key={reference.assets[assetIndex]._id} assetId={reference.assets[assetIndex]._id} sealed={reference.sealed} /> : null}
+          {reference.assets[assetIndex] ? <ReferenceCommunityTags key={reference.assets[assetIndex]._id} assetId={reference.assets[assetIndex]._id} sealed={reference.sealed && !reference.previewsRevealed} /> : null}
           {reference.assets.length > 0 ? <ReferenceVisualMetadata key={reference.assets[assetIndex]?._id ?? reference._id} reference={reference} assetId={reference.assets[assetIndex]?._id} compact /> : <p className="menu-hint">Model tags need a captured image. This item currently has none.</p>}
         </aside>
         <footer className="quick-look-footer">

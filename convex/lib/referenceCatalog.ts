@@ -174,7 +174,7 @@ export async function listReferencePage(ctx: any, request: Request | string) {
 
   const hydrated = await Promise.all(
     references.map(({ reference, snapshot, searchMatches }) =>
-      hydrateReference(ctx, origin, reference, snapshot, searchMatches),
+      hydrateReference(ctx, origin, reference, snapshot, searchMatches, url.searchParams.get("revealSensitive") === "true"),
     ),
   );
   const counts = await getReferenceCounts(ctx);
@@ -252,6 +252,7 @@ export async function hydrateReference(
   reference: any,
   knownSnapshot: any | null | undefined = undefined,
   knownSearchMatches: SearchMatch[] = [],
+  revealSensitive = false,
 ) {
   const [assets, snapshot] = await Promise.all([
     ctx.db
@@ -275,7 +276,7 @@ export async function hydrateReference(
     })();
   const assetsWithUrls = await Promise.all(
     assets.map(async (asset: any) => {
-      if (sealed)
+      if (sealed && !revealSensitive)
         return {
           _id: asset._id,
           referenceId: asset.referenceId,
@@ -311,12 +312,13 @@ export async function hydrateReference(
   return {
     ...reference,
     sealed,
+    previewsRevealed: revealSensitive,
     assets: assetsWithUrls,
     ...(snapshot
       ? {
           sourceSnapshot: {
             ...sourceSnapshotPayload(snapshot),
-            ...(sealed ? { previewImageUrl: undefined } : {}),
+            ...(sealed && !revealSensitive ? { previewImageUrl: undefined } : {}),
           },
         }
       : {}),

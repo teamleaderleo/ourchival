@@ -403,6 +403,8 @@
 .button, .popover > summary { border-radius: 12px; }
 .preview-status { display:block; max-width:85%; text-align:center; color:var(--muted); font-size:13px; line-height:1.5; padding:20px; }
 .preview-status small { font-size:12px; }
+.preview-placeholder-icon { color: var(--muted); opacity: .4; }
+.visibility-toggle { white-space: nowrap; }
 .quick-look-panel { grid-template-columns:minmax(0,1fr) 300px; }
 .quick-look-header, .quick-look-footer { grid-column:1 / -1; }
 .quick-look-stage { grid-column:1; grid-row:2; min-height:0; }

@@ -1,5 +1,6 @@
 "use client";
 import { ProjectPanel } from "./ProjectPanel";
+import { SensitiveImageControl } from "./SensitiveImageControl";
 import { ProjectShortlistBar } from "./ProjectShortlistBar";
 import { Popover } from "./Popover";
 import {
@@ -108,6 +109,7 @@ export function ReferenceVault() {
         </div>
         <ArchiveSearch query={vault.query} onChange={vault.setQuery} />
         <div className="vault-toolbar">
+          <SensitiveImageControl shown={vault.revealSensitive} onChange={vault.changeSensitiveVisibility} />
           <ArchiveSortPicker value={vault.sort} onChange={vault.changeSort} />
           <ArchiveSourcePicker query={vault.query} onChange={vault.setQuery} />
           <SavedSearchPanel
