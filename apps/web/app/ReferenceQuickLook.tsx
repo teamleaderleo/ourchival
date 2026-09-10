@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   referenceDisplayTitle,
   referenceMode,
@@ -91,7 +91,7 @@ export function ReferenceQuickLook({
     setImageFailed(false);
   }, [imageUrl]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
@@ -230,7 +230,7 @@ export function ReferenceQuickLook({
           </div>
           <div className="quick-look-header-actions">
             <button type="button" className="button ghost viewer-tags-toggle" aria-expanded={showTags} aria-controls={tagPanelId} onClick={() => setShowTags(value => !value)}>Tags</button>
-            <button type="button" className="button ghost viewer-zoom" aria-label={zoomed ? "Fit preview to viewer" : "Show preview at actual size"} aria-pressed={zoomed} disabled={!imageUrl || imageFailed} title="Actual preview size / fit (Z or double-click image)" onClick={() => setZoomed((value) => !value)}>{zoomed ? "Fit" : "100%"}</button>
+            <button type="button" className="button ghost viewer-zoom" aria-label={zoomed ? "Fit preview to viewer" : "Show preview at actual size"} aria-pressed={zoomed} disabled={!imageUrl || imageFailed} title="Actual preview size / fit (Z or click image)" onClick={() => setZoomed((value) => !value)}>{zoomed ? "Fit" : "100%"}</button>
             <span className="quick-look-count">
               {index >= 0 ? index + 1 : 1} / {references.length}
             </span>
@@ -267,8 +267,8 @@ export function ReferenceQuickLook({
               src={imageUrl}
               alt={title}
               decoding="async"
-              onDoubleClick={() => setZoomed((value) => !value)}
-              title={zoomed ? "Double-click to fit" : "Double-click for actual preview size"}
+              onClick={() => setZoomed((value) => !value)}
+              title={zoomed ? "Click to fit" : "Click for actual preview size"}
               onError={() => setImageFailed(true)}
             />
           ) : (
@@ -314,8 +314,8 @@ export function ReferenceQuickLook({
         <aside id={tagPanelId} hidden={!showTags} className="quick-look-tag-panel" aria-label="Image tags">
           <h2>Tags</h2>
           {reference.tags?.length ? <div className="viewer-saved-tags">{reference.tags.map(tag => <span key={tag._id}>{tag.name}</span>)}</div> : null}
-          {reference.assets[assetIndex] ? <ReferenceCommunityTags key={reference.assets[assetIndex]._id} assetId={reference.assets[assetIndex]._id} sealed={reference.sealed && !reference.previewsRevealed} /> : null}
-          {reference.assets.length > 0 ? <ReferenceVisualMetadata key={reference.assets[assetIndex]?._id ?? reference._id} reference={reference} assetId={reference.assets[assetIndex]?._id} compact /> : <p className="menu-hint">Model tags need a captured image. This item currently has none.</p>}
+          {reference.assets[assetIndex] ? <ReferenceCommunityTags key={`community:${reference.assets[assetIndex]._id}`} assetId={reference.assets[assetIndex]._id} sealed={reference.sealed && !reference.previewsRevealed} /> : null}
+          {reference.assets.length > 0 ? <ReferenceVisualMetadata key={`visual:${reference.assets[assetIndex]?._id ?? reference._id}`} reference={reference} assetId={reference.assets[assetIndex]?._id} compact /> : <p className="menu-hint">Model tags need a captured image. This item currently has none.</p>}
         </aside>
         <footer className="quick-look-footer">
           <div className="viewer-actions">

@@ -13,6 +13,7 @@ import {
 } from "./referenceVaultModel";
 import { type VaultView } from "./VaultNavigation";
 import { appendPage } from "./viewPages";
+import { fetchArchivePage } from "./archiveFetch";
 import { type ArchiveSort } from "../../../packages/shared/src/archiveSort";
 import {
   browseViewKey,
@@ -105,6 +106,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const requestSerial = useRef(0);
   const viewCache = useRef(new Map<string, CachedView>());
   const inFlight = useRef<string | null>(null);
+  const pageAbort = useRef<AbortController | null>(null);
+  const [loadError, setLoadError] = useState("");
   const positionKey = browseViewKey(siteUrl ?? "", {
     view: activeView,
     query: debouncedQuery,
@@ -203,6 +206,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   useEffect(() => {
     if (!positionReady) return;
     if (!siteUrl) {
+      setLoadError("The archive connection is not configured.");
       report(
         "Add NEXT_PUBLIC_CONVEX_URL or NEXT_PUBLIC_CONVEX_SITE_URL in setup to load saved references.",
         "error",
@@ -211,7 +215,10 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       return;
     }
 
+    pageAbort.current?.abort();
+    inFlight.current = null;
     requestSerial.current++;
+    setLoadError("");
     const marker = beginRestore();
     const cached = viewCache.current.get(cacheKey);
     if (cached) {
@@ -221,7 +228,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       setIsLoading(false);
       setIsLoadingPage(false);
       report("", "success");
-      return;
+      return () => { pageAbort.current?.abort(); inFlight.current = null; requestSerial.current++; };
     }
     setCurrentCursor(null);
     setContinueCursor(null);
@@ -229,6 +236,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     setHasMore(false);
     setIsLoadingPage(false);
     void pageRequest.current(marker?.cursor ?? null, [], true);
+    return () => { pageAbort.current?.abort(); inFlight.current = null; requestSerial.current++; };
   }, [
     siteUrl,
     refreshKey,
@@ -244,6 +252,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       (imagesOnly || activeView === "inbox" || activeView === "later") &&
       filteredReferences.length === 0 &&
       hasMore &&
+      !loadError &&
       !isLoading &&
       !isLoadingPage
     ) {
@@ -257,6 +266,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     activeCount,
     isLoading,
     isLoadingPage,
+    loadError,
   ]);
 
   useEffect(() => {
@@ -335,6 +345,10 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     if (!siteUrl) return;
     const flightKey = `${cacheKey}:${cursor}`;
     if (inFlight.current === flightKey) return;
+    pageAbort.current?.abort();
+    const controller = new AbortController();
+    pageAbort.current = controller;
+    setLoadError("");
     inFlight.current = flightKey;
     const serial = requestSerial.current + 1;
     requestSerial.current = serial;
@@ -357,13 +371,14 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       if (debouncedQuery) params.set("query", debouncedQuery);
       if (cursor) params.set("cursor", cursor);
 
-      const response = await fetch(
+      const response = await fetchArchivePage(
         `${siteUrl}/references?${params.toString()}`,
+        controller.signal,
       );
       const body = (await response.json()) as ReferencesResponse;
       if (serial !== requestSerial.current) return;
       if (!response.ok || body.ok === false) {
-        report(body.error ?? response.statusText, "error");
+        setLoadError(body.error ?? response.statusText);
         return;
       }
 
@@ -387,7 +402,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       if (body.counts) setCounts(body.counts);
       report("", "success");
     } catch (error) {
-      if (serial === requestSerial.current) {
+      if (serial === requestSerial.current && !controller.signal.aborted) {
+        setLoadError(error instanceof Error ? error.message : "Could not load saved references.");
         report(
           error instanceof Error
             ? error.message
@@ -396,7 +412,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
         );
       }
     } finally {
-      if (inFlight.current === flightKey) inFlight.current = null;
+      if (pageAbort.current === controller) inFlight.current = null;
       if (serial === requestSerial.current) {
         setIsLoading(false);
         setIsLoadingPage(false);
@@ -712,7 +728,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     pageNumber: cursorHistory.length + 1,
     isLoading,
     isLoadingPage,
-    loadFailed: statusTone === "error" && references.length === 0 && !isLoading,
+    loadFailed: Boolean(loadError) && references.length === 0 && !isLoading,
+    loadError,
     retryLoad,
     loadOlderPage,
     loadNewerPage,
