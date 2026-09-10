@@ -14,7 +14,7 @@ Audit on Air Blue, 2026-09-10. This is a bounded audit, not an installed monitor
 
 - Artist/tag discovery polls every five minutes only while the page is visible and online. Initial index progress checks every thirty seconds. Returning to a visible/online page refreshes it.
 - Active enrichment jobs and tag suggestions poll every ten seconds, only while visible and online. Requests are serialized, so a slow response cannot start an accumulating queue of requests. Hidden pages abort cancellable requests and stop scheduling new ones.
-- Drive catalog/file-store backups run every six hours instead of hourly, and do not immediately restart on login/reinstall. The local launchd configuration was updated without restarting the vault or interrupting an active backup. Original-image uploads continue during capture; local metadata recovery can lag by up to six hours plus runtime or downtime.
+- Drive catalog/file-store backups run every six hours instead of hourly, with a cheap due check at login/reinstall. The local launchd configuration was updated without restarting the vault or interrupting an active backup. Original-image uploads continue during capture; local metadata recovery can lag by up to six hours plus runtime or downtime.
 - An orphaned Convex log follower was stopped. Older Node helpers with live IPC paths were retained because ownership/activity could not be established safely.
 
 ## Evidence and limits

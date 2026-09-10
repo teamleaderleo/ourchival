@@ -7,7 +7,7 @@ deployed home page makes no hosted Convex archive queries.
 
 `scripts/install-local-services.mjs`, run with Node 22 on Air Blue, installs two
 user LaunchAgents: the canonical local vault starts at login and restarts after
-exit; a Drive backup runs every six hours while the Mac is awake, without an immediate login run.
+exit; a Drive backup runs every six hours while the Mac is awake, with a cheap due check at login that skips exports when the backup is still current.
 Neither service prevents sleep. Missed backup intervals are handled by launchd
 after wake. No browser profile data or credentials are read or copied.
 

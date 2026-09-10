@@ -16,7 +16,7 @@ await mkdir(agents, { recursive: true });
 const escape = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 for (const job of [
   { label: "com.ourchival.local-vault", args: [process.execPath, join(root, "scripts/local-vault.mjs"), "dev"], extra: "<key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer>" },
-  { label: "com.ourchival.drive-backup", runAtLoad: false, args: ["/usr/bin/python3", join(root, "scripts/vault_backup.py")], extra: "<key>StartInterval</key><integer>21600</integer><key>LowPriorityIO</key><true/><key>Nice</key><integer>10</integer>" },
+  { label: "com.ourchival.drive-backup", args: ["/usr/bin/python3", join(root, "scripts/scheduled-vault-backup.py")], extra: "<key>StartInterval</key><integer>21600</integer><key>LowPriorityIO</key><true/><key>Nice</key><integer>10</integer>" },
 ]) {
   const path = join(agents, job.label + ".plist");
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>
@@ -24,7 +24,7 @@ for (const job of [
 <key>ProgramArguments</key><array>${job.args.map((arg) => `<string>${escape(arg)}</string>`).join("")}</array>
 <key>WorkingDirectory</key><string>${escape(root)}</string>
 <key>EnvironmentVariables</key><dict><key>PATH</key><string>${escape(dirname(process.execPath) + ":" + process.env.PATH)}</string><key>NEXT_TELEMETRY_DISABLED</key><string>1</string></dict>
-<key>RunAtLoad</key><${job.runAtLoad === false ? "false" : "true"}/>${job.extra}
+<key>RunAtLoad</key><true/>${job.extra}
 <key>StandardOutPath</key><string>${escape(join(state, job.label + ".log"))}</string>
 <key>StandardErrorPath</key><string>${escape(join(state, job.label + ".log"))}</string>
 </dict></plist>\n`;
