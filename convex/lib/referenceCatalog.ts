@@ -13,6 +13,8 @@ import {
   chronologicalSearchMatches,
 } from "./searchIndex";
 import { chronologicalPage } from "./archiveOrder";
+import { discoveryPage } from "./discoveryPage";
+import { discoveryFacet } from "../../packages/shared/src/discoveryFilter";
 
 type ReferenceCollection = "inbox" | "library" | "later" | "archive" | "trash";
 type ReferenceLane = "all" | "images" | "links";
@@ -90,12 +92,13 @@ export async function listReferencePage(ctx: any, request: Request | string) {
     searchMatches: SearchMatch[];
   }> = [];
   const chronological = url.searchParams.has("sort");
+  const facet = discoveryFacet(url.searchParams.get("query") ?? "");
   const indexedPage =
-    options.query && !chronological
+    options.query && !chronological && !facet
       ? await indexedReferencePage(ctx, options)
       : null;
   const page =
-    indexedPage ??
+    (facet ? await discoveryPage(ctx, url, options.pageSize) : null) ?? indexedPage ??
     (chronological
       ? await chronologicalPage(ctx, url, options.pageSize)
       : await ctx.db
@@ -108,6 +111,7 @@ export async function listReferencePage(ctx: any, request: Request | string) {
       (!("cutoff" in page) || reference._creationTime <= Number(page.cutoff)) &&
       matchesReferenceFilters(reference, options),
   );
+  if (facet && url.searchParams.get("revealSensitive") !== "true") candidates = candidates.filter((reference: any) => !reference.sealed);
 
   const sourceFilters = readSourceFilters(url.searchParams.get("query") ?? "");
   candidates = candidates.filter((reference: any) => matchesSourcePlatform(reference.platform, sourceFilters));
@@ -562,7 +566,7 @@ export function parseReferenceFilterTokens(value: string) {
     const filterValue = token.slice(separator + 1).trim();
     if (!filterValue) continue;
 
-    if (["source", "-source", "origin", "-origin"].includes(key)) continue;
+    if (["source", "-source", "origin", "-origin", "facet"].includes(key)) continue;
     if (key === "site" || key === "domain") domain = filterValue;
     else if (key === "type" || key === "kind") sourceType = filterValue;
     else if (key === "tag") tag = filterValue;

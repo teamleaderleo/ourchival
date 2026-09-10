@@ -59,12 +59,12 @@ export function matchesSourcePlatform(
   );
 }
 export function visibleSearchText(query: string) {
-  return query.replace(/(^|\s)-?(?:source|origin):\S+/g, "");
+  return query.replace(/(^|\s)-?(?:source|origin|facet):\S+/g, "");
 }
 export function replaceVisibleSearchText(query: string, text: string) {
   return [
     text,
-    ...query.split(/\s+/).filter((token) => /^-?(source|origin):/.test(token)),
+    ...query.split(/\s+/).filter((token) => /^-?(source|origin|facet):/.test(token)),
   ]
     .filter(Boolean)
     .join(" ");

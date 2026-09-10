@@ -8,6 +8,10 @@
  * @module
  */
 
+import type * as archiveDiscovery from "../archiveDiscovery.js";
+import type * as lib_discoveryIndex from "../lib/discoveryIndex.js";
+import type * as lib_discoveryPage from "../lib/discoveryPage.js";
+import type * as lib_discoverySchema from "../lib/discoverySchema.js";
 import type * as archiveSearch from "../archiveSearch.js";
 import type * as boards from "../boards.js";
 import type * as browseMigration from "../browseMigration.js";
@@ -73,6 +77,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  archiveDiscovery: typeof archiveDiscovery;
+  "lib/discoveryIndex": typeof lib_discoveryIndex;
+  "lib/discoveryPage": typeof lib_discoveryPage;
+  "lib/discoverySchema": typeof lib_discoverySchema;
   archiveSearch: typeof archiveSearch;
   boards: typeof boards;
   browseMigration: typeof browseMigration;

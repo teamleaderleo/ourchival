@@ -27,11 +27,14 @@ export function clearOwnerAccessKey() {
 
 export function onOwnerAccessChange(listener: () => void) {
   if (typeof window === "undefined") return () => undefined;
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === accessKeyStorageKey || event.key === null) listener();
+  };
   window.addEventListener(accessChangedEvent, listener);
-  window.addEventListener("storage", listener);
+  window.addEventListener("storage", onStorage);
   return () => {
     window.removeEventListener(accessChangedEvent, listener);
-    window.removeEventListener("storage", listener);
+    window.removeEventListener("storage", onStorage);
   };
 }
 
