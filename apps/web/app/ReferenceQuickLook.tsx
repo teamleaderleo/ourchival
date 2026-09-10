@@ -33,6 +33,11 @@ export function ReferenceQuickLook({
   const [assetIndex, setAssetIndex] = useState(0);
   const [zoomed, setZoomed] = useState(false);
   const [showTags, setShowTags] = useState(true);
+  const [imageShape, setImageShape] = useState<{ source: string; ratio: number } | null>(null);
+  const activeAsset = reference.assets[assetIndex] ?? reference.assets[0];
+  const imageRatio = imageShape && imageShape.source === activeAsset?._id
+    ? imageShape.ratio
+    : activeAsset?.width && activeAsset.height ? activeAsset.width / activeAsset.height : 1;
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const tagPanelId = useId();
   const imageViewport = useRef<HTMLDivElement>(null);
@@ -219,6 +224,7 @@ export function ReferenceQuickLook({
       <section
         ref={panelRef}
         className={`quick-look-panel ${showTags ? "" : "tags-hidden"}`}
+        style={{ "--image-ratio": imageRatio, "--viewer-details-width": showTags ? "300px" : "0px" } as React.CSSProperties}
         role="dialog"
         aria-modal="true"
         aria-label={`Quick look: ${title}`}
@@ -270,6 +276,11 @@ export function ReferenceQuickLook({
               onClick={() => setZoomed((value) => !value)}
               title={zoomed ? "Click to fit" : "Click for actual preview size"}
               onError={() => setImageFailed(true)}
+              onLoad={(event) => {
+                const image = event.currentTarget;
+                if (image.naturalWidth && image.naturalHeight && activeAsset)
+                  setImageShape({ source: activeAsset._id, ratio: image.naturalWidth / image.naturalHeight });
+              }}
             />
           ) : (
             <div

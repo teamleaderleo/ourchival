@@ -33,7 +33,7 @@ export function Masonry({
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const count = Math.max(2, Math.floor(width / 250));
   const columnWidth = (width - gap * (count - 1)) / count;
-  const windowCards = Children.count(children) > 192;
+  const windowCards = Children.count(children) > 48;
   const widthKey = Math.round(columnWidth);
   useLayoutEffect(() => {
     const element = root.current;

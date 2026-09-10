@@ -723,7 +723,8 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     captureOpen,
     setCaptureOpen,
     undoMove,
-    hasMore: hasMore && activeCount > 0,
+    // The page cursor is authoritative; summary counts can lag imported items.
+    hasMore,
     canLoadNewer: cursorHistory.length > 0,
     pageNumber: cursorHistory.length + 1,
     isLoading,
