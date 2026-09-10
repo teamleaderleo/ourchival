@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { startVisiblePolling } from "./visiblePolling";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { withOwnerAccess } from "./privateAccess";
@@ -102,8 +103,7 @@ export function useEnrichmentJobs(referenceId: string) {
   const hasActiveJobs = jobs.some(isActiveJob);
   useEffect(() => {
     if (!hasActiveJobs) return;
-    const timer = window.setInterval(() => void refresh().catch(() => undefined), 3000);
-    return () => window.clearInterval(timer);
+    return startVisiblePolling(() => refresh(), () => 10_000);
   }, [hasActiveJobs, refresh]);
 
   return { jobs, loading, refresh };
@@ -131,8 +131,7 @@ export function useRecentEnrichmentJobs(limit = 30) {
   const hasActiveJobs = jobs.some(isActiveJob);
   useEffect(() => {
     if (!hasActiveJobs) return;
-    const timer = window.setInterval(() => void refresh().catch(() => undefined), 3000);
-    return () => window.clearInterval(timer);
+    return startVisiblePolling(() => refresh(), () => 10_000);
   }, [hasActiveJobs, refresh]);
 
   return { jobs, loading, refresh };

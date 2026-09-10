@@ -13,7 +13,7 @@ The directory has separate total and non-sealed counters. Hidden sensitivity mod
 - Initial indexing processes 24 references per transaction. Cursor and counts commit together. Replayed and stale jobs do not increase counts. The directory is published after the complete scan.
 - `archiveDiscovery:ensure` starts an absent build or resumes a stale checkpoint after 60 seconds. A completed build is not re-run on page load.
 - Existing search refresh jobs update memberships and counters idempotently for new captures, tagging, metadata edits, sensitivity changes, archiving, removal, and own-art linkage. Updates are eventually consistent with that queue. No image bytes are read or copied.
-- Browser reads fetch only ranked or searched choices. A ready directory refreshes once per minute; a building directory checks every ten seconds. Search is debounced and bounded to twenty displayed matches per kind; refine a search to narrow it.
+- Browser reads fetch only ranked or searched choices. A ready directory refreshes every five minutes while visible and online; a building directory checks every thirty seconds. Hidden/offline tabs stop polling and refresh on return. Search is debounced and bounded to twenty displayed matches per kind; refine a search to narrow it.
 - The selected facet is preserved in search/sort/view position state but hidden from free-text input. Its human-readable label and clear control appear in the sidebar.
 
 On Air Blue, `node scripts/archive-discovery.mjs start` starts/resumes the local build. `node scripts/archive-discovery.mjs status` reports progress and writes a completion receipt to `.convex/reconciliation/archive-discovery.json`. The script reads the existing local owner key in memory and only uses the canonical local backend.
