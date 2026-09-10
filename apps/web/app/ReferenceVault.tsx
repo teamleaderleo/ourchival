@@ -417,8 +417,8 @@ export function ReferenceVault() {
           {!vault.isLoading && vault.hasMore ? (
             <LoadMore
               busy={vault.isLoadingPage}
-              failed={vault.statusTone === "error"}
-              auto={vault.statusTone !== "error" && !vault.restoreReferenceId}
+              failed={Boolean(vault.loadError)}
+              auto={!vault.loadError && !vault.restoreReferenceId}
               onLoad={vault.loadOlderPage}
             />
           ) : null}

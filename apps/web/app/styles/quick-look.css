@@ -1,3 +1,5 @@
+html { scrollbar-gutter: stable; }
+
 html.quick-look-open,
 html.quick-look-open body {
   overflow: hidden;
@@ -53,14 +55,13 @@ html.quick-look-open body {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(4, 5, 8, 0.82);
-  backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--panel), transparent 12%);
 }
 
 .quick-look-panel {
   display: grid;
-  width: min(1180px, calc(100vw - 48px));
-  height: min(900px, calc(100vh - 48px));
+  width: calc(100vw - 48px);
+  height: calc(100dvh - 48px);
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--line-strong), transparent 16%);
@@ -137,9 +138,7 @@ html.quick-look-open body {
   place-items: center;
   overflow: hidden;
   padding: 18px 64px;
-  background:
-    radial-gradient(circle at 50% 28%, rgba(173, 151, 255, 0.07), transparent 42%),
-    #07090d;
+  background: var(--panel);
 }
 
 .quick-look-image {
