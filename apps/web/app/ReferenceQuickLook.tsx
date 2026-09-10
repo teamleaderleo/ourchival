@@ -10,6 +10,7 @@ import { getDomain, getInitial } from "./ReferenceCards";
 import { isProtectedDriveUrl, usePrivateImageUrl } from "./usePrivateImageUrl";
 import { ReferenceVisualMetadata } from "./ReferenceVisualMetadata";
 import { ReferenceCommunityTags } from "./ReferenceCommunityTags";
+import { CloseButton } from "./CloseButton";
 
 export function ReferenceQuickLook({
   reference,
@@ -250,16 +251,11 @@ export function ReferenceQuickLook({
             >
               {reference.favorite ? "★" : "☆"}
             </button>
-            <button
+            <CloseButton
               ref={closeButtonRef}
-              type="button"
-              className="button ghost quick-look-close"
               onClick={onClose}
-              aria-label="Close quick look"
-              title="Close (Esc)"
-            >
-              ×
-            </button>
+              label="Close quick look"
+            />
           </div>
         </header>
 

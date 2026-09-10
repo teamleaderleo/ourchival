@@ -13,6 +13,7 @@
 @import "./styles/studio.css";
 @import "./styles/browse.css";
 @import "./styles/artworks.css";
+@import "./styles/sidebar-discover.css";
 
 /* Keep the selected artwork's current action dominant in the first viewport. */
 .artwork-corpus-intro > .button.primary {

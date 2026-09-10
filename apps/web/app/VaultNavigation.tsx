@@ -1,4 +1,6 @@
 import { CatIcon } from "./CatIcon";
+import { SidebarDiscover } from "./SidebarDiscover";
+import type { SavedReference } from "./referenceVaultModel";
 
 export type VaultView =
   | "inbox"
@@ -12,7 +14,7 @@ export type VaultView =
 
 export const viewLabels: Record<VaultView, string> = {
   inbox: "Unreviewed",
-  all: "Library",
+  all: "All saved",
   images: "Images",
   links: "Links",
   favorites: "Favorites",
@@ -25,10 +27,16 @@ export function VaultSidebar({
   activeView,
   counts,
   onChange,
+  references,
+  query,
+  onSearch,
 }: {
   activeView: VaultView;
   counts: Record<VaultView, number>;
   onChange: (view: VaultView) => void;
+  references: SavedReference[];
+  query: string;
+  onSearch: (query: string) => void;
 }) {
   return (
     <aside className="vault-sidebar" aria-label="Vault navigation">
@@ -44,7 +52,7 @@ export function VaultSidebar({
 
       <nav className="sidebar-section" aria-label="Library">
         <VaultNavButton
-          label="Library"
+          label="All saved"
           count={counts.all}
           active={activeView === "all"}
           onClick={() => onChange("all")}
@@ -73,6 +81,7 @@ export function VaultSidebar({
         />
       </nav>
 
+      <SidebarDiscover references={references} query={query} onSearch={onSearch} />
       <nav className="sidebar-section" aria-label="Workflow">
         <VaultNavButton
           label="Review later"
@@ -115,7 +124,7 @@ function VaultNavButton({
   return (
     <button
       type="button"
-      className={`nav-button ${active ? "active" : ""}`}
+      className={`nav-button ${active ? "active" : ""} ${icon === "images" || icon === "links" ? "nav-subset" : ""}`}
       aria-current={active ? "page" : undefined}
       title={{ inbox: "All newly imported items are already saved. Browse them here before filing.", all: "All saved items, including unreviewed imports.", images: "All saved images.", links: "All saved links, including OneTab imports.", favorites: "References you starred.", later: "Items you set aside to review later.", archive: "Items stored away from your active library.", trash: "Removed from browsing and blocked from automatic recapture. Can be restored." }[icon]}
       onClick={onClick}

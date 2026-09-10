@@ -31,7 +31,8 @@
   bottom: 74px;
   display: grid;
   width: min(620px, calc(100vw - 40px));
-  max-height: min(760px, calc(100vh - 100px));
+  height: min(760px, calc(100dvh - 100px));
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -62,9 +63,13 @@
 .capture-session-detail {
   display: grid;
   gap: 10px;
-  overflow: auto;
+  min-height: 0;
+  align-content: start;
   padding: 14px;
 }
+
+.capture-session-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.capture-session-body:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 
 .capture-session-list-heading {
   display: flex;
