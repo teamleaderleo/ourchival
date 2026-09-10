@@ -60,8 +60,8 @@ html.quick-look-open body {
 
 .quick-look-panel {
   display: grid;
-  width: calc(100vw - 48px);
-  height: calc(100dvh - 48px);
+  width: min(calc(100vw - 112px), max(620px, calc(min(700px, 100dvh - 260px) * var(--image-ratio, 1) + 128px + var(--viewer-details-width, 300px))));
+  height: min(860px, calc(100dvh - 112px), max(420px, calc((100vw - 240px - var(--viewer-details-width, 300px)) / var(--image-ratio, 1) + 160px)));
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--line-strong), transparent 16%);

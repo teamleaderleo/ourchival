@@ -22,23 +22,32 @@ export function LoadMore({
       requested = true;
       void onLoad().finally(() => { requested = false; });
     };
+    const lookAhead = Math.max(1600, window.innerHeight * 2);
+    const columns = Array.from(document.querySelectorAll<HTMLElement>(".masonry-column"));
     const check = () => {
       frame = 0;
-      if (root.current && root.current.getBoundingClientRect().top <= window.innerHeight + 1200) load();
+      // Load before the shortest column runs out, even beside a tall portrait column.
+      const bottom = columns.length
+        ? Math.min(...columns.map(column => column.getBoundingClientRect().bottom))
+        : root.current?.getBoundingClientRect().top;
+      if (bottom !== undefined && bottom <= window.innerHeight + lookAhead) load();
     };
     const onScroll = () => { if (!frame) frame = requestAnimationFrame(check); };
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry?.isIntersecting) load();
       },
-      { rootMargin: "1200px" },
+      { rootMargin: `${lookAhead}px` },
     );
     observer.observe(root.current);
+    const resizeObserver = new ResizeObserver(onScroll);
+    columns.forEach(column => resizeObserver.observe(column));
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
     check();
     return () => {
       observer.disconnect();
+      resizeObserver.disconnect();
       cancelAnimationFrame(frame);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
