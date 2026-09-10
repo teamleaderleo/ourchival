@@ -22,6 +22,7 @@ import { SavedSearchPanel } from "./SavedSearchPanel";
 import { SelectedReference } from "./SelectedReference";
 import { TagFilterBar } from "./TagFilterBar";
 import { VaultSidebar, viewLabels } from "./VaultNavigation";
+import { CloseButton, CatCloseIcon } from "./CloseButton";
 import { referenceKindLabel } from "./referenceVaultModel";
 import { useReferenceVault } from "./useReferenceVault";
 
@@ -147,8 +148,9 @@ export function ReferenceVault() {
             type="button"
             className="button ghost"
             onClick={() => vault.setCaptureOpen((open) => !open)}
+            aria-label={vault.captureOpen ? "Close save link form" : "Save a link"}
           >
-            {vault.captureOpen ? "Close" : "Save a link"}
+            {vault.captureOpen ? <span className="cat-close" aria-label="Close save link form"><CatCloseIcon /></span> : "Save a link"}
           </button>
         </div>
       </header>
@@ -208,6 +210,9 @@ export function ReferenceVault() {
         className={`vault-workspace ${vault.selectedReference ? "has-inspector" : ""}`}
       >
         <VaultSidebar
+          references={vault.filteredReferences}
+          query={vault.query}
+          onSearch={(query) => { vault.changeView("all"); vault.setQuery(query); }}
           activeView={vault.activeView}
           counts={{
             inbox: vault.inboxCount,
@@ -432,13 +437,7 @@ export function ReferenceVault() {
               <p className="eyebrow">Details</p>
               <div>
                 <span>{referenceKindLabel(vault.selectedReference.kind)}</span>
-                <button
-                  type="button"
-                  className="inspector-close"
-                  onClick={() => vault.setSelectedId(null)}
-                >
-                  Close
-                </button>
+                <CloseButton label="Close details" onClick={() => vault.setSelectedId(null)} />
               </div>
             </div>
             <>

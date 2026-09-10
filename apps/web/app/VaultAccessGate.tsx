@@ -1,6 +1,7 @@
 "use client";
 
 import { BrandMark } from "./BrandMark";
+import { CloseButton } from "./CloseButton";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleOwnerSignIn } from "./GoogleOwnerSignIn";
@@ -412,13 +413,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
             <div>
               <h2>Settings</h2>
             </div>
-            <button
-              type="button"
-              className="button ghost"
-              onClick={() => setPanelOpen(false)}
-            >
-              Close
-            </button>
+            <CloseButton label="Close settings" onClick={() => setPanelOpen(false)} />
           </div>
           <details className="browser-connection"><summary>Connect a browser extension</summary>
           <p>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CloseButton } from "./CloseButton";
 import { ThumbImage, getDomain } from "./ReferenceCards";
 import {
   setCaptureSessionReviewState,
@@ -12,6 +13,17 @@ import {
 
 export function CaptureSessionPanel() {
   const [open, setOpen] = useState(false);
+  const launcher = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    closeButton.current?.focus();
+    function escape(event: KeyboardEvent) {
+      if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
+    }
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("keydown", escape); launcher.current?.focus({ preventScroll: true }); };
+  }, [open]);
   const [selectedKey, setSelectedKey] = useState<string | undefined>();
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,6 +61,8 @@ export function CaptureSessionPanel() {
       <button
         type="button"
         className="capture-session-launcher button ghost"
+        ref={launcher}
+        aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
         Capture sessions
@@ -79,16 +93,11 @@ export function CaptureSessionPanel() {
                   Back
                 </button>
               ) : null}
-              <button
-                type="button"
-                className="button ghost"
-                onClick={() => setOpen(false)}
-              >
-                Close
-              </button>
+              <CloseButton ref={closeButton} label="Close capture sessions" onClick={() => setOpen(false)} />
             </div>
           </header>
 
+          <div className="capture-session-body" tabIndex={0} role="region" aria-label="Capture session contents">
           {selectedSession ? (
             <SessionDetail
               session={selectedSession}
@@ -111,6 +120,7 @@ export function CaptureSessionPanel() {
               onSync={() => void sync()}
             />
           )}
+          </div>
         </aside>
       ) : null}
     </>
