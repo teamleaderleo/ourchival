@@ -1570,6 +1570,7 @@ export async function fetchAndStoreRemoteAsset(
             },
           });
           driveUpload = await uploadStreamToDrive({
+            quality: assetQuality({ fetchedUrl: result.finalUrl }),
             stream,
             size: contentLength,
             sourceUrl: args.sourceUrl,
@@ -1597,6 +1598,7 @@ export async function fetchAndStoreRemoteAsset(
           );
           fileSize = blob.size;
           driveUpload = await uploadBlobToDrive({
+            quality: assetQuality({ fetchedUrl: result.finalUrl }),
             blob,
             sourceUrl: args.sourceUrl,
             title: args.title,

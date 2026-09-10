@@ -1,3 +1,4 @@
+import { configuredDriveParent, configuredOwnSource, drivePath } from "./driveOrganization";
 const tokenEndpoint = "https://oauth2.googleapis.com/token";
 const driveFilesEndpoint = "https://www.googleapis.com/drive/v3/files";
 const driveAboutEndpoint = "https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress,permissionId)";
@@ -81,6 +82,7 @@ export async function uploadBlobToDrive(args: {
   sourceUrl: string;
   title?: string;
   mimeType?: string;
+  quality?: string;
 }): Promise<DriveUploadResult> {
   const config = getDriveConfig();
 
@@ -90,9 +92,10 @@ export async function uploadBlobToDrive(args: {
 
   const accessToken = await getAccessToken(config);
   const fileName = buildFileName(args.title, args.sourceUrl, args.mimeType);
+  const parent = configuredDriveParent(config.parentFolderId, drivePath(args.sourceUrl, args.quality, configuredOwnSource(args.sourceUrl)));
   const metadata = {
     name: fileName,
-    ...(config.parentFolderId ? { parents: [config.parentFolderId] } : {}),
+    ...(parent ? { parents: [parent] } : {}),
     appProperties: {
       ourchival: "true",
       sourceUrl: args.sourceUrl,
@@ -150,6 +153,7 @@ export async function uploadStreamToDrive(args: {
   sourceUrl: string;
   title?: string;
   mimeType?: string;
+  quality?: string;
 }): Promise<DriveUploadResult> {
   const config = getDriveConfig();
   if (!config) {
@@ -162,10 +166,11 @@ export async function uploadStreamToDrive(args: {
   try {
     const accessToken = await getAccessToken(config);
     const mimeType = args.mimeType || "application/octet-stream";
+    const parent = configuredDriveParent(config.parentFolderId, drivePath(args.sourceUrl, args.quality, configuredOwnSource(args.sourceUrl)));
     const metadata = {
       name: buildFileName(args.title, args.sourceUrl, mimeType),
       mimeType,
-      ...(config.parentFolderId ? { parents: [config.parentFolderId] } : {}),
+      ...(parent ? { parents: [parent] } : {}),
       appProperties: {
         ourchival: "true",
         sourceUrl: args.sourceUrl,
@@ -334,7 +339,7 @@ export async function upsertPreferenceSnapshotToDrive(args: {
   const metadata = {
     name: preferenceFileName,
     mimeType: "application/json",
-    ...(config.parentFolderId ? { parents: [config.parentFolderId] } : {}),
+    ...(config.parentFolderId ? { parents: [configuredDriveParent(config.parentFolderId, "App data")] } : {}),
     appProperties: {
       ourchival: "true",
       purpose: "preference_snapshot",
@@ -411,7 +416,7 @@ export async function createDriveFolder(name: string, parentFolderId?: string) {
   return body;
 }
 
-async function getAccessToken(config: DriveConfig) {
+export async function getAccessToken(config: DriveConfig) {
   const response = await fetch(tokenEndpoint, {
     method: "POST",
     headers: {
