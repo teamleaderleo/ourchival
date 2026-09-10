@@ -15,6 +15,7 @@ export type ReaderHeartbeat = {
   phase: "reading" | "saving";
   tabId: number;
 };
+export const idleAlarmMinutes = 15;
 export const syncInterval = 6 * 60 * 60_000;
 export const repairInterval = 24 * 60 * 60_000;
 export function retryPlan(

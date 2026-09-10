@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { startVisiblePolling } from "./visiblePolling";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import type { ReferenceTag } from "./referenceVaultModel";
@@ -81,8 +82,7 @@ export function useSuggestedTags(referenceId: string, poll = false) {
 
   useEffect(() => {
     if (!poll) return;
-    const timer = window.setInterval(() => void refresh().catch(() => undefined), 3000);
-    return () => window.clearInterval(timer);
+    return startVisiblePolling(() => refresh(), () => 10_000);
   }, [poll, refresh]);
 
   return { suggestions, loading, refresh };

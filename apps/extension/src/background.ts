@@ -17,6 +17,7 @@ import {
   readerIsStalled,
   syncInterval,
   repairInterval,
+  idleAlarmMinutes,
   type AutomationState,
   type ImportPurpose,
   type ReaderHeartbeat,
@@ -575,6 +576,7 @@ async function startXLikesImport(requested?: {
   await saveXLikesImportState(state);
   if (worker.id) {
     await chrome.tabs.update(worker.id, { autoDiscardable: false });
+    await setAutomationCadence(true);
     if (worker.status === "complete") void dispatchXLikes(worker.id);
   }
   return state;
@@ -763,6 +765,7 @@ async function startSourceIntake(
   }
   state.workerTabId = worker.id;
   await chrome.tabs.update(worker.id, { autoDiscardable: false });
+  await setAutomationCadence(true);
   await saveSourceIntakeState(state);
   if (worker.status === "complete") void dispatchSourceIntake(worker.id);
   return state;
@@ -2254,6 +2257,12 @@ async function resumeSourceIntakes() {
 
 void resumeInterruptedBatches();
 
+async function setAutomationCadence(active: boolean) {
+  const periodInMinutes = active ? 1 : idleAlarmMinutes;
+  const existing = await chrome.alarms.get(AUTOMATION_ALARM);
+  if (existing?.periodInMinutes !== periodInMinutes)
+    await chrome.alarms.create(AUTOMATION_ALARM, { periodInMinutes });
+}
 let automationTickRunning = false;
 let automationWrite = Promise.resolve();
 function changeAutomation(change: (state: AutomationState) => void) {
@@ -2389,6 +2398,7 @@ async function launchAutomatedJob(job: AutomatedJob, purpose?: ImportPurpose) {
 async function runAutomaticImports() {
   if (automationTickRunning) return;
   automationTickRunning = true;
+  let active = false;
   try {
     const values = await chrome.storage.local.get([
       AUTOMATION_KEY,
@@ -2426,6 +2436,7 @@ async function runAutomaticImports() {
           job.state.purpose !== "sync",
       );
     });
+    active = jobs.some(job => job.state.running || (!job.state.exhausted && !job.state.needsAttention && job.state.stopReason !== "paused"));
     const now = Date.now();
     const batches = await getBatchStates();
     for (const job of jobs.filter((j) => j.state.running)) {
@@ -2537,6 +2548,7 @@ async function runAutomaticImports() {
             [job.url]: now + repairInterval,
           };
       });
+      active = true;
       await launchAutomatedJob(job, purpose);
       return;
     }
@@ -2547,11 +2559,12 @@ async function runAutomaticImports() {
         "Automatic import could not start. Check the vault connection; checkpoints are retained.";
     });
   } finally {
+    await setAutomationCadence(active || activeJobIds.size > 0).catch(() => undefined);
     automationTickRunning = false;
   }
 }
 async function initializeImportAutomation() {
-  await chrome.alarms.create(AUTOMATION_ALARM, { periodInMinutes: 1 });
+  await setAutomationCadence(false);
   const migration = await chrome.storage.local.get("failureHistorySeededV1");
   if (!migration.failureHistorySeededV1) {
     const batches = await getBatchStates();

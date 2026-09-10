@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { AUTOMATION_ALARM } from "./importAutomation";
+import { AUTOMATION_ALARM, idleAlarmMinutes } from "./importAutomation";
 import { SOURCE_INTAKES_KEY, SETTINGS_KEY } from "./storage";
 
 afterEach(() => {
@@ -52,6 +52,7 @@ async function fixture(source: Record<string, unknown>) {
     },
     alarms: {
       create: vi.fn(),
+      get: vi.fn(async () => undefined),
       onAlarm: {
         addListener: (fn: typeof alarm) => {
           alarm = fn;
@@ -91,6 +92,7 @@ const stopped = {
 test("an alarm resumes the retained page in an unfocused owned tab", async () => {
   const f = await fixture(stopped);
   await vi.waitFor(() => expect(f.create).toHaveBeenCalledOnce());
+  expect(chrome.alarms.create).toHaveBeenCalledWith(AUTOMATION_ALARM, { periodInMinutes: 1 });
   expect(f.create).toHaveBeenCalledWith({
     url: stopped.currentUrl,
     active: false,
@@ -123,4 +125,9 @@ test("authentication failures require attention without opening repeated tabs", 
   );
   f.tick();
   expect(f.create).not.toHaveBeenCalled();
+});
+
+test("idle imports use a slow alarm while active recovery keeps its watchdog", async () => {
+  await fixture({ ...stopped, exhausted: true, needsAttention: true });
+  await vi.waitFor(() => expect(chrome.alarms.create).toHaveBeenLastCalledWith(AUTOMATION_ALARM, { periodInMinutes: idleAlarmMinutes }));
 });

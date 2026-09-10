@@ -7,7 +7,7 @@ deployed home page makes no hosted Convex archive queries.
 
 `scripts/install-local-services.mjs`, run with Node 22 on Air Blue, installs two
 user LaunchAgents: the canonical local vault starts at login and restarts after
-exit; a Drive backup runs at login and once an hour while the Mac is awake.
+exit; a Drive backup runs every six hours while the Mac is awake, with a cheap due check at login that skips exports when the backup is still current.
 Neither service prevents sleep. Missed backup intervals are handled by launchd
 after wake. No browser profile data or credentials are read or copied.
 
@@ -32,7 +32,7 @@ Status is in `.convex/drive-backup/progress.json`; `verified` records the last
 successful upload. A failed or interrupted attempt never advances the verified
 chain. `.convex/drive-backup/pending.json` contains a sensitive upload capability
 and must not be printed or committed. Credentials are obtained in memory from
-the local deployment, not from browser storage. The hourly export and upload
+the local deployment, not from browser storage. The six-hour export and upload
 do not use hosted Convex database/storage bandwidth.
 
 ## Recovery
