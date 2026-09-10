@@ -1,4 +1,5 @@
 import { paginationOptsValidator } from "convex/server";
+import { refreshDiscoveryReference } from "./lib/discoveryIndex";
 import { v } from "convex/values";
 import { mutation, query, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -311,6 +312,7 @@ export const linkPublication = mutation({
       updatedAt: now,
     });
     await touchArtwork(ctx, args.artworkId, now);
+    await refreshDiscoveryReference(ctx, args.referenceId);
     return await ctx.db.get(publicationId);
   },
 });
@@ -331,6 +333,7 @@ export const unlinkPublication = mutation({
       .unique();
     if (!existing) return { removed: false };
     await ctx.db.delete(existing._id);
+    await refreshDiscoveryReference(ctx, args.referenceId);
     if (await ctx.db.get(args.artworkId)) {
       await touchArtwork(ctx, args.artworkId, Date.now());
     }

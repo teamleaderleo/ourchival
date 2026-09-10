@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { refreshDiscoveryReference } from "./lib/discoveryIndex";
 import { mutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireOwnerAccess } from "./lib/privateAccess";
@@ -41,6 +42,7 @@ export const linkByUrl = mutation({
       updatedAt: now,
     });
     await ctx.db.patch(args.artworkId, { updatedAt: now });
+    await refreshDiscoveryReference(ctx, reference._id);
     return {
       publication: await ctx.db.get(publicationId),
       reference: referenceProjection(reference),

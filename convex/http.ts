@@ -4,7 +4,8 @@ import {
   imageDimensions,
 } from "./lib/assetQuality";
 import { httpRouter } from "convex/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
 import {
   fetchDriveFile,
@@ -165,6 +166,7 @@ for (const path of [
   "/capture-observation-gaps",
   "/capture-links",
   "/references",
+  "/archive-discovery",
   "/reference-status",
   "/reference",
   "/asset",
@@ -371,6 +373,34 @@ http.route({
         "Cache-Control": "private, max-age=3600",
       },
     });
+  }),
+});
+
+http.route({
+  path: "/archive-discovery",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const denied = await ownerDenied(request);
+    if (denied) return denied;
+    const url = new URL(request.url);
+    try {
+      const result = await ctx.runQuery(api.archiveDiscovery.list, {
+        accessKey: bearerToken(request)!, revealSensitive: url.searchParams.get("revealSensitive") === "true",
+        search: url.searchParams.get("search") || "",
+        selected: (url.searchParams.get("selected") || undefined) as Id<"archiveFacets"> | undefined,
+      });
+      return jsonResponse(request, { ok: true, ...result });
+    } catch { return jsonResponse(request, { ok: false, error: "Could not load artists and tags. Clear an invalid filter or try again." }, 400); }
+  }),
+});
+http.route({
+  path: "/archive-discovery",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const denied = await ownerDenied(request);
+    if (denied) return denied;
+    await ctx.runMutation(api.archiveDiscovery.ensure, { accessKey: bearerToken(request)! });
+    return jsonResponse(request, { ok: true });
   }),
 });
 

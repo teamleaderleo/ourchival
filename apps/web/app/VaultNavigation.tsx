@@ -1,6 +1,5 @@
 import { CatIcon } from "./CatIcon";
 import { SidebarDiscover } from "./SidebarDiscover";
-import type { SavedReference } from "./referenceVaultModel";
 
 export type VaultView =
   | "inbox"
@@ -27,14 +26,14 @@ export function VaultSidebar({
   activeView,
   counts,
   onChange,
-  references,
+  revealSensitive,
   query,
   onSearch,
 }: {
   activeView: VaultView;
   counts: Record<VaultView, number>;
   onChange: (view: VaultView) => void;
-  references: SavedReference[];
+  revealSensitive: boolean;
   query: string;
   onSearch: (query: string) => void;
 }) {
@@ -81,7 +80,7 @@ export function VaultSidebar({
         />
       </nav>
 
-      <SidebarDiscover references={references} query={query} onSearch={onSearch} />
+      <SidebarDiscover revealSensitive={revealSensitive} query={query} onSearch={onSearch} />
       <nav className="sidebar-section" aria-label="Workflow">
         <VaultNavButton
           label="Review later"

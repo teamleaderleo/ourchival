@@ -3,8 +3,10 @@ import { v } from "convex/values";
 import { searchTables } from "./lib/searchSchema";
 import { communityTables } from "./lib/communitySchema";
 import { artworkTables } from "./lib/artworkSchema";
+import { discoveryTables } from "./lib/discoverySchema";
 
 export default defineSchema({
+  ...discoveryTables,
   ...searchTables,
   ...communityTables,
   ...artworkTables,

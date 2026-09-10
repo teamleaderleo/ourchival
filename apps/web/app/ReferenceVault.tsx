@@ -210,7 +210,7 @@ export function ReferenceVault() {
         className={`vault-workspace ${vault.selectedReference ? "has-inspector" : ""}`}
       >
         <VaultSidebar
-          references={vault.filteredReferences}
+          revealSensitive={vault.revealSensitive}
           query={vault.query}
           onSearch={(query) => { vault.changeView("all"); vault.setQuery(query); }}
           activeView={vault.activeView}

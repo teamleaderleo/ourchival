@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { refreshDiscoveryReference } from "./lib/discoveryIndex";
 import {
   internalMutation,
   mutation,
@@ -335,6 +336,7 @@ async function linkPublication(
     updatedAt: now,
   });
   await ctx.db.patch(artworkId, { updatedAt: now });
+  await refreshDiscoveryReference(ctx, referenceId);
   return publicationId;
 }
 

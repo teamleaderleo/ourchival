@@ -1,4 +1,5 @@
 import { visualResultCurrent } from "./visualMetadata";
+import { refreshDiscoveryReference } from "./discoveryIndex";
 import { expandVisual } from "./compactVisual";
 import { communityForSearch } from "./communityMetadata";
 import { getSourceContext } from "./sourceContext";
@@ -28,6 +29,7 @@ export async function refreshReferenceSearch(
   ctx: MutationCtx,
   referenceId: Id<"references">,
 ): Promise<void> {
+  await refreshDiscoveryReference(ctx, referenceId);
   const [reference, existing] = await Promise.all([
     ctx.db.get(referenceId),
     ctx.db
