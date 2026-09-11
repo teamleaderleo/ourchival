@@ -366,6 +366,9 @@ export function useReferenceVault(pageSize = defaultPageSize) {
         sort,
         imagesOnly: String(imagesOnly),
         revealSensitive: String(revealSensitive),
+        // Card payload without intake-diagnostic blobs (fetch receipts,
+        // field sources); detail surfaces don't read those fields.
+        compact: "true",
       });
       if (favoritesOnly) params.set("favorites", "true");
       if (debouncedQuery) params.set("query", debouncedQuery);

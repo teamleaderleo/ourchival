@@ -351,6 +351,21 @@ http.route({
     if (!fileId)
       return jsonResponse(request, { ok: false, error: "id is required" }, 400);
 
+    // Drive originals are write-once: new bytes always mint a new file ID, so
+    // a per-ID entity tag is a correct cache validator. Repeat views then
+    // revalidate into 304s instead of re-streaming full originals.
+    const etag = `"drive-${fileId}"`;
+    if (request.headers.get("If-None-Match") === etag) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          ...requestCorsHeaders(request),
+          ETag: etag,
+          "Cache-Control": "private, max-age=86400",
+        },
+      });
+    }
+
     const driveResponse = await fetchDriveFile(fileId);
     if (!driveResponse.ok || !driveResponse.body) {
       return jsonResponse(
@@ -370,7 +385,8 @@ http.route({
         "Content-Type":
           driveResponse.headers.get("Content-Type") ??
           "application/octet-stream",
-        "Cache-Control": "private, max-age=3600",
+        ETag: etag,
+        "Cache-Control": "private, max-age=86400",
       },
     });
   }),
@@ -411,11 +427,22 @@ http.route({
     const denied = await ownerDenied(request);
     if (denied) return denied;
     try {
-      await ctx.runMutation(internal.httpDb.initializeReferenceStats, {});
-      await ctx.runMutation(
-        internal.preferenceExport.ensureExportRequested,
-        {},
-      );
+      // Both maintenance mutations are one-time bootstraps. Resolve their
+      // readiness with reads first so warm feed hits stay read-only instead
+      // of paying for two write transactions on every page load.
+      const [maintenance, exportState] = await Promise.all([
+        ctx.runQuery(internal.httpDb.feedMaintenanceStatus, {}),
+        ctx.runQuery(internal.preferenceExport.getExportState, {}),
+      ]);
+      if (!maintenance.statsReady) {
+        await ctx.runMutation(internal.httpDb.initializeReferenceStats, {});
+      }
+      if (!exportState) {
+        await ctx.runMutation(
+          internal.preferenceExport.ensureExportRequested,
+          {},
+        );
+      }
       const requestUrl = new URL(request.url);
       const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? 48);
       const pageSize = Number.isFinite(requestedLimit)
@@ -1087,6 +1114,7 @@ http.route({
       }),
     });
 
+    await scheduleDerivativeQueue(ctx, created.assetId);
     return jsonResponse(
       request,
       {
@@ -1248,6 +1276,7 @@ async function persistDuplicateCapture(
     storedAsset,
     duplicate.storedAsset,
   );
+  if (saved?.assetId) await scheduleDerivativeQueue(ctx, saved.assetId);
   return saved
     ? {
         reference: saved.reference,
@@ -1256,6 +1285,15 @@ async function persistDuplicateCapture(
         ...(assetReceipt ? { storedAsset: assetReceipt } : {}),
       }
     : null;
+}
+
+// Event-driven derivatives: queue the job at capture time so the polling
+// cron stays a backstop instead of the pipeline driver.
+async function scheduleDerivativeQueue(ctx: any, assetId: unknown) {
+  if (!assetId) return;
+  await ctx.scheduler.runAfter(0, internal.mediaDerivatives.queueForAsset, {
+    assetId,
+  });
 }
 
 export function duplicateAssetReceipt<T extends { storageProvider?: string }>(

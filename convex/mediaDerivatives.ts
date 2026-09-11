@@ -75,6 +75,30 @@ export const queueMissing = internalMutation({
   },
 });
 
+export const queueForAsset = internalMutation({
+  args: {
+    assetId: v.id("assets"),
+  },
+  handler: async (ctx, args) => {
+    const asset = await ctx.db.get(args.assetId);
+    if (!asset) return null;
+    if (!hasStoredOriginal(asset)) {
+      if (asset.derivativeStatus !== "failed") {
+        await ctx.db.patch(asset._id, { derivativeStatus: "failed" });
+      }
+      return { queued: false as const, status: "failed" as const };
+    }
+    if (asset.previewStorageId && asset.thumbStorageId) {
+      if (asset.derivativeStatus !== "ready") {
+        await ctx.db.patch(asset._id, { derivativeStatus: "ready" });
+      }
+      return { queued: false as const, status: "ready" as const };
+    }
+    const job = await queueAsset(ctx, asset, false);
+    return { queued: job.status === "queued", status: job.status };
+  },
+});
+
 export const getJobContext = internalQuery({
   args: {
     jobId: v.id("enrichmentJobs"),

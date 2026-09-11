@@ -10,6 +10,7 @@ import { captureSessionCompletedAt } from "./lib/captureSessions";
 import {
   applyReferenceStatsDelta,
   ensureReferenceStats,
+  hasReferenceStats,
   listReferencePage,
   sourceSnapshotPayload,
 } from "./lib/referenceCatalog";
@@ -23,6 +24,13 @@ import { recordReferenceOrigin } from "./lib/referenceOrigin";
 export const initializeReferenceStats = internalMutation({
   args: {},
   handler: async (ctx) => await ensureReferenceStats(ctx),
+});
+
+export const feedMaintenanceStatus = internalQuery({
+  args: {},
+  handler: async (ctx) => ({
+    statsReady: await hasReferenceStats(ctx),
+  }),
 });
 
 export const listReferences = internalQuery({

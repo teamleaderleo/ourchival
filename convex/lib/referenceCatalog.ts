@@ -178,7 +178,7 @@ export async function listReferencePage(ctx: any, request: Request | string) {
 
   const hydrated = await Promise.all(
     references.map(({ reference, snapshot, searchMatches }) =>
-      hydrateReference(ctx, origin, reference, snapshot, searchMatches, url.searchParams.get("revealSensitive") === "true"),
+      hydrateReference(ctx, origin, reference, snapshot, searchMatches, url.searchParams.get("revealSensitive") === "true", url.searchParams.get("compact") === "true"),
     ),
   );
   const counts = await getReferenceCounts(ctx);
@@ -250,6 +250,39 @@ export async function ensureReferenceStats(ctx: any) {
   return await rebuildReferenceStats(ctx);
 }
 
+export async function hasReferenceStats(ctx: any): Promise<boolean> {
+  return (await getReferenceStatsDocument(ctx)) !== null;
+}
+
+// Compact feed projection: drops intake-diagnostic blobs that no gallery or
+// detail surface reads (verified: no web/extension/shared references).
+// Data stays stored; only the response payload shrinks (~33% measured).
+const COMPACT_STRIPPED_ASSET_FIELDS = [
+  "fetchReceipt",
+  "promotionReceipt",
+  "jsonMetadata",
+  "fetchedUrl",
+  "qualityReason",
+] as const;
+const COMPACT_STRIPPED_SNAPSHOT_FIELDS = [
+  "fieldSources",
+  "sourceMetadata",
+] as const;
+
+function compactAsset(asset: any, compact: boolean) {
+  if (!compact) return asset;
+  const projected = { ...asset };
+  for (const field of COMPACT_STRIPPED_ASSET_FIELDS) delete projected[field];
+  return projected;
+}
+
+function compactSnapshot(payload: Record<string, unknown>, compact: boolean) {
+  if (!compact) return payload;
+  const projected = { ...payload };
+  for (const field of COMPACT_STRIPPED_SNAPSHOT_FIELDS) delete projected[field];
+  return projected;
+}
+
 export async function hydrateReference(
   ctx: any,
   origin: string,
@@ -257,6 +290,7 @@ export async function hydrateReference(
   knownSnapshot: any | null | undefined = undefined,
   knownSearchMatches: SearchMatch[] = [],
   revealSensitive = false,
+  compact = false,
 ) {
   const [assets, snapshot] = await Promise.all([
     ctx.db
@@ -303,7 +337,7 @@ export async function hydrateReference(
       ]);
 
       return {
-        ...asset,
+        ...compactAsset(asset, compact),
         storedUrl: asset.driveFileId
           ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
           : originalStorageUrl,
@@ -321,7 +355,7 @@ export async function hydrateReference(
     ...(snapshot
       ? {
           sourceSnapshot: {
-            ...sourceSnapshotPayload(snapshot),
+            ...compactSnapshot(sourceSnapshotPayload(snapshot), compact),
             ...(sealed && !revealSensitive ? { previewImageUrl: undefined } : {}),
           },
         }

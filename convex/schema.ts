@@ -55,21 +55,10 @@ export default defineSchema({
     .index("by_source_url", ["sourceUrl"])
     .index("by_canonical_url", ["canonicalUrl"])
     .index("by_capture_session", ["captureSessionId"])
-    .index("by_triage_state", ["triageState"])
     .index("by_captured_at", ["capturedAt"])
     .index("by_browse_lane_and_captured_at", ["browseLane", "capturedAt"])
     .index("by_browse_lane_and_published_at", ["browseLane", "publishedAt"])
-    .index("by_published_at", ["publishedAt"])
-    .searchIndex("search_references", {
-      searchField: "title",
-      filterFields: [
-        "platform",
-        "favorite",
-        "triageState",
-        "archived",
-        "deleted",
-      ],
-    }),
+    .index("by_published_at", ["publishedAt"]),
 
   referenceStats: defineTable({
     key: v.string(),

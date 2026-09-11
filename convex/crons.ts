@@ -19,9 +19,9 @@ const crons = cronJobs();
 
 crons.interval(
   "queue missing media derivatives",
-  { minutes: 1 },
+  { minutes: 2 },
   queueMissingMedia,
-  { limit: 4 },
+  { limit: 8 },
 );
 
 export default crons;
