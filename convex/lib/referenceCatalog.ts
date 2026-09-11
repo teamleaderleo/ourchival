@@ -263,6 +263,8 @@ const COMPACT_STRIPPED_ASSET_FIELDS = [
   "jsonMetadata",
   "fetchedUrl",
   "qualityReason",
+  "drivePreviewFileId",
+  "driveThumbFileId",
 ] as const;
 const COMPACT_STRIPPED_SNAPSHOT_FIELDS = [
   "fieldSources",
@@ -336,13 +338,22 @@ export async function hydrateReference(
         asset.thumbStorageId ? ctx.storage.getUrl(asset.thumbStorageId) : null,
       ]);
 
+      // Verified Drive mirrors win: same proxy + ETag path as originals,
+      // off the metered file-storage bytes. Convex URLs stay as fallback.
+      const drivePreviewUrl = asset.drivePreviewFileId
+        ? `${origin}/drive-file?id=${encodeURIComponent(asset.drivePreviewFileId)}`
+        : null;
+      const driveThumbUrl = asset.driveThumbFileId
+        ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveThumbFileId)}`
+        : null;
+
       return {
         ...compactAsset(asset, compact),
         storedUrl: asset.driveFileId
           ? `${origin}/drive-file?id=${encodeURIComponent(asset.driveFileId)}`
           : originalStorageUrl,
-        previewUrl,
-        thumbUrl,
+        previewUrl: drivePreviewUrl ?? previewUrl,
+        thumbUrl: driveThumbUrl ?? thumbUrl,
       };
     }),
   );

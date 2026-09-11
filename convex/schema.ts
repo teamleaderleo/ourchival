@@ -148,6 +148,8 @@ export default defineSchema({
     driveWebContentLink: v.optional(v.string()),
     driveThumbnailLink: v.optional(v.string()),
     driveMimeType: v.optional(v.string()),
+    drivePreviewFileId: v.optional(v.string()),
+    driveThumbFileId: v.optional(v.string()),
     mimeType: v.optional(v.string()),
     originalFileName: v.optional(v.string()),
     width: v.optional(v.number()),
@@ -230,6 +232,7 @@ export default defineSchema({
       v.literal("dominant_colors"),
       v.literal("perceptual_hash"),
       v.literal("media_derivatives"),
+      v.literal("drive_derivatives"),
     ),
     status: v.union(
       v.literal("queued"),

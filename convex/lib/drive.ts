@@ -2,8 +2,12 @@ import { configuredDriveParent, configuredOwnSource, drivePath } from "./driveOr
 const tokenEndpoint = "https://oauth2.googleapis.com/token";
 const driveFilesEndpoint = "https://www.googleapis.com/drive/v3/files";
 const driveAboutEndpoint = "https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress,permissionId)";
-const driveUploadEndpoint = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size,webViewLink,webContentLink,thumbnailLink,parents";
-const driveResumableUploadEndpoint = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,size,webViewLink,webContentLink,thumbnailLink,parents";
+const driveBaseUploadFields =
+  "id,name,mimeType,size,webViewLink,webContentLink,thumbnailLink,parents";
+const driveUploadEndpointFor = (extraFields: string[] = []) =>
+  `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=${driveBaseUploadFields}${extraFields.length ? `,${extraFields.join(",")}` : ""}`;
+const driveUploadEndpoint = driveUploadEndpointFor();
+const driveResumableUploadEndpoint = `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=${driveBaseUploadFields}`;
 const driveUploadChunkBytes = 8 * 1024 * 1024;
 const preferenceFileName = "ourchival-preferences.json";
 
@@ -19,6 +23,7 @@ type DriveFile = {
   name?: string;
   mimeType?: string;
   size?: string;
+  md5Checksum?: string;
   webViewLink?: string;
   webContentLink?: string;
   thumbnailLink?: string;
@@ -83,6 +88,9 @@ export async function uploadBlobToDrive(args: {
   title?: string;
   mimeType?: string;
   quality?: string;
+  fileName?: string;
+  parentFolderId?: string;
+  extraFields?: string[];
 }): Promise<DriveUploadResult> {
   const config = getDriveConfig();
 
@@ -91,8 +99,10 @@ export async function uploadBlobToDrive(args: {
   }
 
   const accessToken = await getAccessToken(config);
-  const fileName = buildFileName(args.title, args.sourceUrl, args.mimeType);
-  const parent = configuredDriveParent(config.parentFolderId, drivePath(args.sourceUrl, args.quality, configuredOwnSource(args.sourceUrl)));
+  const fileName = args.fileName ?? buildFileName(args.title, args.sourceUrl, args.mimeType);
+  const parent =
+    args.parentFolderId ??
+    configuredDriveParent(config.parentFolderId, drivePath(args.sourceUrl, args.quality, configuredOwnSource(args.sourceUrl)));
   const metadata = {
     name: fileName,
     ...(parent ? { parents: [parent] } : {}),
@@ -122,7 +132,7 @@ export async function uploadBlobToDrive(args: {
     { type: `multipart/related; boundary=${boundary}` },
   );
 
-  const response = await fetch(driveUploadEndpoint, {
+  const response = await fetch(driveUploadEndpointFor(args.extraFields ?? []), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -144,6 +154,60 @@ export async function uploadBlobToDrive(args: {
     ok: true,
     status: "stored original asset in Google Drive",
     file,
+  };
+}
+
+export type DerivativeUploadResult = {
+  ok: boolean;
+  status: string;
+  fileId?: string;
+  size?: number;
+  md5Checksum?: string;
+};
+
+// Derivative mirror uploads. Names are asset-scoped (shared folders hold many
+// assets) and the caller verifies size + md5 before recording the IDs.
+export function resolveDerivativeParent(
+  sourceUrl: string,
+  driveFolderId: string | undefined,
+): string | undefined {
+  if (driveFolderId) return driveFolderId;
+  const config = getDriveConfig();
+  if (!config) return undefined;
+  return configuredDriveParent(
+    config.parentFolderId,
+    drivePath(sourceUrl, "degraded", configuredOwnSource(sourceUrl)),
+  );
+}
+
+export async function uploadDerivativeToDrive(args: {
+  blob: Blob;
+  name: string;
+  sourceUrl: string;
+  parentFolderId?: string;
+  mimeType?: string;
+}): Promise<DerivativeUploadResult> {
+  const parent = resolveDerivativeParent(args.sourceUrl, args.parentFolderId);
+  const uploaded = await uploadBlobToDrive({
+    blob: args.blob,
+    sourceUrl: args.sourceUrl,
+    fileName: args.name,
+    ...(parent ? { parentFolderId: parent } : {}),
+    ...(args.mimeType ? { mimeType: args.mimeType } : {}),
+    extraFields: ["md5Checksum"],
+  });
+  if (!uploaded.ok || !uploaded.file?.id) {
+    return { ok: false, status: uploaded.status };
+  }
+  return {
+    ok: true,
+    status: "stored derivative in Google Drive",
+    fileId: uploaded.file.id,
+    size:
+      uploaded.file.size === undefined
+        ? undefined
+        : Number(uploaded.file.size),
+    md5Checksum: uploaded.file.md5Checksum,
   };
 }
 

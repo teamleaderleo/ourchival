@@ -13,6 +13,8 @@ export type ReferenceAsset = {
   storageProvider?: "google_drive" | "convex" | "linked";
   driveFileId?: string;
   driveWebViewLink?: string;
+  drivePreviewFileId?: string;
+  driveThumbFileId?: string;
   width?: number;
   height?: number;
   contentHash?: string;
