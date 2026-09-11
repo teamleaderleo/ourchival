@@ -154,9 +154,28 @@ backfill drains incrementally at 4 jobs/cron — by design, no thundering
 herd. Note: concurrent sqlite CLI reads can hit `database is locked`
 while the backend writes; kept to two quick probes.
 
+## Pass 8 — protected-URL preload + serving audit (done)
+
+Serving measurements (local vault, warm): thumbs 1–30 KB avg ~13 KB
+(`image/avif`, 1–4 ms), previews 52–229 KB avg ~143 KB, all AVIF except one
+tiny WebP. Convex signed URLs carry `private, max-age=2592000` + ranges;
+browser caching is already optimal. Recipe (1600/WebP-q82-or-AVIF-q55,
+384/WebP-q76-or-AVIF-q50, lanczos3, AVIF 4:4:4, effort 4) matches the
+`COMPACT_PREVIEWS.md` visual eval: lines/colors hold, AVIF slightly smooths
+fine texture — softness, not grain. No recipe change without a visual study.
+
+One real gap, caused by Pass 7's success: quick-look neighbor preload
+skipped every `/drive-file` URL, so mirrored items lost prev/next prefetch
+just as mirrors started landing. Fix: `primePrivateImageUrl()` warms the
+shared blob cache through the same authed fetch path, so opening a primed
+neighbor resolves instantly. Cards were already safe (`ThumbImage` →
+`usePrivateImageUrl` with thumb→preview fallback cycling).
+Tests: primer dedups + swallows failures.
+
 ## Next targets (ranked)
 
-1. ~~Crons, prefetch, index diet, retention, Drive mirrors~~ (Passes 3–7).
+1. ~~Crons, prefetch, index diet, retention, Drive mirrors, preload~~
+   (Passes 3–8).
 2. Reclaim Convex derivative blobs once Drive twins verify (reuse
    `storageIsReferenced` guard; keep originals policy unchanged).
 3. If usage still pinches: self-host Convex (open source) on Big Red —

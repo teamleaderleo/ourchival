@@ -11,6 +11,13 @@ const previewCache = createPreviewCache(async sourceUrl => {
 });
 let listening = false;
 
+// Prime the shared blob cache for an upcoming view (e.g. quick-look
+// neighbors). Same fetch + auth path as the viewer, so a primed URL
+// resolves instantly; failures are ignored and retried on open.
+export function primePrivateImageUrl(sourceUrl: string) {
+  void previewCache.get(sourceUrl).catch(() => undefined);
+}
+
 export function usePrivateImageUrl(sourceUrl?: string | null) {
   const [attempt, setAttempt] = useState(0);
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(

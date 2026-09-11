@@ -7,7 +7,7 @@ import {
   type SavedReference,
 } from "./referenceVaultModel";
 import { getDomain, getInitial } from "./ReferenceCards";
-import { isProtectedDriveUrl, usePrivateImageUrl } from "./usePrivateImageUrl";
+import { isProtectedDriveUrl, primePrivateImageUrl, usePrivateImageUrl } from "./usePrivateImageUrl";
 import { ReferenceVisualMetadata } from "./ReferenceVisualMetadata";
 import { ReferenceCommunityTags } from "./ReferenceCommunityTags";
 import { CloseButton } from "./CloseButton";
@@ -112,7 +112,11 @@ export function ReferenceQuickLook({
   useEffect(() => {
     for (const adjacent of [previous, next]) {
       const source = adjacent ? referencePreviewSource(adjacent) : undefined;
-      if (!source || isProtectedDriveUrl(source)) continue;
+      if (!source) continue;
+      if (isProtectedDriveUrl(source)) {
+        primePrivateImageUrl(source);
+        continue;
+      }
       const image = new Image();
       image.decoding = "async";
       image.src = source;

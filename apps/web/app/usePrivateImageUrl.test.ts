@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isProtectedDriveUrl } from "./usePrivateImageUrl";
+import { isProtectedDriveUrl, primePrivateImageUrl } from "./usePrivateImageUrl";
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("isProtectedDriveUrl", () => {
@@ -23,5 +24,24 @@ describe("isProtectedDriveUrl", () => {
     expect(isProtectedDriveUrl("https://safe.convex.cloud/drive-file")).toBe(
       false,
     );
+  });
+});
+
+describe("primePrivateImageUrl", () => {
+  it("warms the shared cache and swallows load failures", async () => {
+    const blob = new Blob(["bytes"], { type: "image/avif" });
+    const fetchMock = vi.fn(async () => new Response(blob));
+    vi.stubGlobal("fetch", fetchMock);
+    primePrivateImageUrl("https://safe.convex.site/drive-file?id=next");
+    primePrivateImageUrl("https://safe.convex.site/drive-file?id=next");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("missing", { status: 404 })),
+    );
+    await expect(
+      (async () => primePrivateImageUrl("https://safe.convex.site/drive-file?id=gone"))(),
+    ).resolves.toBeUndefined();
   });
 });
