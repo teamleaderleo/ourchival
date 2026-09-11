@@ -102,15 +102,64 @@ Verification: full suite **392/392 across 101 files**, convex typecheck
 clean. Live: one-time 8.4 s schema migration on the 2.3 GB local DB, then
 warm feed **7 ms** (fastest recorded), same 32,666 compact bytes.
 
+## Pass 6 — retention sweep + dead table drop (done, pushed `3442204`)
+
+Unbounded growth audit: `captureObservations` (per-item rows per session),
+`enrichmentJobs` (full history), `exports` (receipts).
+
+- New `retention.sweep` + daily cron: deletes observations of terminal
+  sessions older than 7d (session receipts stay; gap detection only serves
+  in-flight sessions) and terminal jobs older than 30d (running/queued never
+  touched). Capped per run (50 sessions / 500 jobs) so backlogs drain over
+  days, never blowing a transaction.
+- Safe for dedup: every derivative queue path checks storage IDs before
+  consulting job history. Side effect: transient failures get a fresh attempt
+  ~30d later instead of staying failed forever — an improvement, logged.
+- `exports` table had **zero readers and zero writers** anywhere (web,
+  extension, convex): dropped from the schema entirely.
+- Tests: `convex/retention.test.ts` (aged terminal rows go, live/recent
+  rows and all session receipts stay). Full suite **393/393 across 102
+  files**, typecheck clean.
+
+## Pass 7 — derivatives → Drive mirrors (done, pushed `49b051c`)
+
+The file-storage play: every Convex thumb/preview gets a verified Drive twin,
+so metered `_storage` bytes can later be reclaimed without losing a copy.
+
+- `uploadBlobToDrive` gains optional explicit `fileName`, `parentFolderId`,
+  `extraFields` (defaults preserve old behavior); new
+  `uploadDerivativeToDrive` + `resolveDerivativeParent` (asset's Drive folder,
+  else `{Provider}/Other renditions`). Names are asset-scoped
+  (`{assetId}-{preview|thumb}.webp/avif`) — shared folders hold many assets.
+- New `driveDerivatives` pipeline: `queueMissing` (ready assets lacking Drive
+  IDs, active/terminal dedup mirroring the media pipeline), Node worker
+  (`driveDerivativesNode`) fetching Convex blobs, uploading, and verifying
+  **size + md5** before `complete` records `drivePreviewFileId` /
+  `driveThumbFileId`. Failures stay visible; no retry loops.
+- Serving: hydration prefers verified Drive IDs through the cached
+  `/drive-file` proxy (ETag path from Pass 4); Convex signed URLs stay as
+  fallback. Compact payload strips the raw IDs (URLs are prebuilt).
+- 5-minute mirror cron (limit 4). Convex blobs are NOT deleted yet — that is
+  a separate reclamation pass reusing the `storageIsReferenced` guard.
+- Tests: queue/record/serve-preference (`driveDerivatives.test.ts`), pure
+  verifier both outcomes (`driveDerivativesNode.test.ts`). Full suite
+  **397/397 across 104 files**, convex typecheck clean.
+
+Live validation (done 2026-09-11 ~05:00): the 5-minute cron fired,
+`drive_derivatives` jobs queued/ran/succeeded on the local vault (observed
+directly in job rows). Oldest-first feed now serves Drive-backed thumbs +
+previews (`/drive-file?id=…`); a live derivative thumb returns 200,
+`image/avif`, 8.5 KB in 0.5 s first fetch, then ETag/304 cached. The 18k
+backfill drains incrementally at 4 jobs/cron — by design, no thundering
+herd. Note: concurrent sqlite CLI reads can hit `database is locked`
+while the backend writes; kept to two quick probes.
+
 ## Next targets (ranked)
 
-1. ~~Cron cadence~~ (Pass 3). ~~Prefetch~~ (already built). ~~Index diet~~
-   (Pass 5).
-2. Retention on unbounded tables: `captureObservations`, `enrichmentJobs`,
-   `exports` grow forever (storage + index copies).
-3. Derivatives → Drive (the big one for file storage): track under
-   `BOUNDED_LOCAL_MEDIA.md` step 3.
-4. If usage still pinches: self-host Convex (open source) on Big Red —
+1. ~~Crons, prefetch, index diet, retention, Drive mirrors~~ (Passes 3–7).
+2. Reclaim Convex derivative blobs once Drive twins verify (reuse
+   `storageIsReferenced` guard; keep originals policy unchanged).
+3. If usage still pinches: self-host Convex (open source) on Big Red —
    same code, own compute, zero metering.
 
 ## Housekeeping flags
