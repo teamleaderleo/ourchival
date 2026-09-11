@@ -3,6 +3,7 @@ import {
   makeFunctionReference,
   type FunctionReference,
 } from "convex/server";
+import { internal } from "./_generated/api";
 
 const queueMissingMedia = makeFunctionReference<
   "mutation",
@@ -23,5 +24,9 @@ crons.interval(
   queueMissingMedia,
   { limit: 8 },
 );
+
+// Daily janitor: terminal capture observations (>7d) and enrichment jobs
+// (>30d). Receipts and live jobs are never touched; each run is capped.
+crons.interval("retention sweep", { hours: 24 }, internal.retention.sweep, {});
 
 export default crons;

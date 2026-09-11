@@ -270,19 +270,6 @@ export default defineSchema({
     .index("by_job", ["jobId"])
     .index("by_reference_status", ["referenceId", "status"]),
 
-  exports: defineTable({
-    referenceId: v.id("references"),
-    assetId: v.optional(v.id("assets")),
-    target: v.union(
-      v.literal("download"),
-      v.literal("clip_studio_paint"),
-      v.literal("procreate"),
-      v.literal("google_photos"),
-      v.literal("other"),
-    ),
-    createdAt: v.number(),
-  }).index("by_reference", ["referenceId"]),
-
   tags: defineTable({
     name: v.string(),
     slug: v.string(),
