@@ -262,6 +262,17 @@ batch worker. Verified live: 32 → 82 succeeded in one tick
 (2 seeds × 25/batch design throughput ≈ 600/hr). Bench: 25,889 assets,
 25,217 Drive originals, inventory now reports `mirrored`.
 
+## Pass 14 — background yields to the gallery
+
+The feed queued behind batch Sharp/Drive writes: 20s+ page loads under
+pipeline contention, 9ms warm-idle. A throttled foreground heartbeat on
+initial feed pages (`activityState`, one write per minute) lets the
+migration sweep, Drive seeding, and worker claims stand down while the
+human browses; reclaim still runs. Verified live: 12.6s → 317ms gallery
+load, migration untouched for 6+ browsing minutes, 0 broken images.
+Same pass: migration retry laps for transient fetch failures, and a
+reclaim double-delete fix for blobs shared by both derivative sides.
+
 ## Housekeeping flags
 
 - `scripts/local-vault.mjs` 3600s wait committed (was Big Red's; sole-dev
