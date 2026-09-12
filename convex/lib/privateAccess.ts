@@ -57,11 +57,14 @@ export async function exchangeOwnerCredential(candidate: string | undefined) {
   }
 
   const configured = process.env.OURCHIVAL_OWNER_ACCESS_KEY?.trim();
-  if (
-    configured &&
-    ((await secretsEqual(candidate, configured)) ||
-      (await isOwnerSessionCredential(candidate, configured)))
-  ) {
+  // A valid session credential exchanges for itself. Minting a fresh one on
+  // every check rewrites localStorage, which cross-tab listeners read as a
+  // sign-in event — an N-tab rotation storm of re-verifies. Fresh sessions
+  // are minted only when upgrading a raw key or Google credential.
+  if (configured && (await isOwnerSessionCredential(candidate, configured))) {
+    return { credential: candidate, expiresAt: ownerSessionExpiry(candidate) };
+  }
+  if (configured && (await secretsEqual(candidate, configured))) {
     return await createOwnerSessionCredential();
   }
 
@@ -130,8 +133,16 @@ export async function isOwnerSessionCredential(
   return await secretsEqual(match[3], expected);
 }
 
-export function createDeviceToken() {
-  return `ourc_dev_${randomToken(32)}`;
+export function ownerSessionExpiry(candidate: string): number | null {
+  const match = new RegExp(
+    `^${ownerSessionPrefix}_(\\d{13})_[a-f0-9]{48}_[a-f0-9]{64}$`,
+  ).exec(candidate);
+  if (!match) return null;
+  const expiresAt = Number(match[1]);
+  return Number.isFinite(expiresAt) ? expiresAt : null;
+}
+
+export function createDeviceToken() {  return `ourc_dev_${randomToken(32)}`;
 }
 
 export function createPairingCode() {

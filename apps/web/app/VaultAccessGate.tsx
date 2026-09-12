@@ -36,6 +36,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   const [recoveryMode, setRecoveryMode] = useState(false);
   const verificationSequence = useRef(0);
   const verificationAutoRetry = useRef(0);
+  const verifiedKey = useRef("");
   const googleEnabled = Boolean(
     process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim(),
   );
@@ -72,6 +73,12 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
       if (attempt !== current) return;
       setAccessKey(stored);
       if (stored) {
+        // Cross-tab rotation writes used to re-verify every tab in a loop;
+        // a key this tab already verified needs no new network check.
+        if (stored === verifiedKey.current && unlocked) {
+          setChecking(false);
+          return;
+        }
         setSessionUnavailable(false);
         void verify(stored, true);
       } else {
@@ -127,6 +134,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
       }
       const verifiedCredential = body.credential?.trim() || key;
       saveOwnerAccessKey(verifiedCredential, { broadcast: false });
+      verifiedKey.current = verifiedCredential;
       setAccessKey(verifiedCredential);
       verificationAutoRetry.current = 0;
       setUnlocked(true);

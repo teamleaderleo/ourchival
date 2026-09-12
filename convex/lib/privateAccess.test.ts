@@ -92,16 +92,18 @@ describe("private access helpers", () => {
     ).toBe(false);
   });
 
-  it("exchanges recovery and existing session credentials for fresh sessions", async () => {
+  it("upgrades recovery keys once, then echoes valid sessions unchanged", async () => {
     vi.stubEnv("OURCHIVAL_OWNER_ACCESS_KEY", "test-only-recovery-secret");
 
     const fromRecovery = await exchangeOwnerCredential(
       "test-only-recovery-secret",
     );
-    const renewed = await exchangeOwnerCredential(fromRecovery.credential);
+    // A stable exchange: re-checking must not rotate, or every tab storms.
+    const echoed = await exchangeOwnerCredential(fromRecovery.credential);
 
     expect(fromRecovery.credential).not.toBe("test-only-recovery-secret");
-    expect(renewed.credential).not.toBe(fromRecovery.credential);
-    expect(await isOwnerSessionCredential(renewed.credential)).toBe(true);
+    expect(echoed.credential).toBe(fromRecovery.credential);
+    expect(echoed.expiresAt).toBe(fromRecovery.expiresAt);
+    expect(await isOwnerSessionCredential(echoed.credential)).toBe(true);
   });
 });
