@@ -40,6 +40,12 @@ export const enqueue = mutation({
     if (!args.force && asset.previewStorageId && asset.thumbStorageId) {
       return { queued: false, reason: "ready", job: null };
     }
+    if (
+      !args.force &&
+      (asset.drivePreviewFileId || asset.driveThumbFileId)
+    ) {
+      return { queued: false, reason: "ready", job: null };
+    }
 
     const job = await queueAsset(ctx, asset, Boolean(args.force));
     return {
@@ -87,6 +93,9 @@ export const queueForAsset = internalMutation({
         await ctx.db.patch(asset._id, { derivativeStatus: "failed" });
       }
       return { queued: false as const, status: "failed" as const };
+    }
+    if (asset.drivePreviewFileId && asset.driveThumbFileId) {
+      return { queued: false as const, status: "ready" as const };
     }
     if (asset.previewStorageId && asset.thumbStorageId) {
       if (asset.derivativeStatus !== "ready") {
@@ -235,6 +244,14 @@ async function queueMissingAssets(ctx: any, limit: number) {
     if (queued + active >= limit) break;
     if (asset.previewStorageId && asset.thumbStorageId) {
       await ctx.db.patch(asset._id, { derivativeStatus: "ready" });
+      skipped += 1;
+      continue;
+    }
+    // Drive-mirrored assets need no regeneration: the verified twin serves.
+    if (asset.drivePreviewFileId || asset.driveThumbFileId) {
+      if (asset.derivativeStatus !== "ready") {
+        await ctx.db.patch(asset._id, { derivativeStatus: "ready" });
+      }
       skipped += 1;
       continue;
     }

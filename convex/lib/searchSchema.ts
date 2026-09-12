@@ -95,6 +95,7 @@ export const searchTables = {
     updatedAt: v.number(),
   })
     .index("by_asset_id", ["assetId"])
+    .index("by_input_storage_id", ["inputStorageId"])
     .index("by_reference_id", ["referenceId"]),
   visualCorrections: defineTable({
     revision: v.optional(v.number()),

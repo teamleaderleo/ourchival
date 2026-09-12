@@ -115,6 +115,14 @@ export const process = internalAction({
           jobContext.thumbStorageUrl,
         );
         if (!preview && !thumb) {
+          if (asset.drivePreviewFileId && asset.driveThumbFileId) {
+            await ctx.runMutation(completeJob, {
+              jobId: claimedJobId,
+              assetId: asset._id,
+            });
+            seenAssetIds.push(asset._id);
+            continue;
+          }
           throw new Error("Asset has no stored derivatives to mirror.");
         }
         await ctx.runMutation(completeJob, {

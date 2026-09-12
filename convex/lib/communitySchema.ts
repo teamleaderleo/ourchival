@@ -48,5 +48,6 @@ export const communityTables = {
     retrievedAt: v.number(),
   })
     .index("by_asset_id_and_post_id", ["assetId", "postId"])
+    .index("by_input_storage_id", ["inputStorageId"])
     .index("by_reference_id", ["referenceId"]),
 };

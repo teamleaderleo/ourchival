@@ -220,6 +220,28 @@ The global-scale answer is batch workers, not bigger bursts.
 - Tests: claim/next-null/first-wins; full suite **400/400**, typecheck
   clean.
 
+## Pass 11 — reclaim metered bytes
+
+The payoff pass: metered Convex blobs now actually disappear once Drive
+twins verify. `queueMissing` reclaims (not just queues) for mirrored
+assets: shared blobs stay until their last referrer detaches, then delete
++ clear IDs. Regen-storm guards everywhere a derivative could be
+re-requested: media `enqueue`/`queueMissingAssets`/capture-hook treat
+Drive-mirrored assets as ready; `complete` is first-wins; stale jobs for
+reclaimed assets succeed quietly.
+
+- SSD vs RAM, for the record: the ~3.7 GB lives on **SSD** (local
+  `convex_local_storage` + 2.3 GB sqlite). RAM pressure is the backend
+  paging that data (RSS observed 0.5–4 GB) plus system-wide swap.
+- Verified HEAD-standalone in a clean worktree (tsc + full suite):
+  this commit carries the 6 guard indexes it needs
+  (`by_preview/thumb/original_storage_id`, `by_input_storage_id` ×2,
+  `by_storage_id`) and inlines the live-media guard instead of importing
+  uncommitted code. One known handoff: their uncommitted `ensurePreview`
+  will regenerate reclaimed assets unless it gains the same one-line
+  Drive check — flagged, not touched.
+- Tests: reclaim/shared/stale/first-wins/ready; full suite green.
+
 ## Housekeeping flags
 
 - `scripts/local-vault.mjs` 3600s wait stays UNCOMMITTED (Big Red owns it).

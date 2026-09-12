@@ -165,6 +165,9 @@ export default defineSchema({
     .index("by_reference", ["referenceId"])
     .index("by_original_url", ["originalUrl"])
     .index("by_drive_file_id", ["driveFileId"])
+    .index("by_preview_storage_id", ["previewStorageId"])
+    .index("by_thumb_storage_id", ["thumbStorageId"])
+    .index("by_original_storage_id", ["originalStorageId"])
     .index("by_derivative_status", ["derivativeStatus"]),
 
   boards: defineTable({

@@ -1,9 +1,13 @@
 // @vitest-environment edge-runtime
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const modules = import.meta.glob("./**/*.ts");
 const refDoc = (n: number) => ({
@@ -109,10 +113,114 @@ describe("drive derivative mirroring", () => {
     expect(none).toBeNull();
   });
 
+  it("reclaims metered blobs once Drive twins verify", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", refDoc(5));
+      const preview = await ctx.storage.store(new Blob(["preview-bytes"]));
+      const thumb = await ctx.storage.store(new Blob(["thumb-bytes"]));
+      const assetId = await ctx.db.insert("assets", {
+        referenceId,
+        previewStorageId: preview,
+        thumbStorageId: thumb,
+        derivativeStatus: "ready",
+        drivePreviewFileId: "drive-preview",
+        driveThumbFileId: "drive-thumb",
+        tagIds: [],
+        dominantColors: [],
+      });
+      return { assetId, preview, thumb };
+    });
+
+    const result = await t.mutation(internal.driveDerivatives.queueMissing, {
+      limit: 4,
+    });
+    expect(result.reclaimed).toBe(2);
+    expect(result.reclaimedBytes).toBeGreaterThan(0);
+
+    await t.run(async (ctx) => {
+      const asset = await ctx.db.get(ids.assetId);
+      expect(asset?.previewStorageId).toBeUndefined();
+      expect(asset?.thumbStorageId).toBeUndefined();
+      expect(asset?.derivativeStatus).toBe("ready");
+      expect(await ctx.storage.getUrl(ids.preview)).toBeNull();
+      expect(await ctx.storage.getUrl(ids.thumb)).toBeNull();
+    });
+  });
+
+  it("keeps shared blobs until their last referrer detaches", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", refDoc(6));
+      const shared = await ctx.storage.store(new Blob(["shared-thumb"]));
+      const first = await ctx.db.insert("assets", {
+        referenceId,
+        thumbStorageId: shared,
+        derivativeStatus: "ready",
+        driveThumbFileId: "drive-thumb-1",
+        tagIds: [],
+        dominantColors: [],
+      });
+      const second = await ctx.db.insert("assets", {
+        referenceId,
+        thumbStorageId: shared,
+        derivativeStatus: "ready",
+        driveThumbFileId: "drive-thumb-2",
+        tagIds: [],
+        dominantColors: [],
+      });
+      return { first, second, shared };
+    });
+
+    const result = await t.mutation(internal.driveDerivatives.queueMissing, {
+      limit: 4,
+    });
+    expect(result.reclaimed).toBe(1);
+
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(ids.first))?.thumbStorageId).toBeUndefined();
+      expect((await ctx.db.get(ids.second))?.thumbStorageId).toBeUndefined();
+      expect(await ctx.storage.getUrl(ids.shared)).toBeNull();
+    });
+  });
+
+
+  it("treats an already-mirrored stale job as success", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", refDoc(7));
+      const assetId = await ctx.db.insert("assets", {
+        referenceId,
+        derivativeStatus: "ready",
+        drivePreviewFileId: "drive-preview",
+        driveThumbFileId: "drive-thumb",
+        tagIds: [],
+        dominantColors: [],
+      });
+      const jobId = await ctx.db.insert("enrichmentJobs", {
+        referenceId,
+        assetId,
+        type: "drive_derivatives",
+        status: "queued",
+        attempts: 0,
+        requestedAt: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { assetId, jobId };
+    });
+
+    const completed = await t.mutation(internal.driveDerivatives.complete, {
+      jobId: ids.jobId,
+      assetId: ids.assetId,
+    });
+    expect(completed).toEqual({ status: "succeeded" });
+  });
+
   it("never overwrites a verified Drive identity (first wins)", async () => {
     const t = convexTest(schema, modules);
     const ids = await t.run(async (ctx) => {
-      const referenceId = await ctx.db.insert("references", refDoc(4));
+      const referenceId = await ctx.db.insert("references", refDoc(8));
       const blob = await ctx.storage.store(new Blob(["thumb"]));
       const assetId = await ctx.db.insert("assets", {
         referenceId,

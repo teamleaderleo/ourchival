@@ -37,8 +37,20 @@ export const queueMissing = internalMutation({
     let queued = 0;
     let active = 0;
     let skipped = 0;
+    let reclaimed = 0;
+    let reclaimedBytes = 0;
     for (const asset of candidates) {
       if (queued + active >= limit) break;
+      if (asset.drivePreviewFileId || asset.driveThumbFileId) {
+        // Verified twin exists: shed the metered bytes, keep serving the
+        // Drive copy. Shared blobs stay until their last referrer clears.
+        // Sides without a recorded twin are left alone (nothing to fall
+        // back to yet).
+        const freed = await reclaimMirroredBlobs(ctx, asset);
+        reclaimed += freed.files;
+        reclaimedBytes += freed.bytes;
+        continue;
+      }
       const decision = await classifyUploadCandidate(ctx, asset);
       if (decision === "active") {
         active += 1;
@@ -51,7 +63,7 @@ export const queueMissing = internalMutation({
       await insertUploadJob(ctx, asset);
       queued += 1;
     }
-    return { queued, active, skipped };
+    return { queued, active, skipped, reclaimed, reclaimedBytes };
   },
 });
 
@@ -107,6 +119,87 @@ async function classifyUploadCandidate(
   // pipeline: a fresh attempt needs a new derivative generation upstream.
   if (assetJobs.length > 0) return "done";
   return "eligible";
+}
+
+// Live-media guard, local copy: shared derivative blobs stay until their
+// last referrer detaches. (mediaDerivatives carries the same check for its
+// own retirements; duplicated to keep this pipeline dependency-free.)
+async function storageIsReferenced(
+  ctx: any,
+  storageId: any,
+  ignoreAsset?: any,
+) {
+  const [previews, thumbs, originals, artwork, analysis, community] =
+    await Promise.all([
+      ctx.db
+        .query("assets")
+        .withIndex("by_preview_storage_id", (q: any) =>
+          q.eq("previewStorageId", storageId),
+        )
+        .take(2),
+      ctx.db
+        .query("assets")
+        .withIndex("by_thumb_storage_id", (q: any) =>
+          q.eq("thumbStorageId", storageId),
+        )
+        .take(2),
+      ctx.db
+        .query("assets")
+        .withIndex("by_original_storage_id", (q: any) =>
+          q.eq("originalStorageId", storageId),
+        )
+        .take(2),
+      ctx.db
+        .query("artworkRepresentations")
+        .withIndex("by_storage_id", (q: any) => q.eq("storageId", storageId))
+        .first(),
+      ctx.db
+        .query("visualEnrichments")
+        .withIndex("by_input_storage_id", (q: any) =>
+          q.eq("inputStorageId", storageId),
+        )
+        .first(),
+      ctx.db
+        .query("communityMatches")
+        .withIndex("by_input_storage_id", (q: any) =>
+          q.eq("inputStorageId", storageId),
+        )
+        .first(),
+    ]);
+  return (
+    previews.some((a: any) => a._id !== ignoreAsset) ||
+    thumbs.some((a: any) => a._id !== ignoreAsset) ||
+    originals.length > 0 ||
+    Boolean(artwork || analysis || community)
+  );
+}
+
+async function reclaimMirroredBlobs(ctx: any, asset: any) {  let files = 0;
+  let bytes = 0;
+  const clear: Record<string, undefined> = {};
+  const sides = [
+    { storage: "previewStorageId", drive: "drivePreviewFileId" },
+    { storage: "thumbStorageId", drive: "driveThumbFileId" },
+  ] as const;
+  for (const { storage, drive } of sides) {
+    const storageId = asset[storage];
+    if (!storageId || !asset[drive]) continue;
+    // Detach unconditionally: the Drive twin is now the source of truth.
+    // The bytes stay until their last referrer detaches.
+    clear[storage] = undefined;
+    if (await storageIsReferenced(ctx, storageId, asset._id)) continue;
+    const metadata = await ctx.db.system.get(storageId);
+    await ctx.storage.delete(storageId);
+    files += 1;
+    bytes += metadata?.size ?? 0;
+  }
+  if (Object.keys(clear).length > 0) {
+    await ctx.db.patch(asset._id, {
+      ...clear,
+      derivativeStatus: "ready",
+    });
+  }
+  return { files, bytes };
 }
 
 async function insertUploadJob(
@@ -182,7 +275,11 @@ export const complete = internalMutation({
       throw new Error("Drive derivative asset mismatch.");
     }
     if (!args.preview && !args.thumb) {
-      throw new Error("Drive derivative upload recorded no files.");
+      // A stale queued job for an asset mirrored (and reclaimed) by another
+      // worker: nothing left to record, still a success.
+      if (!(asset.drivePreviewFileId && asset.driveThumbFileId)) {
+        throw new Error("Drive derivative upload recorded no files.");
+      }
     }
     // First wins: a concurrent worker may have recorded its twin already.
     // Never overwrite an existing verified identity with another file.
