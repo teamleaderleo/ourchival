@@ -242,7 +242,28 @@ reclaimed assets succeed quietly.
   Drive check — flagged, not touched.
 - Tests: reclaim/shared/stale/first-wins/ready; full suite green.
 
+## Pass 12 — compact preview migration (recipe v2)
+
+Derivatives converge on one recipe module (1600px preview, 384px thumb,
+AVIF/WebP by support) with `derivativeVersion` per asset. A checkpointed
+`previewMigrations` sweep upgrades stale assets 4 per 10s with stall and
+failure-streak guards; web surfaces render thumb/preview only and heal on
+view via `ensurePreview` (Drive-mirrored assets return ready without
+metered bytes). Live: ~14.7k upgraded, ~295 MB reclaimed, migration
+self-resumed after an orphaned 5-day-old job (now failed loudly instead
+of pausing the sweep; stale-recipe successes requeue).
+
+## Pass 13 — Drive mirror feeder unblocked
+
+`queueMissing` re-read the same ready-asset index head every tick: 32
+mirrors total, backfill stalled. Rotating `driveMirrorCursors`
+checkpoint plus cursor threading through `claimNextUpload` and the Node
+batch worker. Verified live: 32 → 82 succeeded in one tick
+(2 seeds × 25/batch design throughput ≈ 600/hr). Bench: 25,889 assets,
+25,217 Drive originals, inventory now reports `mirrored`.
+
 ## Housekeeping flags
 
-- `scripts/local-vault.mjs` 3600s wait stays UNCOMMITTED (Big Red owns it).
+- `scripts/local-vault.mjs` 3600s wait committed (was Big Red's; sole-dev
+  tree now, vault owns the long startup window).
 - Efficiency edits above are normal uncommitted work, safe to commit review.

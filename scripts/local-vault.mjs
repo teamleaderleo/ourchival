@@ -187,7 +187,7 @@ async function dev() {
     }),
   );
   try {
-    await waitFor(`${convexSiteUrl}/auth-check`, [401, 503], 150_000);
+    await waitFor(`${convexSiteUrl}/auth-check`, [401, 503], 3_600_000);
   } finally {
     await restoreFile(cloudEnvPath, cloudEnv);
   }

@@ -20,9 +20,6 @@
     "local:vault:status": "node scripts/local-vault.mjs status",
     "google:drive-auth": "node scripts/google-drive-auth.mjs"
   },
-  "dependencies": {
-    "sharp": "0.34.1"
-  },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^22.10.2",
@@ -32,5 +29,8 @@
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "sharp": "0.34.1"
   }
 }
