@@ -5,7 +5,7 @@ import { paginationOptsValidator } from "convex/server";
 
 const key = "compact-previews-v2";
 const batchSize = 2;
-const interval = 20_000;
+const interval = 60_000;
 // Pause threshold stays at 4 consecutive failures: smaller batches must not
 // make the sweep twitchier about systemic rot.
 const maxFailureStreak = 4;

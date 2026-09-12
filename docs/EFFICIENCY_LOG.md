@@ -274,7 +274,21 @@ Same pass: migration retry laps for transient fetch failures, and a
 reclaim double-delete fix for blobs shared by both derivative sides.
 
 ## Housekeeping flags
-
 - `scripts/local-vault.mjs` 3600s wait committed (was Big Red's; sole-dev
   tree now, vault owns the long startup window).
 - Efficiency edits above are normal uncommitted work, safe to commit review.
+
+## Pass 15 — kill the rotation storm; feed goes first
+
+Two compounding pile-ups, one session. (1) `/auth-check` minted a fresh
+session credential per call and the client saved it, so N open tabs
+ping-ponged re-verifies ~16×/sec (888 auth-checks/min observed).
+Sessions are stateless HMAC tokens, so valid ones now echo instead of
+rotating, and the gate skips re-verify for an already-verified key.
+Result: zero auth-checks over 45 idle seconds. (2) Feed + directory +
+retries fired concurrently into the single backend and spiraled past the
+30s timeout. The directory now waits for first feed paint (20s fallback).
+Also: migration to 2 assets/min with its own yield gate (Sharp backlog
+was wedging reads), media sweep gated too, dev StrictMode off (ghost
+duplicate feed requests), and gallery keyboard triage (arrows/k/l/f/
+Delete/Enter mirroring Quick Look, verified live with undo).

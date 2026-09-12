@@ -1,4 +1,5 @@
 import { internalMutation, internalQuery, mutation, type MutationCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
   makeFunctionReference,
@@ -98,6 +99,11 @@ export const queueMissing = internalMutation({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Backstop only: capture hook and heal-on-view cover fresh needs, so
+    // this sweep yields while the human browses like the other pipelines.
+    if (await ctx.runQuery(internal.httpDb.foregroundActive, {})) {
+      return { queued: 0, active: 0, skipped: 0 };
+    }
     return await queueMissingAssets(ctx, normalizedLimit(args.limit));
   },
 });
