@@ -172,6 +172,7 @@ for (const path of [
   "/asset",
   "/reference-metadata",
   "/preference-export",
+  "/pipeline-status",
   "/drive-file",
   "/clipper-pairing",
   "/clipper-exchange",
@@ -499,6 +500,29 @@ http.route({
             error instanceof Error
               ? error.message
               : "Could not load reference page.",
+        },
+        500,
+      );
+    }
+  }),
+});
+
+http.route({
+  path: "/pipeline-status",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const denied = await ownerDenied(request);
+    if (denied) return denied;
+    try {
+      const status = await ctx.runQuery(internal.httpDb.pipelineStatus, {});
+      return jsonResponse(request, { ok: true, ...status });
+    } catch (error) {
+      return jsonResponse(
+        request,
+        {
+          ok: false,
+          error:
+            error instanceof Error ? error.message : "Could not load pipeline status.",
         },
         500,
       );

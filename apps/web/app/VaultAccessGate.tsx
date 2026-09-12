@@ -2,6 +2,7 @@
 
 import { BrandMark } from "./BrandMark";
 import { CloseButton } from "./CloseButton";
+import { ArchiveHealth } from "./ArchiveHealth";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleOwnerSignIn } from "./GoogleOwnerSignIn";
@@ -499,6 +500,7 @@ function UnlockedVault({ children }: { children: React.ReactNode }) {
           </div>
 
           </details>
+          {siteUrl ? <ArchiveHealth siteUrl={siteUrl} /> : null}
           <div className="clipper-access-footer">
             <span>Remove access from this browser</span>
             <button

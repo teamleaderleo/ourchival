@@ -66,6 +66,57 @@ export const foregroundActive = internalQuery({
   },
 });
 
+// Archive health in one cheap read for the Settings panel: migration
+// checkpoint, mirror job counts, and whether background work is currently
+// yielding to browsing. No table scans; safe to poll.
+export const pipelineStatus = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<{
+    migration: {
+      status: string;
+      scanned: number;
+      upgraded: number;
+      alreadyCurrent: number;
+      skipped: number;
+      failed: number;
+      reclaimedBytes: number;
+      pending: number;
+      message: string | null;
+      updatedAt: number;
+    } | null;
+    drive: Record<string, number>;
+    backgroundYielding: boolean;
+  }> => {
+    const [migration, drive, activity] = await Promise.all([
+      ctx.db.query("previewMigrations").first(),
+      ctx.runQuery(internal.driveDerivatives.status, {}),
+      ctx.db
+        .query("activityState")
+        .withIndex("by_key", (q) => q.eq("key", ACTIVITY_KEY))
+        .unique(),
+    ]);
+    return {
+      migration: migration
+        ? {
+            status: migration.status,
+            scanned: migration.scanned,
+            upgraded: migration.upgraded,
+            alreadyCurrent: migration.alreadyCurrent,
+            skipped: migration.skipped,
+            failed: migration.failed,
+            reclaimedBytes: migration.reclaimedBytes,
+            pending: migration.pending.length,
+            message: migration.message ?? null,
+            updatedAt: migration.updatedAt,
+          }
+        : null,
+      drive: drive.byStatus,
+      backgroundYielding:
+        activity != null && Date.now() - activity.lastFeedAt < ACTIVITY_TTL_MS,
+    };
+  },
+});
+
 export const listReferences = internalQuery({
   args: { url: v.string() },
   handler: async (ctx, args) => await listReferencePage(ctx, args.url),
