@@ -10,15 +10,13 @@ import {
 } from "convex/server";
 import { v } from "convex/values";
 import { fetchDriveFile } from "./lib/drive";
+import { encodePreview, imageInputOptions, previewRecipeVersion } from "./lib/previewEncoding";
 import {
   averageHashFromGrayscale,
   dominantColorsFromRgba,
 } from "./lib/imageAnalysis";
 
 const maxInputBytes = 25 * 1024 * 1024;
-const maxInputPixels = 80_000_000;
-const previewMaxPixels = 1600;
-const thumbMaxPixels = 384;
 
 type JobArgs = { jobId: Id<"enrichmentJobs"> };
 type JobContext = {
@@ -39,6 +37,7 @@ type CompleteArgs = {
   dominantColors: string[];
   previewFileSize: number;
   thumbFileSize: number;
+  derivativeVersion: number;
 };
 type FailArgs = JobArgs & { error: string };
 
@@ -88,19 +87,19 @@ export const process = internalAction({
 
     try {
       const input = await loadOriginal(jobContext);
-      const metadata = await sharp(input, sharpInputOptions()).metadata();
+      const metadata = await sharp(input, imageInputOptions).metadata();
       const dimensions = orientedDimensions(metadata);
 
       const [preview, thumb, hashPixels, palettePixels] = await Promise.all([
-        makeWebp(input, previewMaxPixels, 82),
-        makeWebp(input, thumbMaxPixels, 76),
-        sharp(input, sharpInputOptions())
+        encodePreview(input, "preview"),
+        encodePreview(input, "thumb"),
+        sharp(input, imageInputOptions)
           .rotate()
           .resize(8, 8, { fit: "fill", kernel: sharp.kernel.lanczos3 })
           .grayscale()
           .raw()
           .toBuffer(),
-        sharp(input, sharpInputOptions())
+        sharp(input, imageInputOptions)
           .rotate()
           .resize(64, 64, { fit: "fill", kernel: sharp.kernel.lanczos3 })
           .flatten({ background: { r: 255, g: 255, b: 255 } })
@@ -110,10 +109,10 @@ export const process = internalAction({
       ]);
 
       const previewStorageId = await ctx.storage.store(
-        new Blob([new Uint8Array(preview)], { type: "image/webp" }),
+        new Blob([new Uint8Array(preview.data)], { type: preview.mimeType }),
       );
       const thumbStorageId = await ctx.storage.store(
-        new Blob([new Uint8Array(thumb)], { type: "image/webp" }),
+        new Blob([new Uint8Array(thumb.data)], { type: thumb.mimeType }),
       );
 
       await ctx.runMutation(completeJob, {
@@ -126,8 +125,9 @@ export const process = internalAction({
         contentHash: createHash("sha256").update(input).digest("hex"),
         perceptualHash: averageHashFromGrayscale(new Uint8Array(hashPixels)),
         dominantColors: dominantColorsFromRgba(new Uint8Array(palettePixels), 5),
-        previewFileSize: preview.byteLength,
-        thumbFileSize: thumb.byteLength,
+        previewFileSize: preview.data.byteLength,
+        thumbFileSize: thumb.data.byteLength,
+        derivativeVersion: previewRecipeVersion,
       });
 
       return { status: "succeeded" };
@@ -171,28 +171,6 @@ async function loadOriginal(jobContext: JobContext) {
     throw new Error("Stored original exceeds the 25 MB processing limit.");
   }
   return input;
-}
-
-async function makeWebp(input: Buffer, maxPixels: number, quality: number) {
-  return await sharp(input, sharpInputOptions())
-    .rotate()
-    .resize({
-      width: maxPixels,
-      height: maxPixels,
-      fit: "inside",
-      withoutEnlargement: true,
-      kernel: sharp.kernel.lanczos3,
-    })
-    .webp({ quality, effort: 4, smartSubsample: true })
-    .toBuffer();
-}
-
-function sharpInputOptions() {
-  return {
-    failOn: "error" as const,
-    limitInputPixels: maxInputPixels,
-    sequentialRead: true,
-  };
 }
 
 function orientedDimensions(metadata: {

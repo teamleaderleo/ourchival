@@ -11,7 +11,7 @@ import {
   replaceVisibleSearchText,
 } from "../packages/shared/src/sourceFilters";
 const modules = import.meta.glob("./**/*.ts");
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 it("restores hosted links idempotently and preserves archive state", async () => {
   const t = convexTest(schema, modules);
@@ -76,6 +76,9 @@ it("combines source inclusions, honors exclusions and imported board membership 
     return ids;
   });
   const run = async (query: string) => {
+    // convex-test assigns increasing creation timestamps within the fixture.
+    // Freeze the browsing snapshot after those inserts, not in their millisecond.
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
     const url = new URL(
       "https://example.com/references?collection=inbox&sort=saved-desc",
     );

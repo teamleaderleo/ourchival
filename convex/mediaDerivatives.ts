@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery, mutation } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import {
   makeFunctionReference,
@@ -11,6 +11,27 @@ import { reconcileCapturedReferenceCore } from "./artworkAutoLink";
 
 const defaultBatchSize = 4;
 const maxBatchSize = 12;
+
+export const ensurePreview = mutation({
+  args: { accessKey: v.string(), assetId: v.id("assets") },
+  handler: async (ctx, args) => {
+    await requireOwnerAccess(args.accessKey);
+    const asset = await ctx.db.get(args.assetId);
+    // Drive-mirrored assets stay ready without metered bytes: the proxy
+    // serves the verified twin and the mirror pipeline owns refreshes.
+    // This check precedes the stored-original gate on purpose: viewable
+    // derivatives don't need a stored original.
+    if (asset?.driveThumbFileId || asset?.drivePreviewFileId) return "ready";
+    if (!asset || !hasStoredOriginal(asset)) return "unavailable";
+    if (asset.thumbStorageId || asset.previewStorageId) return "ready";
+    const running = await ctx.db.query("enrichmentJobs").withIndex("by_type_status", q => q.eq("type", "media_derivatives").eq("status", "running")).take(4);
+    const queued = await ctx.db.query("enrichmentJobs").withIndex("by_type_status", q => q.eq("type", "media_derivatives").eq("status", "queued")).take(4);
+    if (running.length + queued.length >= 4) return "busy";
+    if (asset.derivativeStatus === "failed") return "failed";
+    await queueAsset(ctx, asset, false);
+    return "queued";
+  },
+});
 
 type ProcessMediaArgs = { jobId: Id<"enrichmentJobs"> };
 const processMediaDerivatives = makeFunctionReference<
@@ -146,6 +167,7 @@ export const complete = internalMutation({
     dominantColors: v.array(v.string()),
     previewFileSize: v.number(),
     thumbFileSize: v.number(),
+    derivativeVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const [job, asset] = await Promise.all([
@@ -159,9 +181,25 @@ export const complete = internalMutation({
       throw new Error("Media derivative asset mismatch.");
     }
 
+    // A migration must not grow storage merely to change a compact format.
+    // Keep a smaller existing derivative or one retained by saved evidence.
+    async function choose(oldId: Id<"_storage"> | undefined, newId: Id<"_storage">, bytes: number) {
+      const old = oldId ? await ctx.db.system.get(oldId) : null;
+      if (old && asset!.contentHash === args.contentHash && ["image/webp", "image/avif"].includes(old.contentType ?? "") &&
+          (old.size <= bytes || await storageIsReferenced(ctx, oldId!, asset!._id))) {
+        return { id: oldId!, bytes: old.size };
+      }
+      return { id: newId, bytes };
+    }
+    const preview = await choose(asset.previewStorageId, args.previewStorageId, args.previewFileSize);
+    const thumb = await choose(asset.thumbStorageId, args.thumbStorageId, args.thumbFileSize);
+
     await ctx.db.patch(asset._id, {
-      previewStorageId: args.previewStorageId,
-      thumbStorageId: args.thumbStorageId,
+      previewStorageId: preview.id,
+      thumbStorageId: thumb.id,
+      previewFileSize: positiveInteger(preview.bytes),
+      thumbFileSize: positiveInteger(thumb.bytes),
+      derivativeVersion: args.derivativeVersion ?? 1,
       width: positiveInteger(args.width),
       height: positiveInteger(args.height),
       contentHash: normalizeHash(args.contentHash, 64, "Content hash"),
@@ -170,9 +208,9 @@ export const complete = internalMutation({
       derivativeStatus: "ready",
     });
 
-    const previewKilobytes = Math.max(1, Math.round(args.previewFileSize / 1024));
+    const previewKilobytes = Math.max(1, Math.round(preview.bytes / 1024));
     await scheduleReferenceSearch(ctx, asset.referenceId);
-    const thumbKilobytes = Math.max(1, Math.round(args.thumbFileSize / 1024));
+    const thumbKilobytes = Math.max(1, Math.round(thumb.bytes / 1024));
     await ctx.db.patch(job._id, {
       status: "succeeded",
       completedAt: Date.now(),
@@ -180,6 +218,19 @@ export const complete = internalMutation({
       resultSummary: `Generated ${previewKilobytes} KB preview and ${thumbKilobytes} KB thumbnail.`,
       updatedAt: Date.now(),
     });
+
+    // Only retire superseded derivatives after the replacement is committed
+    // in this transaction. Shared derivatives and original copies stay intact.
+    let reclaimedBytes = 0;
+    for (const storageId of new Set([asset.previewStorageId, asset.thumbStorageId, args.previewStorageId, args.thumbStorageId])) {
+      if (!storageId || storageId === preview.id || storageId === thumb.id) continue;
+      if (!await storageIsReferenced(ctx, storageId)) {
+        const metadata = await ctx.db.system.get(storageId);
+        await ctx.storage.delete(storageId);
+        reclaimedBytes += metadata?.size ?? 0;
+      }
+    }
+    await ctx.db.patch(job._id, { reclaimedBytes: reclaimedBytes - args.previewFileSize - args.thumbFileSize });
 
     let artworkAutoLinkStatus = "not_attempted";
     try {
@@ -200,6 +251,19 @@ export const complete = internalMutation({
     };
   },
 });
+
+export async function storageIsReferenced(ctx: MutationCtx, storageId: Id<"_storage">, ignoreAsset?: Id<"assets">) {
+  const [previews, thumbs, originals, artwork, analysis, community] = await Promise.all([
+    ctx.db.query("assets").withIndex("by_preview_storage_id", q => q.eq("previewStorageId", storageId)).take(2),
+    ctx.db.query("assets").withIndex("by_thumb_storage_id", q => q.eq("thumbStorageId", storageId)).take(2),
+    ctx.db.query("assets").withIndex("by_original_storage_id", q => q.eq("originalStorageId", storageId)).take(2),
+    ctx.db.query("artworkRepresentations").withIndex("by_storage_id", q => q.eq("storageId", storageId)).first(),
+    ctx.db.query("visualEnrichments").withIndex("by_input_storage_id", q => q.eq("inputStorageId", storageId)).first(),
+    ctx.db.query("communityMatches").withIndex("by_input_storage_id", q => q.eq("inputStorageId", storageId)).first(),
+  ]);
+  return previews.some(a => a._id !== ignoreAsset) || thumbs.some(a => a._id !== ignoreAsset) ||
+    originals.length > 0 || Boolean(artwork || analysis || community);
+}
 
 export const fail = internalMutation({
   args: {
@@ -270,7 +334,7 @@ async function queueMissingAssets(ctx: any, limit: number) {
   return { queued, active, skipped };
 }
 
-async function queueAsset(ctx: any, asset: any, force: boolean) {
+export async function queueAsset(ctx: any, asset: any, force: boolean) {
   const jobs = await ctx.db
     .query("enrichmentJobs")
     .withIndex("by_reference_type", (q: any) =>

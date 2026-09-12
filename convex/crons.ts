@@ -28,6 +28,10 @@ const queueDriveDerivatives = makeFunctionReference<
 >;
 
 const crons = cronJobs();
+// Backstop cadence only: fresh captures queue their own derivative job at
+// intake (http capture → queueForAsset) and viewing heals on demand
+// (ensurePreview), so these recover strays instead of driving the pipeline.
+crons.interval("resume compact preview migration", { minutes: 5 }, internal.previewMigration.advance, {});
 
 crons.interval(
   "queue missing media derivatives",

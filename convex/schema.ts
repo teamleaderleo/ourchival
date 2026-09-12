@@ -7,6 +7,18 @@ import { discoveryTables } from "./lib/discoverySchema";
 
 export default defineSchema({
   ...discoveryTables,
+  previewMigrations: defineTable({
+    key: v.string(),
+    status: v.union(v.literal("running"), v.literal("paused"), v.literal("complete")),
+    cursor: v.union(v.string(), v.null()),
+    scanDone: v.boolean(),
+    pending: v.array(v.object({ jobId: v.id("enrichmentJobs"), assetId: v.id("assets") })),
+    scanned: v.number(), upgraded: v.number(), alreadyCurrent: v.number(), skipped: v.number(), failed: v.number(),
+    reclaimedBytes: v.number(), failureStreak: v.number(),
+    failures: v.array(v.object({ assetId: v.id("assets"), reason: v.string() })),
+    nextRunAt: v.number(), startedAt: v.number(), updatedAt: v.number(),
+    message: v.optional(v.string()),
+  }).index("by_key", ["key"]),
   ...searchTables,
   ...communityTables,
   ...artworkTables,
@@ -130,6 +142,9 @@ export default defineSchema({
     originalStorageId: v.optional(v.id("_storage")),
     previewStorageId: v.optional(v.id("_storage")),
     thumbStorageId: v.optional(v.id("_storage")),
+    previewFileSize: v.optional(v.number()),
+    thumbFileSize: v.optional(v.number()),
+    derivativeVersion: v.optional(v.number()),
     originalUrl: v.optional(v.string()),
     fetchedUrl: v.optional(v.string()),
     quality: v.optional(v.string()),
@@ -250,12 +265,14 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     error: v.optional(v.string()),
     resultSummary: v.optional(v.string()),
+    reclaimedBytes: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_reference", ["referenceId"])
     .index("by_status", ["status"])
     .index("by_reference_type", ["referenceId", "type"])
+    .index("by_type_status", ["type", "status"])
     .index("by_updated_at", ["updatedAt"]),
 
   enrichmentSuggestions: defineTable({
