@@ -55,16 +55,22 @@ const completeJob = makeFunctionReference<
 const failJob = makeFunctionReference<"mutation", FailArgs, boolean>(
   "enrichmentJobs:fail",
 ) as unknown as FunctionReference<"mutation", "internal", FailArgs, boolean>;
-type ClaimNextArgs = { excludeAssetIds: Id<"assets">[] };
+type ClaimNextArgs = { excludeAssetIds: Id<"assets">[]; cursor?: string | null };
+type ClaimNextResult = {
+  jobId: Id<"enrichmentJobs"> | null;
+  assetId: Id<"assets"> | null;
+  cursor: string;
+  done: boolean;
+};
 const claimNextUpload = makeFunctionReference<
   "mutation",
   ClaimNextArgs,
-  { jobId: Id<"enrichmentJobs">; assetId: Id<"assets"> } | null
+  ClaimNextResult
 >("driveDerivatives:claimNextUpload") as unknown as FunctionReference<
   "mutation",
   "internal",
   ClaimNextArgs,
-  { jobId: Id<"enrichmentJobs">; assetId: Id<"assets"> } | null
+  ClaimNextResult
 >;
 
 // Sequential batch loop: many assets drain inside one action (steady,
@@ -86,6 +92,7 @@ export const process = internalAction({
     let mirrored = 0;
     let lastError: string | undefined;
     let assetJobId: Id<"enrichmentJobs"> | null = args.jobId;
+    let scanCursor: string | null = null;
 
     while (assetJobId !== null) {
       const jobContext = await ctx.runQuery(getDriveJobContext, {
@@ -154,10 +161,21 @@ export const process = internalAction({
       ) {
         break;
       }
-      const next = await ctx.runMutation(claimNextUpload, {
+      // Skip past exhausted pages inside the batch (bounded: the feeder
+      // cron keeps its own cursor for the following ticks).
+      let next: ClaimNextResult = await ctx.runMutation(claimNextUpload, {
         excludeAssetIds: seenAssetIds,
+        cursor: scanCursor,
       });
-      assetJobId = next?.jobId ?? null;
+      for (let skips = 0; !next.jobId && !next.done && skips < 8; skips++) {
+        scanCursor = next.cursor;
+        next = await ctx.runMutation(claimNextUpload, {
+          excludeAssetIds: seenAssetIds,
+          cursor: scanCursor,
+        });
+      }
+      assetJobId = next.jobId;
+      scanCursor = next.cursor;
     }
 
     if (mirrored === 0) {

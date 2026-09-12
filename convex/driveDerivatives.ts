@@ -27,19 +27,32 @@ export const queueMissing = internalMutation({
   },
   handler: async (ctx, args) => {
     const limit = normalizedLimit(args.limit);
-    const candidates = await ctx.db
-      .query("assets")
-      .withIndex("by_derivative_status", (q: any) =>
-        q.eq("derivativeStatus", "ready"),
-      )
-      .take(limit * 8);
+    // Rotating cursor: the ready-asset index head is all long-done work, so
+    // a fixed take() would re-scan it forever and never reach fresh assets.
+    const cursorKey = "drive-mirrors-v1";
+    const saved = await ctx.db
+      .query("driveMirrorCursors")
+      .withIndex("by_key", (q: any) => q.eq("key", cursorKey))
+      .unique();
+    let cursor: string | null = saved?.cursor ?? null;
+    if (saved?.scanDone) cursor = null;
 
     let queued = 0;
     let active = 0;
     let skipped = 0;
     let reclaimed = 0;
     let reclaimedBytes = 0;
-    for (const asset of candidates) {
+    let scanDone = false;
+    // One paginated scan per tick (Convex allows a single paginate() per
+    // function): a generous page usually fills the limit, and the persisted
+    // cursor carries the remainder to the following ticks.
+    const page = await ctx.db
+      .query("assets")
+      .withIndex("by_derivative_status", (q: any) =>
+        q.eq("derivativeStatus", "ready"),
+      )
+      .paginate({ cursor, numItems: Math.min(256, limit * 32) });
+    for (const asset of page.page) {
       if (queued + active >= limit) break;
       if (asset.drivePreviewFileId || asset.driveThumbFileId) {
         // Verified twin exists: shed the metered bytes, keep serving the
@@ -63,33 +76,45 @@ export const queueMissing = internalMutation({
       await insertUploadJob(ctx, asset);
       queued += 1;
     }
+    cursor = page.continueCursor;
+    scanDone = page.isDone;
+    if (saved) {
+      await ctx.db.patch(saved._id, { cursor, scanDone, updatedAt: Date.now() });
+    } else {
+      await ctx.db.insert("driveMirrorCursors", { key: cursorKey, cursor, scanDone, updatedAt: Date.now() });
+    }
     return { queued, active, skipped, reclaimed, reclaimedBytes };
   },
 });
 
 // The batch worker pulls its next asset through here so many assets drain
-// sequentially inside one action instead of N concurrent actions.
+// sequentially inside one action instead of N concurrent actions. The cursor
+// threads through the worker loop for the same reason the feeder persists
+// one: a fixed take() would re-read the same index head every claim.
 export const claimNextUpload = internalMutation({
   args: {
     excludeAssetIds: v.array(v.id("assets")),
+    cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const excluded = new Set(args.excludeAssetIds.map(String));
-    const candidates = await ctx.db
+    const page = await ctx.db
       .query("assets")
       .withIndex("by_derivative_status", (q: any) =>
         q.eq("derivativeStatus", "ready"),
       )
-      .take(32);
-    for (const asset of candidates) {
+      .paginate({ cursor: args.cursor ?? null, numItems: 32 });
+    for (const asset of page.page) {
       if (excluded.has(String(asset._id))) continue;
       if ((await classifyUploadCandidate(ctx, asset)) !== "eligible") {
         continue;
       }
       const jobId = await insertUploadJob(ctx, asset, false);
-      return { jobId, assetId: asset._id };
+      return { jobId, assetId: asset._id, cursor: page.continueCursor, done: page.isDone };
     }
-    return null;
+    // Head page held nothing claimable: hand the next page to the worker
+    // rather than stalling the batch on done work.
+    return { jobId: null, assetId: null, cursor: page.continueCursor, done: page.isDone };
   },
 });
 
@@ -224,8 +249,28 @@ async function insertUploadJob(
   return jobId;
 }
 
-export const getDriveJobContext = internalQuery({
-  args: {
+export const status = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const byStatus: Record<string, number> = {};
+    let oldestActiveAt: number | null = null;
+    for (const s of ["queued", "running", "succeeded", "failed"]) {
+      const rows = await ctx.db
+        .query("enrichmentJobs")
+        .withIndex("by_type_status", (q: any) => q.eq("type", "drive_derivatives").eq("status", s))
+        .take(1000);
+      byStatus[s] = rows.length;
+      if (s === "queued" || s === "running") {
+        for (const row of rows) {
+          if (oldestActiveAt == null || row.createdAt < oldestActiveAt) oldestActiveAt = row.createdAt;
+        }
+      }
+    }
+    return { byStatus, oldestActiveAt };
+  },
+});
+
+export const getDriveJobContext = internalQuery({  args: {
     jobId: v.id("enrichmentJobs"),
   },
   handler: async (ctx, args) => {

@@ -19,6 +19,14 @@ export default defineSchema({
     nextRunAt: v.number(), startedAt: v.number(), updatedAt: v.number(),
     message: v.optional(v.string()),
   }).index("by_key", ["key"]),
+  // Rotating scan position for the Drive mirror feeder: without a cursor the
+  // feeder re-reads the same index head every tick and the backfill stalls.
+  driveMirrorCursors: defineTable({
+    key: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    scanDone: v.boolean(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
   ...searchTables,
   ...communityTables,
   ...artworkTables,

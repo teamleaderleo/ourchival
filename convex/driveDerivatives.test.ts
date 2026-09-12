@@ -2,7 +2,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 afterEach(() => {
@@ -106,11 +106,50 @@ describe("drive derivative mirroring", () => {
     });
     expect(claimed?.assetId).toBe(ids.assetId);
 
-    // Excluding the eligible asset leaves only the mirrored one: null.
+    // Excluding the eligible asset leaves only the mirrored one: no claim,
+    // with the scan marked done so the worker stops instead of looping.
     const none = await t.mutation(internal.driveDerivatives.claimNextUpload, {
       excludeAssetIds: [ids.assetId],
     });
-    expect(none).toBeNull();
+    expect(none).toMatchObject({ jobId: null, assetId: null, done: true });
+  });
+
+  it("rotates the feeder cursor past long-done index heads", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", refDoc(4));
+      const blob = await ctx.storage.store(new Blob(["thumb"]));
+      // Fill the whole first scan page with already-mirrored assets.
+      for (let i = 0; i < 20; i++) {
+        await ctx.db.insert("assets", {
+          referenceId,
+          previewStorageId: blob,
+          thumbStorageId: blob,
+          derivativeStatus: "ready",
+          drivePreviewFileId: `done-preview-${i}`,
+          driveThumbFileId: `done-thumb-${i}`,
+          tagIds: [],
+          dominantColors: [],
+        });
+      }
+      await ctx.db.insert("assets", {
+        referenceId,
+        previewStorageId: blob,
+        thumbStorageId: blob,
+        derivativeStatus: "ready",
+        tagIds: [],
+        dominantColors: [],
+      });
+    });
+
+    // A fixed take() would re-read the 20 mirrored heads forever and queue
+    // nothing; the cursor must carry the feeder to the fresh asset.
+    let queued = 0;
+    for (let i = 0; i < 4 && queued === 0; i++) {
+      const result = await t.mutation(internal.driveDerivatives.queueMissing, { limit: 2 });
+      queued += result.queued;
+    }
+    expect(queued).toBe(1);
   });
 
   it("reclaims metered blobs once Drive twins verify", async () => {
@@ -184,6 +223,33 @@ describe("drive derivative mirroring", () => {
     });
   });
 
+  it("treats Drive-mirrored assets as ready without metered bytes", async () => {
+    vi.stubEnv("OURCHIVAL_OWNER_ACCESS_KEY", "owner");
+    const t = convexTest(schema, modules);
+    const assetId = await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", refDoc(9));
+      return await ctx.db.insert("assets", {
+        referenceId,
+        derivativeStatus: "ready",
+        drivePreviewFileId: "drive-preview",
+        driveThumbFileId: "drive-thumb",
+        tagIds: [],
+        dominantColors: [],
+      });
+    });
+    expect(
+      await t.mutation(api.mediaDerivatives.ensurePreview, {
+        accessKey: "owner",
+        assetId,
+      }),
+    ).toBe("ready");
+    const jobs = await t.run(async (ctx) =>
+      (await ctx.db.query("enrichmentJobs").collect()).filter(
+        (job) => job.type === "media_derivatives",
+      ),
+    );
+    expect(jobs).toHaveLength(0);
+  });
 
   it("treats an already-mirrored stale job as success", async () => {
     const t = convexTest(schema, modules);
