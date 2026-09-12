@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { startVisiblePolling } from "./visiblePolling";
+import { whenFeedReady } from "./feedReadiness";
 import { onOwnerAccessChange, privateFetch, resolveConvexSiteUrl } from "./privateAccess";
 
 export type DiscoveryChoice = { id: string; kind: "artist" | "tag"; label: string; detail: string; count: number };
@@ -16,6 +17,9 @@ export function useArchiveDiscovery(search: string, revealSensitive: boolean, se
     let cancelled = false;
     setError("");
     async function load(signal: AbortSignal) {
+      // Let the gallery feed go first against the single local backend;
+      // proceed alone after 20s regardless so a failing feed can't wedge us.
+      await whenFeedReady(20_000, signal);
       const requestSignal = () => AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
       try {
         const params = new URLSearchParams({ search, revealSensitive: String(revealSensitive) });

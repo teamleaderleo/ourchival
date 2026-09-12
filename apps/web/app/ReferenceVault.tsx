@@ -61,6 +61,72 @@ export function ReferenceVault() {
     return () => window.removeEventListener("keydown", handleQuickLookKey);
   }, [quickLookReference, vault.selectedReference]);
 
+  // Gallery triage keys mirror Quick Look's letters (k keep, l later,
+  // f favorite, Delete trash) so the same fingers work in both places.
+  // Arrows move the selection; Enter opens the viewer. Inactive while the
+  // viewer owns the keyboard or while typing.
+  useEffect(() => {
+    function handleGalleryKey(event: KeyboardEvent) {
+      if (quickLookReference) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+      if (event.key === " ") return; // Space belongs to the quick-look opener above.
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable ||
+        target?.closest(".inspector")
+      ) {
+        return;
+      }
+      const refs = vault.filteredReferences;
+      if (!refs.length) return;
+      const selectedId = vault.selectedReference?._id;
+      const index = selectedId ? refs.findIndex(r => r._id === selectedId) : -1;
+      const focusCard = (id: string) => {
+        vault.setSelectedId(id);
+        requestAnimationFrame(() => {
+          document.querySelector(`[data-reference-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
+        });
+      };
+      const key = event.key.toLowerCase();
+      if (["arrowdown", "arrowright"].includes(key)) {
+        event.preventDefault();
+        focusCard(refs[Math.min(refs.length - 1, index + 1)]!._id);
+        return;
+      }
+      if (["arrowup", "arrowleft"].includes(key)) {
+        event.preventDefault();
+        focusCard(refs[Math.max(0, index <= 0 ? 0 : index - 1)]!._id);
+        return;
+      }
+      if (event.key === "Enter") {
+        if (!vault.selectedReference) return;
+        event.preventDefault();
+        setQuickLookId(vault.selectedReference._id);
+        return;
+      }
+      if (!vault.selectedReference) return;
+      if (key === "f") {
+        event.preventDefault();
+        void vault.toggleFavorite(vault.selectedReference);
+        return;
+      }
+      if (key === "k" || key === "l" || event.key === "Delete") {
+        event.preventDefault();
+        event.stopPropagation();
+        void vault.moveReference(
+          vault.selectedReference._id,
+          event.key === "Delete" ? "trash" : key === "k" ? "keep" : "later",
+        );
+      }
+    }
+
+    window.addEventListener("keydown", handleGalleryKey);
+    return () => window.removeEventListener("keydown", handleGalleryKey);
+  }, [quickLookReference, vault]);
+
   function openQuickLook(referenceId: string) {
     setQuickLookId(referenceId);
   }

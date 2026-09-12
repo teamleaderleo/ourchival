@@ -14,6 +14,7 @@ import {
 import { type VaultView } from "./VaultNavigation";
 import { appendPage } from "./viewPages";
 import { fetchArchivePage } from "./archiveFetch";
+import { markFeedReady } from "./feedReadiness";
 import { type ArchiveSort } from "../../../packages/shared/src/archiveSort";
 import {
   browseViewKey,
@@ -443,6 +444,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       setHasMore(Boolean(body.hasMore));
       if (!cursor) setSelectedId(null);
       if (body.counts) setCounts(body.counts);
+      markFeedReady();
       report("", "success");
     } catch (error) {
       if (serial === requestSerial.current && !controller.signal.aborted) {
