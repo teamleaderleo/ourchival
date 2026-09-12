@@ -3,6 +3,7 @@ import {
   safeFailureUrl,
   type FailureRecord,
 } from "./failureLog";
+import { diagnoseFailure } from "./failureDiagnosis";
 let records: FailureRecord[] = [];
 let limit = 100;
 const filter = document.getElementById("filter") as HTMLSelectElement;
@@ -17,17 +18,19 @@ function render() {
   const shown = records.filter(
     (r) =>
       filter.value === "all" ||
-      (filter.value === "resolved" ? r.resolvedAt : !r.resolvedAt),
+      (filter.value === "resolved" ? Boolean(r.resolvedAt) : !r.resolvedAt &&
+        (filter.value === "open" || diagnoseFailure(r).category === filter.value)),
   );
   document.getElementById("summary")!.textContent =
     `${records.filter((r) => !r.resolvedAt).length} unresolved · ${records.filter((r) => r.resolvedAt).length} recovered · showing ${Math.min(limit, shown.length)} of ${shown.length}`;
   container.replaceChildren();
   for (const record of shown.slice(0, limit)) {
+    const diagnosis = diagnoseFailure(record);
     const article = node("article", "");
     article.append(
       node(
         "h2",
-        `${record.resolvedAt ? "Recovered" : "Unresolved"} · ${record.stage}${record.httpStatus ? ` · HTTP ${record.httpStatus}` : ""}${record.imagePage ? ` · Image ${record.imagePage}${record.imageCount ? ` of ${record.imageCount}` : ""}` : ""}`,
+        `${record.resolvedAt ? "Recovered" : diagnosis.label} · ${record.stage}${record.httpStatus ? ` · HTTP ${record.httpStatus}` : ""}${record.imagePage ? ` · Image ${record.imagePage}${record.imageCount ? ` of ${record.imageCount}` : ""}` : ""}`,
       ),
     );
     const url = safeFailureUrl(record.sourceUrl);
@@ -41,6 +44,7 @@ function render() {
     const error = node("p", record.message);
     error.className = "error";
     article.append(error);
+    if (!record.resolvedAt) article.append(node("p", diagnosis.action));
     if (record.importedFromCheckpoint)
       article.append(
         node(
