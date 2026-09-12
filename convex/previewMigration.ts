@@ -4,8 +4,11 @@ import { queueAsset } from "./mediaDerivatives";
 import { paginationOptsValidator } from "convex/server";
 
 const key = "compact-previews-v2";
-const batchSize = 4;
-const interval = 10_000;
+const batchSize = 2;
+const interval = 20_000;
+// Pause threshold stays at 4 consecutive failures: smaller batches must not
+// make the sweep twitchier about systemic rot.
+const maxFailureStreak = 4;
 
 export const inventory = internalQuery({
   args: { paginationOpts: paginationOptsValidator },
@@ -112,7 +115,7 @@ export const advance = internalMutation({
       }
     }
     const progress = { pending, upgraded, alreadyCurrent, skipped, failed, reclaimedBytes, failureStreak, failures, updatedAt: Date.now() };
-    if (failureStreak >= batchSize) {
+    if (failureStreak >= maxFailureStreak) {
       await ctx.db.patch(state._id, { ...progress, status: "paused", message: "Repeated preview failures; originals and existing previews retained." });
       return;
     }

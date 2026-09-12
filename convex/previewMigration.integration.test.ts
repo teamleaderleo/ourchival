@@ -17,10 +17,20 @@ test("migration is idempotent and resumes a persisted cursor without requeuing c
     });
     await t.mutation(internal.previewMigration.start, {});
     await t.mutation(internal.previewMigration.start, {});
+    const tick = () =>
+      t.run(async ctx => {
+        const state = await ctx.db.query("previewMigrations").first();
+        await ctx.db.patch(state!._id, { nextRunAt: 0 });
+      });
+    await tick();
+    await t.mutation(internal.previewMigration.advance, {});
+    expect((await t.query(internal.previewMigration.status, {}))?.scanned).toBe(2);
+    await tick();
     await t.mutation(internal.previewMigration.advance, {});
     expect((await t.query(internal.previewMigration.status, {}))?.scanned).toBe(4);
+    await tick();
     await t.mutation(internal.previewMigration.advance, {});
-    expect((await t.query(internal.previewMigration.status, {}))?.scanned).toBe(4);
+    expect((await t.query(internal.previewMigration.status, {}))?.scanned).toBe(6);
     await t.mutation(internal.previewMigration.pause, {});
     await t.mutation(internal.previewMigration.advance, {});
     expect((await t.query(internal.previewMigration.status, {}))?.status).toBe("paused");

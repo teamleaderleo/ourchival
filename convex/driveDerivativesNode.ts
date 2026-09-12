@@ -76,7 +76,7 @@ const claimNextUpload = makeFunctionReference<
 // Sequential batch loop: many assets drain inside one action (steady,
 // low-concurrency I/O) instead of N concurrent actions. Caps keep each
 // invocation safely inside action limits; the cron seeds the next batch.
-const maxAssetsPerInvocation = 25;
+const maxAssetsPerInvocation = 15;
 const invocationBudgetMs = 8 * 60 * 1000;
 
 export const process = internalAction({
