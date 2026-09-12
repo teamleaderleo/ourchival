@@ -1,5 +1,8 @@
 "use client";
 
+import { compactPreviewSources } from "../compactPreviewSources";
+import { useEnsurePreview } from "../useEnsurePreview";
+
 import { useEffect, useMemo, useState } from "react";
 import { getDomain } from "../ReferenceCards";
 import { referenceDisplayTitle } from "../referenceVaultModel";
@@ -43,14 +46,9 @@ export function ReviewDeck() {
   const imageUrl = useMemo(() => {
     if (!reference) return undefined;
     const asset = reference.assets[0];
-    return (
-      asset?.previewUrl ??
-      asset?.storedUrl ??
-      asset?.originalUrl ??
-      asset?.thumbUrl ??
-      reference.sourceSnapshot?.previewImageUrl
-    );
+    return compactPreviewSources(asset)[0];
   }, [reference]);
+  useEnsurePreview(reference?.assets[0], Boolean(reference && !(reference.sealed && !reference.previewsRevealed)));
   const privateImage = usePrivateImageUrl(imageUrl);
 
   const currentIndex = reference

@@ -14,6 +14,7 @@ export type CaptureSession = {
   source: string;
   kind: "bundle" | "import";
   label?: string;
+  receiptJson?: string;
   sourceUrl?: string;
   expectedCount: number;
   completedCount: number;

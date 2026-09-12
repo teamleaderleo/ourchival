@@ -11,6 +11,8 @@ import { isProtectedDriveUrl, primePrivateImageUrl, usePrivateImageUrl } from ".
 import { ReferenceVisualMetadata } from "./ReferenceVisualMetadata";
 import { ReferenceCommunityTags } from "./ReferenceCommunityTags";
 import { CloseButton } from "./CloseButton";
+import { compactPreviewSources } from "./compactPreviewSources";
+import { useEnsurePreview } from "./useEnsurePreview";
 
 export function ReferenceQuickLook({
   reference,
@@ -74,6 +76,7 @@ export function ReferenceQuickLook({
     [reference._id, references],
   );
   const imageSource = referencePreviewSource(reference, assetIndex);
+  useEnsurePreview(reference.assets[assetIndex] ?? reference.assets[0], !(reference.sealed && !reference.previewsRevealed));
   useEffect(() => {
     setZoomed(false);
     imageViewport.current?.scrollTo(0, 0);
@@ -365,11 +368,5 @@ export function ReferenceQuickLook({
 
 function referencePreviewSource(reference: SavedReference, assetIndex = 0) {
   const asset = reference.assets[assetIndex] ?? reference.assets[0];
-  return (
-    asset?.previewUrl ??
-    asset?.thumbUrl ??
-    asset?.storedUrl ??
-    asset?.originalUrl ??
-    reference.sourceSnapshot?.previewImageUrl
-  );
+  return compactPreviewSources(asset)[0];
 }

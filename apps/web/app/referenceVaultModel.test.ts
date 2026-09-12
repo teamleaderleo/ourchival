@@ -12,6 +12,13 @@ import {
   type SavedReference,
 } from "./referenceVaultModel";
 
+it("identifies incomplete Pixiv records without changing original wording", () => {
+  const ref = { platform: "pixiv", sourceUrl: "https://www.pixiv.net/en/artworks/105877582", title: "-----", sourceSnapshot: { pageTitle: "-----" } } as SavedReference;
+  expect(referenceDisplayTitle(ref)).toBe("Pixiv artwork 105877582");
+  expect(ref.title).toBe("-----");
+  expect(referenceDisplayTitle({ ...ref, title: "花" })).toBe("花");
+});
+
 const references: SavedReference[] = [
   {
     _id: "pose-study",

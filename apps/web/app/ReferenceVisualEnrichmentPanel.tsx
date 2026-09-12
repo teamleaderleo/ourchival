@@ -19,9 +19,6 @@ export function ReferenceVisualEnrichmentPanel({
   const privateImageSource =
     asset?.previewUrl ??
     asset?.thumbUrl ??
-    asset?.storedUrl ??
-    asset?.originalUrl ??
-    reference.sourceSnapshot?.previewImageUrl ??
     null;
   const {
     resolvedUrl: imageUrl,

@@ -15,6 +15,8 @@ import { getDomain, getInitial } from "./ReferenceCards";
 import { usePrivateImageUrl } from "./usePrivateImageUrl";
 import { type TriageDestination } from "./useReferenceVault";
 import { mutateReferenceTags, useReferenceTags } from "./useReferenceTags";
+import { compactPreviewSources } from "./compactPreviewSources";
+import { useEnsurePreview } from "./useEnsurePreview";
 
 const quickReasons = [
   "pose",
@@ -47,12 +49,8 @@ export function SelectedReference({
 }) {
   const asset = reference.assets[0];
   const snapshot = reference.sourceSnapshot;
-  const privateImageSource =
-    asset?.previewUrl ??
-    asset?.thumbUrl ??
-    asset?.storedUrl ??
-    asset?.originalUrl ??
-    snapshot?.previewImageUrl;
+  const privateImageSource = compactPreviewSources(asset)[0];
+  useEnsurePreview(asset, !(reference.sealed && !reference.previewsRevealed));
   const {
     resolvedUrl: imageUrl,
     loading: imageLoading,

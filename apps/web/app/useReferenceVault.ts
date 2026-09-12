@@ -252,7 +252,6 @@ export function useReferenceVault(pageSize = defaultPageSize) {
 
   useEffect(() => {
     if (
-      (imagesOnly || activeView === "inbox" || activeView === "later") &&
       filteredReferences.length === 0 &&
       hasMore &&
       !loadError &&
@@ -405,6 +404,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
         sort,
         imagesOnly: String(imagesOnly),
         revealSensitive: String(revealSensitive),
+        excludeOwned: "true",
         // Card payload without intake-diagnostic blobs (fetch receipts,
         // field sources); detail surfaces don't read those fields.
         compact: "true",

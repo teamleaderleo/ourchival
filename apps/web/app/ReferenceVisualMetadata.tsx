@@ -159,7 +159,7 @@ export function ReferenceVisualMetadata({
             compact ? undefined : reference.assets.find((asset) => asset._id === item.assetId)
               ?.previewUrl ??
             reference.assets.find((asset) => asset._id === item.assetId)
-              ?.storedUrl
+              ?.thumbUrl
           }
           disabled={busy || loading}
           onSave={(next) => save(item, next)}

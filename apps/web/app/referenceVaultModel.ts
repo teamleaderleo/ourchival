@@ -226,6 +226,11 @@ export function referenceCollectionLabel(reference: SavedReference) {
 }
 
 export function referenceDisplayTitle(reference: SavedReference) {
+  if (reference.platform === "pixiv" &&
+      ![reference.title, reference.sourceSnapshot?.pageTitle].some(value => value?.trim() && !/^[-–—\s]+$/.test(value))) {
+    const artworkId = reference.sourceUrl.match(/\/artworks\/(\d+)/)?.[1];
+    if (artworkId) return `Pixiv artwork ${artworkId}`;
+  }
   return (
     reference.title?.trim() ||
     reference.sourceSnapshot?.pageTitle?.trim() ||

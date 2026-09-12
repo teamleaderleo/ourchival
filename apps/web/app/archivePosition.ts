@@ -20,7 +20,7 @@ type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 const prefix = "ourchival:browse:v1:";
 export function browseViewKey(origin: string, view: BrowseView) {
   return JSON.stringify([
-    "active-library-v2",
+    "reference-feed-v3",
     origin,
     view.view,
     view.query.trim(),

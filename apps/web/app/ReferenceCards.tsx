@@ -11,6 +11,8 @@ import {
 import { isProtectedDriveUrl, usePrivateImageUrl } from "./usePrivateImageUrl";
 import { useReferenceTags } from "./useReferenceTags";
 import { rememberedDimensions, rememberDimensions } from "./imageDimensions";
+import { compactPreviewSources } from "./compactPreviewSources";
+import { useEnsurePreview } from "./useEnsurePreview";
 
 export function ReferenceCard({
   reference,
@@ -38,22 +40,20 @@ export function ReferenceCard({
     return () => observer.disconnect();
   }, [nearViewport]);
   const asset = reference.assets[0];
+  useEnsurePreview(asset, nearViewport && !(reference.sealed && !reference.previewsRevealed));
   const [learned, setLearned] = useState(() => asset ? rememberedDimensions(asset._id) : undefined);
   const dimensions = learned ?? (asset?.width && asset.height ? { width: asset.width, height: asset.height } : undefined);
   const mode = !reference.assets.length && !reference.sourceSnapshot?.previewImageUrl && !reference.sealed ? "links" : referenceMode(reference.kind);
+  const readingLink = referenceMode(reference.kind) === "links";
   const snapshot = reference.sourceSnapshot;
   const [tags] = useReferenceTags(reference.tagIds, reference.tags);
   const batch = useBatchSelectionItem(reference._id);
-  const imageUrl =
-    asset?.thumbUrl ??
-    asset?.previewUrl ??
-    asset?.storedUrl ??
-    asset?.originalUrl ??
-    snapshot?.previewImageUrl;
+  const previewSources = compactPreviewSources(asset, true);
+  const imageUrl = previewSources[0];
   const domain = getDomain(reference.sourceUrl);
   const title = referenceDisplayTitle(reference);
   const sourceLabel =
-    snapshot?.siteName || reference.authorHandle || reference.authorName || domain;
+    [snapshot?.siteName, reference.authorHandle, reference.authorName].find(value => value?.trim() && !/^[-–—\s]+$/.test(value)) || domain;
   const metadataFailed = snapshot?.metadataStatus === "failed";
   const visibleTags = tags.slice(0, 3);
   const hiddenTagCount = Math.max(0, tags.length - visibleTags.length);
@@ -79,7 +79,7 @@ export function ReferenceCard({
         <div className="thumb-wrap" style={dimensions ? { aspectRatio: `${dimensions.width} / ${dimensions.height}` } : undefined}>
           <ThumbImage
             hidden={reference.sealed && !reference.previewsRevealed}
-            fallbackUrls={nearViewport ? [asset?.previewUrl, asset?.storedUrl, asset?.originalUrl, snapshot?.previewImageUrl] : []}
+            fallbackUrls={nearViewport ? previewSources.slice(1) : []}
             deferred={!nearViewport}
             imageUrl={nearViewport ? imageUrl : undefined}
             title={title}
@@ -105,11 +105,11 @@ export function ReferenceCard({
             <p className="link-source-row">
               <Favicon imageUrl={snapshot?.faviconUrl} label={sourceLabel} />
               <span>{sourceLabel}</span>
-              <span
+              {readingLink ? <span
                 className={`metadata-dot ${metadataFailed ? "failed" : snapshot?.metadataStatus ?? "pending"}`}
                 title={referenceMetadataLabel(reference)}
                 aria-label={referenceMetadataLabel(reference)}
-              />
+              /> : null}
             </p>
           ) : null}
           <h2>{mode === "links" ? <button type="button" className="card-title-open" onClick={onQuickLook ?? onSelect}>{title}</button> : title}</h2>
@@ -139,7 +139,7 @@ export function ReferenceCard({
               {hiddenMatchCount > 0 ? <span>+{hiddenMatchCount}</span> : null}
             </div>
           ) : null}
-          {mode === "links" ? (
+          {mode === "links" && readingLink ? (
             <p className="card-meta">
               <span>{reference.lastOpenedAt ? "Opened" : "Unread"}</span>
               {reference.publishedAt != null ? <span>{formatCaptureDate(reference.publishedAt)}</span> : null}
