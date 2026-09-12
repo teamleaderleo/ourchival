@@ -194,12 +194,31 @@ Two user-visible complaints traced:
   `.tmpzpJegx` unblocked the push. If pushes fail with "Cannot find
   package …/sharp/index.js" again, suspect store/staging, not code.
 
-1. ~~Crons, prefetch, index diet, retention, Drive mirrors, preload~~
-   (Passes 3–8).
+1. ~~Crons, prefetch, index diet, retention, Drive mirrors, preload,
+   resilience, retina~~ (Passes 3–10).
 2. Reclaim Convex derivative blobs once Drive twins verify (reuse
    `storageIsReferenced` guard; keep originals policy unchanged).
 3. If usage still pinches: self-host Convex (open source) on Big Red —
    same code, own compute, zero metering.
+
+## Pass 10 — sequential mirror batches
+
+Backfill math forced it: 2 mirrors per 5-minute cron covers 18k assets in
+~31 days, and raising burst concurrency is exactly what stalls the backend.
+The global-scale answer is batch workers, not bigger bursts.
+
+- New `claimNextUpload` mutation: the worker pulls its next asset itself
+  (skipping mirrored/queued/terminal, honoring an exclusion list) instead
+  of the cron fanning out N concurrent actions.
+- The Node worker now loops up to 25 assets or 8 minutes per invocation,
+  steady sequential I/O, then stops; any failure ends the batch (a systemic
+  Drive outage must not fail-spam) while the cron seeds the next one.
+- `complete` is first-wins: concurrent twins never overwrite a recorded
+  verified identity.
+- Throughput: ~50 assets per 5 min ≈ 600/hr → full backfill in ~30 hours,
+  at *lower* peak load than before.
+- Tests: claim/next-null/first-wins; full suite **400/400**, typecheck
+  clean.
 
 ## Housekeeping flags
 

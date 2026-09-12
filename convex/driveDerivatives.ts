@@ -39,54 +39,97 @@ export const queueMissing = internalMutation({
     let skipped = 0;
     for (const asset of candidates) {
       if (queued + active >= limit) break;
-      if (asset.drivePreviewFileId && asset.driveThumbFileId) {
-        skipped += 1;
-        continue;
-      }
-      if (!asset.previewStorageId && !asset.thumbStorageId) {
-        skipped += 1;
-        continue;
-      }
-      const jobs = await ctx.db
-        .query("enrichmentJobs")
-        .withIndex("by_reference_type", (q: any) =>
-          q.eq("referenceId", asset.referenceId).eq("type", "drive_derivatives"),
-        )
-        .collect();
-      const assetJobs = jobs.filter(
-        (job: any) => job.assetId === asset._id,
-      );
-      if (
-        assetJobs.some(
-          (job: any) => job.status === "queued" || job.status === "running",
-        )
-      ) {
+      const decision = await classifyUploadCandidate(ctx, asset);
+      if (decision === "active") {
         active += 1;
         continue;
       }
-      // Terminal attempts (including failures) stay put like the media
-      // pipeline: a fresh attempt needs a new derivative generation upstream.
-      if (assetJobs.length > 0) {
+      if (decision !== "eligible") {
         skipped += 1;
         continue;
       }
-      const now = Date.now();
-      const jobId = await ctx.db.insert("enrichmentJobs", {
-        referenceId: asset.referenceId,
-        assetId: asset._id,
-        type: "drive_derivatives",
-        status: "queued",
-        attempts: 0,
-        requestedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await ctx.scheduler.runAfter(0, processDriveDerivatives, { jobId });
+      await insertUploadJob(ctx, asset);
       queued += 1;
     }
     return { queued, active, skipped };
   },
 });
+
+// The batch worker pulls its next asset through here so many assets drain
+// sequentially inside one action instead of N concurrent actions.
+export const claimNextUpload = internalMutation({
+  args: {
+    excludeAssetIds: v.array(v.id("assets")),
+  },
+  handler: async (ctx, args) => {
+    const excluded = new Set(args.excludeAssetIds.map(String));
+    const candidates = await ctx.db
+      .query("assets")
+      .withIndex("by_derivative_status", (q: any) =>
+        q.eq("derivativeStatus", "ready"),
+      )
+      .take(32);
+    for (const asset of candidates) {
+      if (excluded.has(String(asset._id))) continue;
+      if ((await classifyUploadCandidate(ctx, asset)) !== "eligible") {
+        continue;
+      }
+      const jobId = await insertUploadJob(ctx, asset, false);
+      return { jobId, assetId: asset._id };
+    }
+    return null;
+  },
+});
+
+type UploadCandidateDecision = "eligible" | "active" | "done" | "unready";
+
+async function classifyUploadCandidate(
+  ctx: any,
+  asset: any,
+): Promise<UploadCandidateDecision> {
+  if (asset.drivePreviewFileId && asset.driveThumbFileId) return "done";
+  if (!asset.previewStorageId && !asset.thumbStorageId) return "unready";
+  const jobs = await ctx.db
+    .query("enrichmentJobs")
+    .withIndex("by_reference_type", (q: any) =>
+      q.eq("referenceId", asset.referenceId).eq("type", "drive_derivatives"),
+    )
+    .collect();
+  const assetJobs = jobs.filter((job: any) => job.assetId === asset._id);
+  if (
+    assetJobs.some(
+      (job: any) => job.status === "queued" || job.status === "running",
+    )
+  ) {
+    return "active";
+  }
+  // Terminal attempts (including failures) stay put like the media
+  // pipeline: a fresh attempt needs a new derivative generation upstream.
+  if (assetJobs.length > 0) return "done";
+  return "eligible";
+}
+
+async function insertUploadJob(
+  ctx: any,
+  asset: any,
+  schedule = true,
+) {
+  const now = Date.now();
+  const jobId = await ctx.db.insert("enrichmentJobs", {
+    referenceId: asset.referenceId,
+    assetId: asset._id,
+    type: "drive_derivatives",
+    status: "queued",
+    attempts: 0,
+    requestedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  if (schedule) {
+    await ctx.scheduler.runAfter(0, processDriveDerivatives, { jobId });
+  }
+  return jobId;
+}
 
 export const getDriveJobContext = internalQuery({
   args: {
@@ -141,10 +184,18 @@ export const complete = internalMutation({
     if (!args.preview && !args.thumb) {
       throw new Error("Drive derivative upload recorded no files.");
     }
-    await ctx.db.patch(asset._id, {
-      ...(args.preview ? { drivePreviewFileId: args.preview.id } : {}),
-      ...(args.thumb ? { driveThumbFileId: args.thumb.id } : {}),
-    });
+    // First wins: a concurrent worker may have recorded its twin already.
+    // Never overwrite an existing verified identity with another file.
+    const patch: Record<string, string> = {};
+    if (args.preview && !asset.drivePreviewFileId) {
+      patch.drivePreviewFileId = args.preview.id;
+    }
+    if (args.thumb && !asset.driveThumbFileId) {
+      patch.driveThumbFileId = args.thumb.id;
+    }
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(asset._id, patch);
+    }
     const now = Date.now();
     await ctx.db.patch(job._id, {
       status: "succeeded",

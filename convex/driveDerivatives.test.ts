@@ -71,6 +71,85 @@ describe("drive derivative mirroring", () => {
     expect(again).toMatchObject({ queued: 0, active: 1 });
   });
 
+  it("claims the next upload without scheduling extra actions", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", refDoc(3));
+      const blob = await ctx.storage.store(new Blob(["thumb"]));
+      const assetId = await ctx.db.insert("assets", {
+        referenceId,
+        previewStorageId: blob,
+        thumbStorageId: blob,
+        derivativeStatus: "ready",
+        tagIds: [],
+        dominantColors: [],
+      });
+      const mirroredId = await ctx.db.insert("assets", {
+        referenceId,
+        previewStorageId: blob,
+        thumbStorageId: blob,
+        derivativeStatus: "ready",
+        drivePreviewFileId: "done-preview",
+        driveThumbFileId: "done-thumb",
+        tagIds: [],
+        dominantColors: [],
+      });
+      return { assetId, mirroredId };
+    });
+
+    const claimed = await t.mutation(internal.driveDerivatives.claimNextUpload, {
+      excludeAssetIds: [],
+    });
+    expect(claimed?.assetId).toBe(ids.assetId);
+
+    // Excluding the eligible asset leaves only the mirrored one: null.
+    const none = await t.mutation(internal.driveDerivatives.claimNextUpload, {
+      excludeAssetIds: [ids.assetId],
+    });
+    expect(none).toBeNull();
+  });
+
+  it("never overwrites a verified Drive identity (first wins)", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", refDoc(4));
+      const blob = await ctx.storage.store(new Blob(["thumb"]));
+      const assetId = await ctx.db.insert("assets", {
+        referenceId,
+        previewStorageId: blob,
+        thumbStorageId: blob,
+        derivativeStatus: "ready",
+        drivePreviewFileId: "first-preview",
+        driveThumbFileId: "first-thumb",
+        tagIds: [],
+        dominantColors: [],
+      });
+      const jobId = await ctx.db.insert("enrichmentJobs", {
+        referenceId,
+        assetId,
+        type: "drive_derivatives",
+        status: "running",
+        attempts: 1,
+        requestedAt: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { assetId, jobId };
+    });
+
+    await t.mutation(internal.driveDerivatives.complete, {
+      jobId: ids.jobId,
+      assetId: ids.assetId,
+      preview: { id: "second-preview", size: 100, md5Checksum: "a".repeat(32) },
+      thumb: { id: "second-thumb", size: 50, md5Checksum: "b".repeat(32) },
+    });
+    const asset = await t.run(async (ctx) => ctx.db.get(ids.assetId));
+    expect(asset).toMatchObject({
+      drivePreviewFileId: "first-preview",
+      driveThumbFileId: "first-thumb",
+    });
+  });
+
   it("records verified IDs and exposes them to hydration", async () => {
     const t = convexTest(schema, modules);
     const ids = await t.run(async (ctx) => {

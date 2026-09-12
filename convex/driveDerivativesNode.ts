@@ -55,6 +55,23 @@ const completeJob = makeFunctionReference<
 const failJob = makeFunctionReference<"mutation", FailArgs, boolean>(
   "enrichmentJobs:fail",
 ) as unknown as FunctionReference<"mutation", "internal", FailArgs, boolean>;
+type ClaimNextArgs = { excludeAssetIds: Id<"assets">[] };
+const claimNextUpload = makeFunctionReference<
+  "mutation",
+  ClaimNextArgs,
+  { jobId: Id<"enrichmentJobs">; assetId: Id<"assets"> } | null
+>("driveDerivatives:claimNextUpload") as unknown as FunctionReference<
+  "mutation",
+  "internal",
+  ClaimNextArgs,
+  { jobId: Id<"enrichmentJobs">; assetId: Id<"assets"> } | null
+>;
+
+// Sequential batch loop: many assets drain inside one action (steady,
+// low-concurrency I/O) instead of N concurrent actions. Caps keep each
+// invocation safely inside action limits; the cron seeds the next batch.
+const maxAssetsPerInvocation = 25;
+const invocationBudgetMs = 8 * 60 * 1000;
 
 export const process = internalAction({
   args: {
@@ -64,49 +81,81 @@ export const process = internalAction({
     ctx,
     args,
   ): Promise<{ status: "succeeded" | "failed"; summary?: string } | null> => {
-    const jobContext = await ctx.runQuery(getDriveJobContext, args);
-    if (!jobContext || jobContext.job.status !== "queued") return null;
+    const startedAt = Date.now();
+    const seenAssetIds: Id<"assets">[] = [];
+    let mirrored = 0;
+    let lastError: string | undefined;
+    let assetJobId: Id<"enrichmentJobs"> | null = args.jobId;
 
-    const claimed = await ctx.runMutation(claimJob, args);
-    if (!claimed) return null;
+    while (assetJobId !== null) {
+      const jobContext = await ctx.runQuery(getDriveJobContext, {
+        jobId: assetJobId,
+      });
+      if (!jobContext || jobContext.job.status !== "queued") break;
 
-    try {
-      const { asset, reference } = jobContext;
-      const preview = await mirrorDerivative(
-        ctx,
-        asset,
-        reference,
-        "preview",
-        jobContext.previewStorageUrl,
-      );
-      const thumb = await mirrorDerivative(
-        ctx,
-        asset,
-        reference,
-        "thumb",
-        jobContext.thumbStorageUrl,
-      );
-      if (!preview && !thumb) {
-        throw new Error("Asset has no stored derivatives to mirror.");
+      const claimed = await ctx.runMutation(claimJob, { jobId: assetJobId });
+      if (!claimed) break;
+      const claimedJobId: Id<"enrichmentJobs"> = assetJobId;
+      assetJobId = null;
+
+      try {
+        const { asset, reference } = jobContext;
+        const preview = await mirrorDerivative(
+          ctx,
+          asset,
+          reference,
+          "preview",
+          jobContext.previewStorageUrl,
+        );
+        const thumb = await mirrorDerivative(
+          ctx,
+          asset,
+          reference,
+          "thumb",
+          jobContext.thumbStorageUrl,
+        );
+        if (!preview && !thumb) {
+          throw new Error("Asset has no stored derivatives to mirror.");
+        }
+        await ctx.runMutation(completeJob, {
+          jobId: claimedJobId,
+          assetId: asset._id,
+          ...(preview ? { preview } : {}),
+          ...(thumb ? { thumb } : {}),
+        });
+        mirrored += 1;
+        seenAssetIds.push(asset._id);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Drive derivative processor failed.";
+        await ctx.runMutation(failJob, {
+          jobId: claimedJobId,
+          error: message,
+        });
+        // A failure here (Drive down, quota, oversized file) would repeat
+        // for every subsequent asset: stop the batch, keep the cron cadence.
+        lastError = message;
+        break;
       }
-      await ctx.runMutation(completeJob, {
-        jobId: args.jobId,
-        assetId: asset._id,
-        ...(preview ? { preview } : {}),
-        ...(thumb ? { thumb } : {}),
+
+      if (
+        mirrored >= maxAssetsPerInvocation ||
+        Date.now() - startedAt > invocationBudgetMs
+      ) {
+        break;
+      }
+      const next = await ctx.runMutation(claimNextUpload, {
+        excludeAssetIds: seenAssetIds,
       });
-      return { status: "succeeded" };
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Drive derivative processor failed.";
-      await ctx.runMutation(failJob, {
-        jobId: args.jobId,
-        error: message,
-      });
-      return { status: "failed", summary: message };
+      assetJobId = next?.jobId ?? null;
     }
+
+    if (mirrored === 0) {
+      return lastError ? { status: "failed", summary: lastError } : null;
+    }
+    return { status: "succeeded", summary: `Mirrored ${mirrored} asset(s).` };
   },
 });
 
