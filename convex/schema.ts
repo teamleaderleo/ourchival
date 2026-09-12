@@ -4,6 +4,7 @@ import { searchTables } from "./lib/searchSchema";
 import { communityTables } from "./lib/communitySchema";
 import { artworkTables } from "./lib/artworkSchema";
 import { discoveryTables } from "./lib/discoverySchema";
+import { missingWorkTables } from "./lib/missingWorkSchema";
 
 export default defineSchema({
   ...discoveryTables,
@@ -30,6 +31,7 @@ export default defineSchema({
   ...searchTables,
   ...communityTables,
   ...artworkTables,
+  ...missingWorkTables,
   references: defineTable({
     browseLane: v.optional(v.union(v.literal("images"), v.literal("links"))),
     kind: v.union(

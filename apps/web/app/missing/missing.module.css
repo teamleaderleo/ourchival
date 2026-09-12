@@ -1,0 +1,106 @@
+.workspace {
+  max-width: 1320px;
+  margin: auto;
+  padding: 28px;
+}
+.workspace header {
+  margin-bottom: 28px;
+}
+.workspace h1 {
+  margin: 14px 0 8px;
+}
+.workspace p {
+  line-height: 1.55;
+}
+.columns {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(360px, 1.2fr);
+  gap: 36px;
+  align-items: start;
+}
+.queue {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+  max-height: 70vh;
+  overflow: auto;
+}
+.queue button {
+  display: grid;
+  gap: 7px;
+  text-align: left;
+  padding: 16px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.queue button:hover,
+.queue button[aria-pressed="true"] {
+  background: #252421;
+  border-color: #51483c;
+}
+.queue span,
+.queue small,
+.workspace time {
+  color: #aaa69d;
+  font-size: 13px;
+}
+.research {
+  min-width: 0;
+}
+.research details {
+  margin: 20px 0;
+}
+.research summary {
+  cursor: pointer;
+}
+.research form {
+  margin: 24px 0;
+}
+.research label {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.research input,
+.research select,
+.research textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid #51483c;
+  border-radius: 10px;
+  background: #24231f;
+  color: inherit;
+  font: inherit;
+}
+.research a,
+.check p {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.check {
+  padding: 16px 0;
+  border-bottom: 1px solid #393630;
+}
+.error {
+  color: #ffb7ad;
+}
+.workspace :focus-visible {
+  outline: 2px solid #d2b78f;
+  outline-offset: 3px;
+}
+@media (max-width: 760px) {
+  .workspace {
+    padding: 18px;
+  }
+  .columns {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .queue {
+    max-height: 36vh;
+  }
+}
