@@ -94,12 +94,15 @@ try {
   // or the batch-exhausted empty state), not the mid-scan placeholder.
   await page.goto(new URL('/missing', baseUrl).toString(), { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(
-    () => document.querySelector('section[aria-label="Missing image queue"] button')
+    () => document.querySelector('section[aria-label="Missing image queue"] button[aria-pressed]')
+      || [...document.querySelectorAll('section[aria-label="Missing image queue"] button')]
+        .some(b => !b.disabled && /check next/i.test(b.innerText))
       || /no missing images in this batch|could not load/i.test(document.body.innerText),
-    { timeout: 90000 },
+    { timeout: 180000 },
   ).catch(() => {});
   report.surfaces.missing = await page.evaluate(() => ({
     heading: document.querySelector('h1')?.innerText ?? null,
+    items: document.querySelectorAll('section[aria-label="Missing image queue"] button[aria-pressed]').length,
     queueText: document.querySelector('main')?.innerText.slice(0, 220) ?? null,
   }));
   await page.screenshot({ path: join(outDir, 'missing.png') });
