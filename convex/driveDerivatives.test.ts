@@ -391,3 +391,39 @@ describe("drive derivative mirroring", () => {
     );
   });
 });
+
+  it("yields new uploads while the gallery is active but still reclaims", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", refDoc(10));
+      const blob = await ctx.storage.store(new Blob(["thumb"]));
+      // Fresh asset eligible for a new upload job.
+      await ctx.db.insert("assets", {
+        referenceId,
+        previewStorageId: blob,
+        thumbStorageId: blob,
+        derivativeStatus: "ready",
+        tagIds: [],
+        dominantColors: [],
+      });
+      // Mirrored asset holding its own metered blob: reclaim must still run.
+      const old = await ctx.storage.store(new Blob(["old thumb"]));
+      await ctx.db.insert("assets", {
+        referenceId,
+        previewStorageId: old,
+        thumbStorageId: old,
+        derivativeStatus: "ready",
+        drivePreviewFileId: "drive-preview",
+        driveThumbFileId: "drive-thumb",
+        tagIds: [],
+        dominantColors: [],
+      });
+    });
+    await t.mutation(internal.httpDb.touchFeedActivity, {});
+    const result = await t.mutation(internal.driveDerivatives.queueMissing, { limit: 4 });
+    expect(result.queued).toBe(0);
+    expect(result.reclaimed).toBeGreaterThan(0);
+    // Claim ends the worker batch early instead of starting new mirrors.
+    const claim = await t.mutation(internal.driveDerivatives.claimNextUpload, { excludeAssetIds: [] });
+    expect(claim).toMatchObject({ jobId: null, done: true });
+  });

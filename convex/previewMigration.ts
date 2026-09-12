@@ -58,6 +58,9 @@ export const pause = internalMutation({
 export const advance = internalMutation({
   args: {},
   handler: async ctx => {
+    // Yield to the human: gallery reads never queue behind batch Sharp
+    // work. The 5-minute cron re-fires this tick; nothing is lost.
+    if (await ctx.runQuery(internal.httpDb.foregroundActive, {})) return;
     let state = await ctx.db.query("previewMigrations").withIndex("by_key", q => q.eq("key", key)).unique();
     // Self-starting: the cron owns this migration, so the first tick creates
     // the checkpoint instead of waiting for a manual kick that never comes.
@@ -119,6 +122,26 @@ export const advance = internalMutation({
       return;
     }
     if (state.scanDone) {
+      // Retry lap: transient backend fetches ("fetch failed" under load) are
+      // the common failure, so requeue retained failures up to 3 laps before
+      // calling the migration done. failureStreak still halts systemic rot.
+      const laps = state.laps ?? 0;
+      if (failures.length > 0 && laps < 3) {
+        const retryPending = [];
+        for (const failure of failures) {
+          const asset = await ctx.db.get(failure.assetId);
+          if (!asset) continue;
+          const job = await queueAsset(ctx, asset, true);
+          retryPending.push({ jobId: job._id, assetId: asset._id });
+        }
+        await ctx.db.patch(state._id, {
+          ...progress, pending: retryPending, failures: [], laps: laps + 1,
+          message: `Retry lap ${laps + 1}: ${retryPending.length} failed items requeued.`,
+          nextRunAt: Date.now() + interval,
+        });
+        await ctx.scheduler.runAfter(interval, internal.previewMigration.advance, {});
+        return;
+      }
       await ctx.db.patch(state._id, { ...progress, status: "complete", message: failed ? "Scan complete with failed items retained for retry." : "Existing previews migrated." });
       return;
     }

@@ -16,6 +16,7 @@ export default defineSchema({
     pending: v.array(v.object({ jobId: v.id("enrichmentJobs"), assetId: v.id("assets") })),
     scanned: v.number(), upgraded: v.number(), alreadyCurrent: v.number(), skipped: v.number(), failed: v.number(),
     reclaimedBytes: v.number(), failureStreak: v.number(),
+    laps: v.optional(v.number()),
     failures: v.array(v.object({ assetId: v.id("assets"), reason: v.string() })),
     nextRunAt: v.number(), startedAt: v.number(), updatedAt: v.number(),
     message: v.optional(v.string()),
@@ -27,6 +28,12 @@ export default defineSchema({
     cursor: v.union(v.string(), v.null()),
     scanDone: v.boolean(),
     updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+  // Last interactive use: background pipelines yield while the human is
+  // browsing so gallery reads never queue behind batch writes.
+  activityState: defineTable({
+    key: v.string(),
+    lastFeedAt: v.number(),
   }).index("by_key", ["key"]),
   ...searchTables,
   ...communityTables,

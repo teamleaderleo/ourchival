@@ -433,8 +433,7 @@ http.route({
       const [maintenance, exportState] = await Promise.all([
         ctx.runQuery(internal.httpDb.feedMaintenanceStatus, {}),
         ctx.runQuery(internal.preferenceExport.getExportState, {}),
-      ]);
-      if (!maintenance.statsReady) {
+      ]);      if (!maintenance.statsReady) {
         await ctx.runMutation(internal.httpDb.initializeReferenceStats, {});
       }
       if (!exportState) {
@@ -445,6 +444,11 @@ http.route({
       }
       const requestUrl = new URL(request.url);
       const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? 48);
+      // Foreground heartbeat (initial pages only, so infinite scroll stays
+      // read-only): background pipelines yield while the human browses.
+      if (!requestUrl.searchParams.get("cursor")) {
+        await ctx.runMutation(internal.httpDb.touchFeedActivity, {});
+      }
       const pageSize = Number.isFinite(requestedLimit)
         ? Math.min(96, Math.max(12, Math.floor(requestedLimit)))
         : 48;

@@ -99,3 +99,48 @@ test("jobs that succeeded under an older recipe requeue instead of failing", asy
     await t.finishAllScheduledFunctions(vi.runAllTimers);
   } finally { vi.useRealTimers(); }
 });
+
+test("completed scans retry retained failures for up to 3 laps", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.previewMigration.start, {});
+    const assetId = await t.run(async ctx => {
+      const ref = await ctx.db.insert("references", { kind: "image", platform: "manual", sourceUrl: "https://example.com", capturedAt: 1, boardIds: [], tagIds: [], favorite: false, archived: false, deleted: false });
+      const storage = await ctx.storage.store(new Blob(["old preview"]));
+      const id = await ctx.db.insert("assets", { referenceId: ref, dominantColors: [], previewStorageId: storage });
+      const state = await ctx.db.query("previewMigrations").first();
+      await ctx.db.patch(state!._id, { scanDone: true, failed: 1, failures: [{ assetId: id, reason: "fetch failed" }] });
+      return id;
+    });
+    await t.mutation(internal.previewMigration.advance, {});
+    const status = await t.query(internal.previewMigration.status, {});
+    expect(status).toMatchObject({ status: "running", laps: 1 });
+    expect(status?.pending.map(p => String(p.assetId))).toContain(String(assetId));
+    expect(status?.failures).toHaveLength(0);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+  } finally { vi.useRealTimers(); }
+});
+
+test("advance yields while the gallery is active", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.previewMigration.start, {});
+    await t.run(async ctx => {
+      const ref = await ctx.db.insert("references", { kind: "image", platform: "manual", sourceUrl: "https://example.com", capturedAt: 1, boardIds: [], tagIds: [], favorite: false, archived: false, deleted: false });
+      await ctx.db.insert("assets", { referenceId: ref, dominantColors: [] });
+    });
+    await t.mutation(internal.httpDb.touchFeedActivity, {});
+    await t.mutation(internal.previewMigration.advance, {});
+    expect(await t.query(internal.previewMigration.status, {})).toMatchObject({ status: "running", scanned: 0 });
+    // An hour of silence: the batch resumes on its own.
+    await t.run(async ctx => {
+      const row = await ctx.db.query("activityState").first();
+      await ctx.db.patch(row!._id, { lastFeedAt: 1 });
+    });
+    await t.mutation(internal.previewMigration.advance, {});
+    expect((await t.query(internal.previewMigration.status, {}))?.scanned).toBeGreaterThan(0);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+  } finally { vi.useRealTimers(); }
+});

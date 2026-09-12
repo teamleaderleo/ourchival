@@ -27,6 +27,9 @@ export const queueMissing = internalMutation({
   },
   handler: async (ctx, args) => {
     const limit = normalizedLimit(args.limit);
+    // Yield new uploads while the human browses, but always reclaim: shedding
+    // metered bytes is cheap reads, seeding Sharp/Drive work is not.
+    const yieldToForeground = await ctx.runQuery(internal.httpDb.foregroundActive, {});
     // Rotating cursor: the ready-asset index head is all long-done work, so
     // a fixed take() would re-scan it forever and never reach fresh assets.
     const cursorKey = "drive-mirrors-v1";
@@ -64,17 +67,17 @@ export const queueMissing = internalMutation({
         reclaimedBytes += freed.bytes;
         continue;
       }
-      const decision = await classifyUploadCandidate(ctx, asset);
-      if (decision === "active") {
-        active += 1;
-        continue;
-      }
-      if (decision !== "eligible") {
-        skipped += 1;
-        continue;
-      }
-      await insertUploadJob(ctx, asset);
-      queued += 1;
+        const decision = await classifyUploadCandidate(ctx, asset);
+        if (decision === "active") {
+          active += 1;
+          continue;
+        }
+        if (decision !== "eligible" || yieldToForeground) {
+          skipped += 1;
+          continue;
+        }
+        await insertUploadJob(ctx, asset);
+        queued += 1;
     }
     cursor = page.continueCursor;
     scanDone = page.isDone;
@@ -97,6 +100,11 @@ export const claimNextUpload = internalMutation({
     cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
+    // End the batch early when the human arrives: the seeded job still
+    // mirrors its own asset, and the cron reseeds later.
+    if (await ctx.runQuery(internal.httpDb.foregroundActive, {})) {
+      return { jobId: null, assetId: null, cursor: args.cursor ?? null, done: true };
+    }
     const excluded = new Set(args.excludeAssetIds.map(String));
     const page = await ctx.db
       .query("assets")
@@ -202,6 +210,7 @@ async function storageIsReferenced(
 async function reclaimMirroredBlobs(ctx: any, asset: any) {  let files = 0;
   let bytes = 0;
   const clear: Record<string, undefined> = {};
+  const handled = new Set<string>();
   const sides = [
     { storage: "previewStorageId", drive: "drivePreviewFileId" },
     { storage: "thumbStorageId", drive: "driveThumbFileId" },
@@ -212,8 +221,12 @@ async function reclaimMirroredBlobs(ctx: any, asset: any) {  let files = 0;
     // Detach unconditionally: the Drive twin is now the source of truth.
     // The bytes stay until their last referrer detaches.
     clear[storage] = undefined;
+    // Preview and thumb often share one blob: delete it once.
+    if (handled.has(String(storageId))) continue;
+    handled.add(String(storageId));
     if (await storageIsReferenced(ctx, storageId, asset._id)) continue;
     const metadata = await ctx.db.system.get(storageId);
+    if (!metadata) continue;
     await ctx.storage.delete(storageId);
     files += 1;
     bytes += metadata?.size ?? 0;

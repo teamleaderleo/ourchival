@@ -33,6 +33,39 @@ export const feedMaintenanceStatus = internalQuery({
   }),
 });
 
+// Foreground heartbeat: background pipelines check this and yield while the
+// human is browsing. Writes throttled to one per minute; reads are indexed.
+const ACTIVITY_KEY = "gallery-v1";
+const ACTIVITY_TTL_MS = 5 * 60_000;
+const ACTIVITY_WRITE_MS = 60_000;
+
+export const touchFeedActivity = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const row = await ctx.db
+      .query("activityState")
+      .withIndex("by_key", (q) => q.eq("key", ACTIVITY_KEY))
+      .unique();
+    if (!row) {
+      await ctx.db.insert("activityState", { key: ACTIVITY_KEY, lastFeedAt: now });
+    } else if (now - row.lastFeedAt > ACTIVITY_WRITE_MS) {
+      await ctx.db.patch(row._id, { lastFeedAt: now });
+    }
+  },
+});
+
+export const foregroundActive = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const row = await ctx.db
+      .query("activityState")
+      .withIndex("by_key", (q) => q.eq("key", ACTIVITY_KEY))
+      .unique();
+    return row != null && Date.now() - row.lastFeedAt < ACTIVITY_TTL_MS;
+  },
+});
+
 export const listReferences = internalQuery({
   args: { url: v.string() },
   handler: async (ctx, args) => await listReferencePage(ctx, args.url),
