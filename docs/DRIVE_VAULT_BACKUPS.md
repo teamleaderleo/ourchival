@@ -28,6 +28,11 @@ are automatically deleted: older parts can contain images needed by newer
 incremental snapshots. These are point-in-time backups, not continuous sync;
 edits since the last successful backup remain local.
 
+After a verified upload, the job removes backend export scratch `.blob` files
+older than six hours, always retaining the newest two. These full local exports
+are separate from the incremental Drive backup chain. This cleanup does not
+remove live database files, stored images, or any Drive backup parts.
+
 Status is in `.convex/drive-backup/progress.json`; `verified` records the last
 successful upload. A failed or interrupted attempt never advances the verified
 chain. `.convex/drive-backup/pending.json` contains a sensitive upload capability

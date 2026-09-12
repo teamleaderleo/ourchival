@@ -225,6 +225,22 @@ def upload(path, pending):
     return {**result, "sha256": sha}
 
 
+def prune_local_exports():
+    """Remove old backend export scratch files, never incremental backup parts."""
+    exports = ROOT / ".convex/local/default/convex_local_storage/exports"
+    if not exports.is_dir() or exports.resolve() != exports:
+        return
+    files = sorted(
+        (p for p in exports.glob("*.blob") if p.is_file() and not p.is_symlink()),
+        key=lambda p: p.stat().st_mtime,
+    )
+    cutoff = time.time() - 6 * 60 * 60
+    # Keep recent exports and at least two snapshots for local troubleshooting.
+    for path in files[:-2]:
+        if path.stat().st_mtime < cutoff:
+            path.unlink(missing_ok=True)
+
+
 def backup(snapshot=None):
     os.umask(0o077)
     STATE.mkdir(parents=True, exist_ok=True)
@@ -260,6 +276,7 @@ def backup(snapshot=None):
         pending_file.unlink()
         part.unlink()
         (STATE / "snapshot.zip").unlink(missing_ok=True)
+        prune_local_exports()
         print(json.dumps({"phase": "verified", "parts": len(parts), "storedFilesCovered": len(state["storage"]), "bytesUploaded": int(result["size"])}))
 
 
