@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CloseButton } from "./CloseButton";
 import { ThumbImage, getDomain } from "./ReferenceCards";
+import { importReceipt } from "./importReceipt";
+import { CloseButton } from "./CloseButton";
 import {
   setCaptureSessionReviewState,
   useCaptureSessionReferences,
@@ -143,6 +144,7 @@ function SessionList({
   return (
     <div className="capture-session-list">
       <div className="capture-session-list-heading">
+        <a href="/missing" className="button secondary">Research missing works ↗</a>
         <p>
           Multi-image posts and browser imports stay together after the Clipper
           popup closes.
@@ -178,8 +180,10 @@ function SessionList({
                 · {formatSessionDate(session.startedAt)}
               </small>
               <span>
-                {session.savedCount} saved
-                {session.duplicateCount
+                {importReceipt(session.receiptJson)?.originals != null
+                  ? `${importReceipt(session.receiptJson)!.originals} proven originals · ${importReceipt(session.receiptJson)!.remaining ?? "Unknown"} artworks left to scan`
+                  : `${session.savedCount} new references`}
+                {!session.receiptJson && session.duplicateCount
                   ? ` · ${session.duplicateCount} existing`
                   : ""}
                 {session.failedCount ? ` · ${session.failedCount} failed` : ""}
@@ -218,6 +222,7 @@ function SessionDetail({
   message: string;
   onReviewState: (state: CaptureSessionReviewState) => Promise<void>;
 }) {
+  const receipt = importReceipt(session.receiptJson);
   return (
     <div className="capture-session-detail">
       <section className="capture-session-summary">
@@ -237,11 +242,11 @@ function SessionDetail({
         </div>
         <dl>
           <div>
-            <dt>Saved</dt>
+            <dt>New references</dt>
             <dd>{session.savedCount}</dd>
           </div>
           <div>
-            <dt>Existing</dt>
+            <dt>Reused captures</dt>
             <dd>{session.duplicateCount}</dd>
           </div>
           <div>
@@ -249,10 +254,19 @@ function SessionDetail({
             <dd>{session.skippedCount}</dd>
           </div>
           <div>
-            <dt>Failed</dt>
+            <dt>Capture failures</dt>
             <dd>{session.failedCount}</dd>
           </div>
         </dl>
+        {receipt ? <section aria-label="Image recovery progress">
+          <h3>Image recovery</h3>
+          <p>{receipt.observed ?? "Unknown"} artworks observed · {receipt.remaining ?? "Unknown"} left to scan</p>
+          <p><strong>{receipt.originals ?? "Unknown"} proven originals stored</strong> / {receipt.expected ?? "unknown"} known image pages</p>
+          {(receipt.unknown ?? 0) > 0 ? <p>{receipt.unknown} artworks still need their image counts checked. The known-page total does not include their missing pages.</p> : null}
+          {(receipt.degraded ?? 0) + (receipt.unproven ?? 0) + (receipt.linked ?? 0) > 0 ? <p>{receipt.degraded ?? 0} lower-resolution copies · {receipt.unproven ?? 0} unverified renditions · {receipt.linked ?? 0} link-only images</p> : null}
+          <p>Last checkpoint: {formatSessionDate(session.updatedAt)}. A zero capture-failure count does not mean every artwork is complete.</p>
+          <details><summary>How recovery works</summary><p>Resume continues the unfinished scan. Repair missing originals in the Clipper rechecks earlier bookmarks and reuses durable images. Failure history records individual errors and suggested next steps. Reviewing this session does not change download completeness.</p></details>
+        </section> : null}
         {typeof session.discoveredCount === "number" ? (
           <p className="capture-session-message">
             Receipt: {session.discoveredCount} discovered ·{" "}
@@ -273,7 +287,7 @@ function SessionDetail({
             target="_blank"
             rel="noreferrer"
           >
-            Open bundle source ↗
+            Source ↗
           </a>
         ) : null}
       </section>

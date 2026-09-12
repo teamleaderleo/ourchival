@@ -143,7 +143,7 @@ function ExampleImage({
   tag: ReferenceTag;
 }) {
   const image = usePrivateImageUrl(
-    asset.previewUrl ?? asset.storedUrl ?? asset.thumbUrl ?? undefined,
+    asset.previewUrl ?? asset.thumbUrl ?? undefined,
   );
   const [example, setExample] = useState<Example>(null);
   const [busy, setBusy] = useState(true);

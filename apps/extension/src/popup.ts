@@ -505,6 +505,7 @@ function renderSourceIntake(
         ${state.failed ? `<span><strong>${state.failed}</strong> failed</span>` : ""}
         ${state.reportedCount ? `<span><strong>${Math.max(0, state.reportedCount - state.observed)}</strong> artworks left to scan</span>` : ""}
         ${Object.keys(state.gaps ?? {}).length ? `<span><strong>${Object.keys(state.gaps ?? {}).length}</strong> recorded gaps</span>` : ""}
+        ${state.unknownPageCountArtworks ? `<span><strong>${state.unknownPageCountArtworks}</strong> artworks with unknown image counts</span>` : ""}
         ${state.receiptVersion === 2 && (state.originalCandidates ?? 0) > 0 ? `<span><strong>${state.originalsStored ?? 0}/${state.originalCandidates}</strong> originals secured</span>` : state.originalCandidates ? `<span>Legacy receipt: rendition audit needed</span>` : ""}
         ${state.degradedStored ? `<span><strong>${state.degradedStored}</strong> degraded</span>` : ""}
         ${state.unknownStored ? `<span><strong>${state.unknownStored}</strong> unproven rendition</span>` : ""}
