@@ -34,6 +34,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   const [message, setMessage] = useState("");
   const [recoveryMode, setRecoveryMode] = useState(false);
   const verificationSequence = useRef(0);
+  const verificationAutoRetry = useRef(0);
   const googleEnabled = Boolean(
     process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim(),
   );
@@ -126,12 +127,27 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
       const verifiedCredential = body.credential?.trim() || key;
       saveOwnerAccessKey(verifiedCredential, { broadcast: false });
       setAccessKey(verifiedCredential);
+      verificationAutoRetry.current = 0;
       setUnlocked(true);
       setSessionUnavailable(false);
       setMessage("");
       return true;
     } catch (error) {
       if (sequence !== verificationSequence.current) return false;
+      // The local backend stalls transiently under bursty load; a lone
+      // timeout is worth one quiet retry before parking on Try again.
+      if (
+        error instanceof DOMException &&
+        error.name === "TimeoutError" &&
+        verificationAutoRetry.current < 1
+      ) {
+        verificationAutoRetry.current += 1;
+        setMessage("Reconnecting to your archive…");
+        window.setTimeout(() => {
+          if (sequence === verificationSequence.current) void verify(key, quiet);
+        }, 4000);
+        return false;
+      }
       const hasSavedSession = Boolean(quiet && getOwnerAccessKey());
       setUnlocked(false);
       setSessionUnavailable(hasSavedSession);
@@ -145,6 +161,7 @@ export function VaultAccessGate({ children }: { children: React.ReactNode }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!accessKey.trim()) return;
+    verificationAutoRetry.current = 0;
     await verify(accessKey);
   }
 

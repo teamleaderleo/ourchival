@@ -33,7 +33,7 @@ crons.interval(
   "queue missing media derivatives",
   { minutes: 2 },
   queueMissingMedia,
-  { limit: 8 },
+  { limit: 4 },
 );
 
 // Daily janitor: terminal capture observations (>7d) and enrichment jobs
@@ -46,7 +46,7 @@ crons.interval(
   "queue missing drive derivatives",
   { minutes: 5 },
   queueDriveDerivatives,
-  { limit: 4 },
+  { limit: 2 },
 );
 
 export default crons;

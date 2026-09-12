@@ -107,6 +107,9 @@ export function useReferenceVault(pageSize = defaultPageSize) {
   const viewCache = useRef(new Map<string, CachedView>());
   const inFlight = useRef<string | null>(null);
   const pageAbort = useRef<AbortController | null>(null);
+  const retryTimer = useRef(0);
+  const retryPending = useRef(false);
+  const autoAttempts = useRef<{ key: string; count: number } | null>(null);
   const [loadError, setLoadError] = useState("");
   const positionKey = browseViewKey(siteUrl ?? "", {
     view: activeView,
@@ -337,6 +340,36 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     return () => window.removeEventListener("keydown", handleReviewKey);
   }, [activeView, filteredReferences, selectedReference]);
 
+  // Backend stalls are transient (single local process under bursty load).
+  // Retry an empty view on its own a couple of times before parking on the
+  // manual Try-again screen; views that already show data keep it.
+  function maybeAutoRetry(
+    serial: number,
+    controller: AbortController,
+    cursor: string | null,
+    history: Array<string | null>,
+    replace: boolean,
+  ) {
+    if (references.length > 0 || controller.signal.aborted) return false;
+    const attempts = autoAttempts.current;
+    if (!attempts || attempts.count >= 2) return false;
+    attempts.count += 1;
+    setLoadError("Reconnecting to your archive…");
+    retryPending.current = true;
+    retryTimer.current = window.setTimeout(
+      () => {
+        retryTimer.current = 0;
+        retryPending.current = false;
+        if (requestSerial.current === serial) {
+          inFlight.current = null;
+          void requestReferencePage(cursor, history, replace);
+        }
+      },
+      attempts.count === 1 ? 3000 : 8000,
+    );
+    return true;
+  }
+
   async function requestReferencePage(
     cursor: string | null,
     history: Array<string | null>,
@@ -346,12 +379,18 @@ export function useReferenceVault(pageSize = defaultPageSize) {
     const flightKey = `${cacheKey}:${cursor}`;
     if (inFlight.current === flightKey) return;
     pageAbort.current?.abort();
+    window.clearTimeout(retryTimer.current);
+    retryTimer.current = 0;
+    retryPending.current = false;
     const controller = new AbortController();
     pageAbort.current = controller;
     setLoadError("");
     inFlight.current = flightKey;
     const serial = requestSerial.current + 1;
     requestSerial.current = serial;
+    if (autoAttempts.current?.key !== flightKey) {
+      autoAttempts.current = { key: flightKey, count: 0 };
+    }
 
     if (replace || (history.length === 0 && cursor === null))
       setIsLoading(true);
@@ -381,6 +420,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       const body = (await response.json()) as ReferencesResponse;
       if (serial !== requestSerial.current) return;
       if (!response.ok || body.ok === false) {
+        if (maybeAutoRetry(serial, controller, cursor, history, replace)) return;
         setLoadError(body.error ?? response.statusText);
         return;
       }
@@ -406,6 +446,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       report("", "success");
     } catch (error) {
       if (serial === requestSerial.current && !controller.signal.aborted) {
+        if (maybeAutoRetry(serial, controller, cursor, history, replace)) return;
         setLoadError(error instanceof Error ? error.message : "Could not load saved references.");
         report(
           error instanceof Error
@@ -416,7 +457,7 @@ export function useReferenceVault(pageSize = defaultPageSize) {
       }
     } finally {
       if (pageAbort.current === controller) inFlight.current = null;
-      if (serial === requestSerial.current) {
+      if (serial === requestSerial.current && !retryPending.current) {
         setIsLoading(false);
         setIsLoadingPage(false);
       }
