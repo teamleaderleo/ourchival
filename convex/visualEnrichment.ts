@@ -291,9 +291,8 @@ export const findSimilar = query({
         )
         .order("desc")
         .first();
-      const storedUrl = match.asset.originalStorageId
-        ? await ctx.storage.getUrl(match.asset.originalStorageId)
-        : null;
+      const previewId = match.asset.thumbStorageId ?? match.asset.previewStorageId;
+      const storedUrl = previewId ? await ctx.storage.getUrl(previewId) : null;
       results.push({
         reference: {
           _id: candidateReference._id,
@@ -303,12 +302,7 @@ export const findSimilar = query({
           platform: candidateReference.platform,
           capturedAt: candidateReference.capturedAt,
         },
-        previewUrl:
-          storedUrl ??
-          match.asset.driveThumbnailLink ??
-          match.asset.originalUrl ??
-          snapshot?.previewImageUrl ??
-          null,
+        previewUrl: storedUrl,
         distance: match.distance,
         sharedColors: match.sharedColors,
         score: match.score,

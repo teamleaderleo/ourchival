@@ -89,9 +89,8 @@ export const find = query({
             )
             .first(),
         ]);
-        const storedUrl = asset?.originalStorageId
-          ? await ctx.storage.getUrl(asset.originalStorageId)
-          : null;
+        const previewId = asset?.thumbStorageId ?? asset?.previewStorageId;
+        const storedUrl = previewId ? await ctx.storage.getUrl(previewId) : null;
         return {
           reference: {
             _id: reference._id,
@@ -104,12 +103,7 @@ export const find = query({
             authorHandle: reference.authorHandle,
             capturedAt: reference.capturedAt,
           },
-          previewUrl:
-            storedUrl ??
-            asset?.driveThumbnailLink ??
-            asset?.originalUrl ??
-            snapshot?.previewImageUrl ??
-            null,
+          previewUrl: storedUrl,
           description: snapshot?.description ?? snapshot?.postText ?? null,
           siteName: snapshot?.siteName ?? null,
           score,

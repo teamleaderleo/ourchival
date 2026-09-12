@@ -113,6 +113,23 @@ export async function listReferencePage(ctx: any, request: Request | string) {
   );
   if (facet && url.searchParams.get("revealSensitive") !== "true") candidates = candidates.filter((reference: any) => !reference.sealed);
 
+  // Feed-only opt-in: publication APIs and My Art keep access to these records.
+  if (url.searchParams.get("excludeOwned") === "true") {
+    const ownedTags = await Promise.all(
+      ["X authored media", "Pixiv creator works", "HoYoLAB creator works"].map(name =>
+        ctx.db.query("tags").withIndex("by_slug", (q: any) => q.eq("slug", slugifyTagName(name))).unique(),
+      ),
+    );
+    const ownedTagIds = new Set(ownedTags.filter(Boolean).map(tag => String(tag._id)));
+    const owned = await Promise.all(candidates.map(async (reference: any) =>
+      reference.tagIds.some((id: any) => ownedTagIds.has(String(id))) || Boolean(
+        await ctx.db.query("artworkPublications")
+          .withIndex("by_reference_id", (q: any) => q.eq("referenceId", reference._id)).first(),
+      ),
+    ));
+    candidates = candidates.filter((_: any, index: number) => !owned[index]);
+  }
+
   const sourceFilters = readSourceFilters(url.searchParams.get("query") ?? "");
   candidates = candidates.filter((reference: any) => matchesSourcePlatform(reference.platform, sourceFilters));
   if (sourceFilters.origins.length || sourceFilters.excludedOrigins.length) {
