@@ -8,7 +8,7 @@ import {
   referenceMode,
   type SavedReference,
 } from "./referenceVaultModel";
-import { usePrivateImageUrl } from "./usePrivateImageUrl";
+import { isProtectedDriveUrl, usePrivateImageUrl } from "./usePrivateImageUrl";
 import { useReferenceTags } from "./useReferenceTags";
 import { rememberedDimensions, rememberDimensions } from "./imageDimensions";
 
@@ -189,7 +189,19 @@ function ThumbImageCandidates(props: ThumbImageProps) {
   const [failedUrls, setFailedUrls] = useState<string[]>([]);
   const candidates = [...new Set([props.imageUrl, ...(props.fallbackUrls ?? [])].filter((url): url is string => Boolean(url)))];
   const candidate = props.hidden ? undefined : candidates.find(url => !failedUrls.includes(url));
-  return <ThumbImageAttempt key={candidate ?? "placeholder"} {...props} imageUrl={candidate} onFailure={() => {
+  // Retina displays need ~2× the CSS pixels: a 244px column wants ~488px,
+  // but thumbs cap at 384px. Offer the preview as the 2x candidate so text
+  // and line art stay crisp. Browsers ignore srcSet entries they can't use,
+  // and single-URL callers simply get no srcSet. Protected (authed-fetch)
+  // URLs stay out: raw <img> loads can't send the bearer token, so those
+  // keep the blob path which already resolves the full bytes.
+  const retinaUrl = candidate && !isProtectedDriveUrl(candidate)
+    ? props.fallbackUrls?.find((url): url is string => {
+        if (!url || url === candidate || failedUrls.includes(url)) return false;
+        return !isProtectedDriveUrl(url);
+      })
+    : undefined;
+  return <ThumbImageAttempt key={candidate ?? "placeholder"} {...props} imageUrl={candidate} retinaUrl={retinaUrl} onFailure={() => {
     if (candidate) setFailedUrls(urls => urls.includes(candidate) ? urls : [...urls, candidate]);
   }} />;
 }
@@ -198,6 +210,7 @@ type ThumbImageProps = {
   hidden?: boolean;
   deferred?: boolean;
   imageUrl?: string | null;
+  retinaUrl?: string | null;
   fallbackUrls?: Array<string | null | undefined>;
   title?: string;
   kind: string;
@@ -211,6 +224,7 @@ function ThumbImageAttempt({
   hidden = false,
   deferred = false,
   imageUrl,
+  retinaUrl,
   title,
   kind,
   priority = false,
@@ -241,6 +255,7 @@ function ThumbImageAttempt({
     <img
       className="thumb"
       src={resolvedUrl}
+      srcSet={retinaUrl && !isProtectedDriveUrl(retinaUrl) ? `${resolvedUrl} 1x, ${retinaUrl} 2x` : undefined}
       width={width}
       height={height}
       style={!width || !height ? { aspectRatio: "auto 3 / 4" } : undefined}

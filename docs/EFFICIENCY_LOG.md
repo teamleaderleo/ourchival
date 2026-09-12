@@ -172,7 +172,27 @@ neighbor resolves instantly. Cards were already safe (`ThumbImage` →
 `usePrivateImageUrl` with thumb→preview fallback cycling).
 Tests: primer dedups + swallows failures.
 
-## Next targets (ranked)
+## Pass 9 — stall resilience + deploys unblocked (pushed `0193c0c`)
+
+Two user-visible complaints traced:
+
+- "Couldn't reach your archive": reproduced live — a lone `/references`
+  took 7.5 s then returned **HTTP 500** (the known "too many system
+  operations" starvation signature, not a query bug). Auth-check normally
+  ~10 ms took 2.2 s with just 3 concurrent requests. Single local backend
+  process degrades ~100–500× under trivial concurrency while churning.
+- Fixes: empty gallery views auto-retry twice (3 s/8 s) behind a
+  "Reconnecting…" notice before the manual Try-again screen; loaded views
+  keep their data. Access gate retries one timed-out session check.
+  Derivative worker batches halved (media 8→4, drive 4→2) to calm the
+  event loop. Retries are bounded and abort-aware; no loops.
+- Deploy blockage found + fixed: pnpm store held a gutted sharp 0.34.1
+  (592 KB, no `lib/`), failing every backend push at bundling. Restored
+  `lib/` from the registry tarball (sharp has no root index.js —
+  `main` is `lib/index.js`, which misled the first diagnosis). Then the
+  CLI reused a stale staging tmp dir with skeleton dirs; clearing
+  `.tmpzpJegx` unblocked the push. If pushes fail with "Cannot find
+  package …/sharp/index.js" again, suspect store/staging, not code.
 
 1. ~~Crons, prefetch, index diet, retention, Drive mirrors, preload~~
    (Passes 3–8).
