@@ -55,3 +55,26 @@ test("slow requests never overlap and hiding aborts the active request", async (
   await vi.advanceTimersByTimeAsync(10_000);
   expect(task).toHaveBeenCalledTimes(1);
 });
+test("consecutive failures back off exponentially and success resets", async () => {
+  vi.useFakeTimers();
+  visibility("visible");
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+  let fail = true;
+  const task = vi.fn(async () => { if (fail) throw new Error("sick backend"); });
+  stop = startVisiblePolling(task, () => 1000, 0);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(task).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1999);
+  expect(task).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(task).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(3999);
+  expect(task).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(task).toHaveBeenCalledTimes(3);
+  fail = false;
+  await vi.advanceTimersByTimeAsync(8000);
+  expect(task).toHaveBeenCalledTimes(4);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(task).toHaveBeenCalledTimes(5);
+});
