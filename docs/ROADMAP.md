@@ -36,13 +36,25 @@ The current goal is not polish for its own sake. The goal is a local-first-feeli
 
 ### Partially wired
 
-- Drive upload works once Google OAuth env vars are configured, but the app still needs better setup/status messaging.
-- Projects and project reference reuse exist in the schema, but the UI buttons are mostly placeholders.
-- Boards/tags exist in the schema, but the real CRUD UI is not done.
+- Drive upload works once Google OAuth env vars are configured; pipeline
+  progress (previews, Drive copies, reclaimed bytes) is visible in
+  Settings → Archive health, but a Drive-env configured/missing card is
+  still open.
+- Projects/personal tags support reuse reasons and used-states; deeper
+  project workflows (statuses, handoffs) remain light.
 - Links can be captured, but link browsing and link-specific inspector fields need more care.
-- X/Twitter is detected as a platform, but there is not yet a real tweet DOM parser.
 - Image display works through stored/proxied URLs, but fallbacks for blocked remote fetches need better UX.
-- Vercel/domain deployment is documented, but auth/privacy gates are not implemented.
+- Domain deployment is documented, but production hosting still runs the
+  local vault (`next dev` daemon); a production `next start` switch is open.
+
+Done since (Sep 2026): sign-in gate with session credentials, HTTP
+actions behind owner auth, private Drive files, board/tag CRUD with
+gallery filtering, inspector editing (title/notes/favorite/archive/
+delete), duplicate protection (`alreadySaved`), capture receipts with
+recovery progress, tweet DOM parsing, multi-image posts, generated
+compact previews + Drive mirrors with reclamation, dominant colors,
+perceptual hashes, similar-image search, suggested tags, saved
+searches, No/Maybe/Yes review deck, and gallery/viewer keyboard triage.
 
 ## Phase 1 — Make the capture loop reliable
 
@@ -216,58 +228,37 @@ Goal: private vault by default.
 
 ## Agent handoff: next best tasks
 
-### Good task for Codex: Drive/config status
+### Good task: Drive/config status card
 
 Implement an endpoint and UI card that reports whether Drive env vars are configured. Do not return secrets. Return only booleans/status labels.
 
 Acceptance:
 
-- Reliquary shows Drive status.
+- Reliquary shows Drive status (fits beside Archive health in Settings).
 - Missing Drive env explains that Convex fallback will be used.
 - No secret values reach the browser.
 
-### Good task for Codex: duplicate prevention
+### Good task: production web switch
 
-Before inserting a new reference, check for existing reference/asset by `sourceUrl` and `originalUrl`.
-
-Acceptance:
-
-- Re-saving the same image does not create duplicate cards.
-- The response indicates `already_saved`.
-- Existing reference is returned or refreshed.
-
-### Good task for Claude: X/Twitter parser design
-
-Write and implement a robust DOM parser strategy for X/Twitter captures.
+Move the local vault's web server from `next dev` to `next start` with a
+build step, keeping a dev fallback for iteration.
 
 Acceptance:
 
-- Right-clicking an image in a tweet captures tweet URL, author handle, display name, text, and image URL.
-- Parser degrades gracefully if X changes class names.
-- Raw snapshot metadata is stored for debugging.
+- Vault boots into production mode; gallery loads without StrictMode
+  double-fire or HMR overhead.
+- A documented env flag restores `next dev` for UI iteration.
+- Reboot and status commands keep working.
 
-### Good task for Codex: boards MVP
+### Good task: link lane care
 
-Implement board creation and add/remove selected reference to board.
-
-Acceptance:
-
-- Create board from UI.
-- Board list loads from Convex.
-- Selected reference can be added to board.
-- Gallery can filter by board.
-
-### Good task for Codex: inspector edit form
-
-Replace placeholder inspector actions with real edit controls.
+Links capture but get second-class browsing and inspector fields.
 
 Acceptance:
 
-- Edit title.
-- Edit notes.
-- Toggle favorite.
-- Save via `PATCH /reference`.
-- UI updates without full reload.
+- Link cards show title/description/favicon reliably.
+- Inspector edits link-specific fields.
+- Source-type filters cover image/post/page/link/file.
 
 ## Do not spend time on yet
 

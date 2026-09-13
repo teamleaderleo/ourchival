@@ -220,6 +220,25 @@ async function dev() {
     await deployToRunningLocalBackend(convexUrl);
   }
 
+  // Production web by default: no HMR/Turbopack overhead or StrictMode
+  // double-fire against the single local backend (verified: same gallery,
+  // ~1/3 the renderer memory). OURCHIVAL_WEB_MODE=dev restores hot reload
+  // for UI iteration.
+  const webEnv = {
+    ...process.env,
+    NEXT_PUBLIC_CONVEX_URL: convexUrl,
+    NEXT_PUBLIC_CONVEX_SITE_URL: convexSiteUrl,
+    NEXT_PUBLIC_OURCHIVAL_APP_URL: localWebUrl,
+    OURCHIVAL_LOCAL_ORIGIN: localWebUrl,
+    OURCHIVAL_LOCAL_OWNER_KEY_FILE: localKeyPath,
+  };
+  const webMode = process.env.OURCHIVAL_WEB_MODE === "dev" ? "dev" : "start";
+  if (webMode === "start") {
+    console.log("Building Reliquary for production...");
+    await run("pnpm", ["--filter", "@ourchival/web", "exec", "next", "build"], {
+      env: webEnv,
+    });
+  }
   children.push(
     spawn(
       "pnpm",
@@ -228,7 +247,7 @@ async function dev() {
         "@ourchival/web",
         "exec",
         "next",
-        "dev",
+        webMode,
         "--hostname",
         "127.0.0.1",
         "--port",
@@ -236,14 +255,7 @@ async function dev() {
       ],
       {
         cwd: projectRoot,
-        env: {
-          ...process.env,
-          NEXT_PUBLIC_CONVEX_URL: convexUrl,
-          NEXT_PUBLIC_CONVEX_SITE_URL: convexSiteUrl,
-          NEXT_PUBLIC_OURCHIVAL_APP_URL: localWebUrl,
-          OURCHIVAL_LOCAL_ORIGIN: localWebUrl,
-          OURCHIVAL_LOCAL_OWNER_KEY_FILE: localKeyPath,
-        },
+        env: webEnv,
         stdio: "inherit",
       },
     ),
