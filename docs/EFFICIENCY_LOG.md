@@ -260,7 +260,12 @@ mirrors total, backfill stalled. Rotating `driveMirrorCursors`
 checkpoint plus cursor threading through `claimNextUpload` and the Node
 batch worker. Verified live: 32 → 82 succeeded in one tick
 (2 seeds × 25/batch design throughput ≈ 600/hr). Bench: 25,889 assets,
-25,217 Drive originals, inventory now reports `mirrored`.
+25,217 Drive originals, inventory now reports `mirrored`. Follow-up:
+lost scheduler wakeups left jobs ritually queued for 6+ hours, pinning
+the feeder limit — the feeder now deletes never-ran stale jobs so their
+assets retry (verified live: 2 stuck → 0 queued). Deploy note: clear the
+convex CLI staging tmp dir when bundling fails on phantom
+`sharp/index.js` paths; the pnpm-linked sharp package itself is intact.
 
 ## Pass 14 — background yields to the gallery
 
