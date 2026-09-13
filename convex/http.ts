@@ -460,6 +460,11 @@ http.route({
       let scanned = 0;
       let searchMode: string | undefined;
       let counts;
+      // Sparse filters (deep inbox pages, rare tags) must not fan one HTTP
+      // request into dozens of sequential scans: after a few batches with no
+      // new matches, hand the cursor back and let infinite scroll continue.
+      // Dense views are unaffected (they fill before the cap).
+      let emptyBatches = 0;
 
       while (hasMore && references.length < pageSize && scanned < maxScanned) {
         const batchUrl = new URL(requestUrl);
@@ -473,6 +478,7 @@ http.route({
         const batch = await ctx.runQuery(internal.httpDb.listReferences, {
           url: batchUrl.toString(),
         });
+        const before = references.length;
         references.push(...batch.references);
         cursor = batch.continueCursor;
         hasMore = batch.hasMore;
@@ -480,6 +486,8 @@ http.route({
         searchMode = batch.searchMode;
         counts = batch.counts;
         if (batch.scanned === 0) break;
+        emptyBatches = references.length === before ? emptyBatches + 1 : 0;
+        if (emptyBatches >= 3) break;
       }
 
       return jsonResponse(request, {

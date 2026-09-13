@@ -3,36 +3,21 @@
 import { compactPreviewSources } from "../compactPreviewSources";
 import { useEnsurePreview } from "../useEnsurePreview";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { getDomain } from "../ReferenceCards";
 import { referenceDisplayTitle } from "../referenceVaultModel";
 import { usePrivateImageUrl } from "../usePrivateImageUrl";
 import { useReferenceVault } from "../useReferenceVault";
 import styles from "./ReviewDeck.module.css";
-import { zzzReviewCandidates } from "./zzzReviewCandidates";
-
-const reviewMarker = "ZZZReview";
-const reviewQuery = `${reviewMarker} type:image`;
-
-type ImportProgress = {
-  done: number;
-  total: number;
-  saved: number;
-  existing: number;
-  failed: number;
-};
 
 export function ReviewDeck() {
   const vault = useReferenceVault(96);
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
-  const [importMessage, setImportMessage] = useState("");
 
   useEffect(() => {
     const lane = new URLSearchParams(window.location.search).get("lane");
     vault.changeView(lane === "later" ? "later" : "inbox");
-    vault.setQuery(reviewQuery);
-    // This route owns its initial review filter/lane; running once avoids resetting user choices.
+    vault.setQuery("");
+    // This route owns its initial lane; running once avoids resetting user choices.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -57,7 +42,6 @@ export function ReviewDeck() {
 
   function switchLane(lane: "inbox" | "later") {
     vault.changeView(lane);
-    vault.setQuery(reviewQuery);
     const url = lane === "later" ? "/review?lane=later" : "/review";
     window.history.replaceState(null, "", url);
   }
@@ -72,86 +56,52 @@ export function ReviewDeck() {
     vault.setSelectedId(vault.filteredReferences[next]?._id ?? null);
   }
 
-  async function importSeed() {
-    if (!vault.siteUrl || importing) return;
-    const candidates = zzzReviewCandidates.filter(
-      (candidate) =>
-        candidate.sourceKind !== "watch" &&
-        Boolean(candidate.originalImageUrl ?? candidate.previewImageUrl),
-    );
-    const progress: ImportProgress = {
-      done: 0,
-      total: candidates.length,
-      saved: 0,
-      existing: 0,
-      failed: 0,
-    };
-    setImporting(true);
-    setImportProgress({ ...progress });
-    setImportMessage("Importing candidate sources and preview metadata…");
-
-    let nextIndex = 0;
-    async function worker() {
-      while (nextIndex < candidates.length) {
-        const index = nextIndex++;
-        const candidate = candidates[index]!;
-        const assetUrl = candidate.originalImageUrl ?? candidate.previewImageUrl;
-        try {
-          const response = await fetch(`${vault.siteUrl}/capture`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              kind: assetUrl ? "image" : "link",
-              sourceUrl: candidate.sourceUrl,
-              assetUrl,
-              previewImageUrl: candidate.previewImageUrl ?? assetUrl,
-              pageTitle: `${reviewMarker} · ${candidate.character} · ${candidate.title}`,
-              authorName: candidate.artist,
-              rawMetadata: JSON.stringify({
-                seed: "zzz-wallpaper-review-2026-08-30",
-                character: candidate.character,
-                sourceKind: candidate.sourceKind,
-                artist: candidate.artist,
-                previewImageUrl: candidate.previewImageUrl,
-                originalImageUrl: candidate.originalImageUrl,
-              }),
-              capturedAt: new Date().toISOString(),
-            }),
-          });
-          const body = (await response.json().catch(() => ({}))) as {
-            ok?: boolean;
-            alreadySaved?: boolean;
-          };
-          if (!response.ok || body.ok === false) progress.failed += 1;
-          else if (body.alreadySaved) progress.existing += 1;
-          else progress.saved += 1;
-        } catch {
-          progress.failed += 1;
-        } finally {
-          progress.done += 1;
-          setImportProgress({ ...progress });
-        }
-      }
-    }
-
-    await Promise.all(Array.from({ length: 4 }, () => worker()));
-    setImporting(false);
-    setImportMessage(
-      `Import finished: ${progress.saved} new, ${progress.existing} already present, ${progress.failed} failed.`,
-    );
-    window.location.assign("/review");
-  }
-
   async function decide(destination: "keep" | "later" | "archive") {
     if (!reference) return;
     await vault.moveReference(reference._id, destination);
   }
 
+  // Triage keys: n No, m Maybe, y Yes, arrows walk the queue. Same guard
+  // shape as the gallery and Quick Look handlers (never while typing).
+  useEffect(() => {
+    function handleReviewKey(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "arrowleft") {
+        event.preventDefault();
+        selectRelative(-1);
+        return;
+      }
+      if (key === "arrowright") {
+        event.preventDefault();
+        selectRelative(1);
+        return;
+      }
+      if (!reference) return;
+      if (key === "n" || key === "m" || key === "y") {
+        event.preventDefault();
+        event.stopPropagation();
+        void decide(key === "n" ? "archive" : key === "m" ? "later" : "keep");
+      }
+    }
+    window.addEventListener("keydown", handleReviewKey);
+    return () => window.removeEventListener("keydown", handleReviewKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reference]);
   return (
     <main className={styles.shell}>
       <header className={styles.header}>
         <div className={styles.headerCopy}>
-          <strong>ZZZ review</strong>
+          <strong>Review</strong>
           <span>No / Maybe / Yes · decisions save immediately</span>
         </div>
         <div className={styles.lanes}>
@@ -160,14 +110,14 @@ export function ReviewDeck() {
             className={vault.activeView === "inbox" ? styles.active : undefined}
             onClick={() => switchLane("inbox")}
           >
-            New
+            New · {vault.inboxCount}
           </button>
           <button
             type="button"
             className={vault.activeView === "later" ? styles.active : undefined}
             onClick={() => switchLane("later")}
           >
-            Maybe
+            Maybe · {vault.laterCount}
           </button>
         </div>
       </header>
@@ -193,7 +143,7 @@ export function ReviewDeck() {
           </div>
 
           <div className={styles.meta}>
-            <h1>{cleanReviewTitle(referenceDisplayTitle(reference))}</h1>
+            <h1>{referenceDisplayTitle(reference)}</h1>
             <p>
               {reference.authorHandle ||
                 reference.authorName ||
@@ -244,29 +194,28 @@ export function ReviewDeck() {
       ) : (
         <section className={styles.empty}>
           <div className={styles.emptyInner}>
-            <h1>{vault.isLoading ? "Loading ZZZ candidates…" : "ZZZ queue is empty"}</h1>
-            <p>
-              {vault.activeView === "later"
-                ? "Nothing is waiting in Maybe. Switch to New to keep reviewing."
-                : "Seed the candidate batch here. Ourchival will save the sources, fetch preview metadata where available, and store fetchable originals through its normal private media path."}
-            </p>
-            {vault.activeView === "inbox" && !vault.isLoading ? (
-              <button
-                type="button"
-                className={styles.importButton}
-                onClick={() => void importSeed()}
-                disabled={importing}
-              >
-                {importing ? "Importing…" : `Import ${zzzReviewCandidates.length - 1} ZZZ candidates`}
-              </button>
-            ) : null}
-            {importProgress ? (
-              <p className={styles.progress}>
-                {importProgress.done}/{importProgress.total} · {importProgress.saved} new ·{" "}
-                {importProgress.existing} existing · {importProgress.failed} failed
-              </p>
-            ) : null}
-            {importMessage ? <p className={styles.progress}>{importMessage}</p> : null}
+            {vault.loadFailed ? (
+              <>
+                <h1>Couldn&apos;t load the review queue</h1>
+                <p>The archive is busy. Your place in the queue is kept.</p>
+                <button
+                  type="button"
+                  className={styles.importButton}
+                  onClick={() => vault.retryLoad()}
+                >
+                  Try again
+                </button>
+              </>
+            ) : (
+              <>
+                <h1>{vault.isLoading ? "Loading review queue…" : vault.activeView === "later" ? "Maybe is empty" : "Inbox is clear"}</h1>
+                <p>
+                  {vault.activeView === "later"
+                    ? "Nothing is waiting in Maybe. Switch to New to keep reviewing."
+                    : "Everything triaged. New captures land here for No / Maybe / Yes decisions."}
+                </p>
+              </>
+            )}
           </div>
         </section>
       )}
@@ -301,8 +250,4 @@ export function ReviewDeck() {
       </div>
     </main>
   );
-}
-
-function cleanReviewTitle(value: string) {
-  return value.replace(/^ZZZReview\s*[·:-]\s*/i, "");
 }
