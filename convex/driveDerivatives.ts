@@ -27,6 +27,23 @@ export const queueMissing = internalMutation({
   },
   handler: async (ctx, args) => {
     const limit = normalizedLimit(args.limit);
+    // Orphan sweep first: actions behind stale queued/running jobs are gone
+    // (lost scheduler wakeups leave them ritually "active" forever, which
+    // also pins the feeder limit). They never ran, so delete rather than
+    // fail: no terminal record, the asset simply becomes eligible again.
+    const ORPHAN_MS = 60 * 60_000;
+    let orphaned = 0;
+    for (const tracked of ["queued", "running"] as const) {
+      const stale = await ctx.db
+        .query("enrichmentJobs")
+        .withIndex("by_type_status", (q: any) => q.eq("type", "drive_derivatives").eq("status", tracked))
+        .take(32);
+      for (const job of stale) {
+        if (Date.now() - job.createdAt < ORPHAN_MS) continue;
+        await ctx.db.delete(job._id);
+        orphaned += 1;
+      }
+    }
     // Yield new uploads while the human browses, but always reclaim: shedding
     // metered bytes is cheap reads, seeding Sharp/Drive work is not.
     const yieldToForeground = await ctx.runQuery(internal.httpDb.foregroundActive, {});
@@ -86,7 +103,7 @@ export const queueMissing = internalMutation({
     } else {
       await ctx.db.insert("driveMirrorCursors", { key: cursorKey, cursor, scanDone, updatedAt: Date.now() });
     }
-    return { queued, active, skipped, reclaimed, reclaimedBytes };
+    return { queued, active, skipped, reclaimed, reclaimedBytes, orphaned };
   },
 });
 

@@ -427,3 +427,41 @@ describe("drive derivative mirroring", () => {
     const claim = await t.mutation(internal.driveDerivatives.claimNextUpload, { excludeAssetIds: [] });
     expect(claim).toMatchObject({ jobId: null, done: true });
   });
+
+  it("deletes never-ran orphan jobs so their assets become eligible again", async () => {
+    const t = convexTest(schema, modules);
+    const assetId = await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", refDoc(11));
+      const blob = await ctx.storage.store(new Blob(["thumb"]));
+      const id = await ctx.db.insert("assets", {
+        referenceId,
+        previewStorageId: blob,
+        thumbStorageId: blob,
+        derivativeStatus: "ready",
+        tagIds: [],
+        dominantColors: [],
+      });
+      await ctx.db.insert("enrichmentJobs", {
+        referenceId,
+        assetId: id,
+        type: "drive_derivatives",
+        status: "queued",
+        attempts: 0,
+        requestedAt: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return id;
+    });
+    const result = await t.mutation(internal.driveDerivatives.queueMissing, { limit: 4 });
+    expect(result.orphaned).toBe(1);
+    expect(result.queued).toBe(1);
+    const jobs = await t.run(async (ctx) =>
+      (await ctx.db.query("enrichmentJobs").collect()).filter(
+        (job) => job.type === "drive_derivatives" && job.assetId === assetId,
+      ),
+    );
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].status).toBe("queued");
+    expect(jobs[0].createdAt).toBeGreaterThan(1);
+  });
