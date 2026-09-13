@@ -1,4 +1,5 @@
 import { CatIcon } from "./CatIcon";
+import { KeyboardHelp, galleryKeys, viewerKeys } from "./KeyboardHelp";
 import { SidebarDiscover } from "./SidebarDiscover";
 
 export type VaultView =
@@ -104,6 +105,7 @@ export function VaultSidebar({
           icon="trash"
         />
       </nav>
+      <KeyboardHelp items={[...galleryKeys, ...viewerKeys]} />
     </aside>
   );
 }

@@ -2,6 +2,7 @@
 
 import { compactPreviewSources } from "../compactPreviewSources";
 import { useEnsurePreview } from "../useEnsurePreview";
+import { KeyboardHelp, reviewKeys } from "../KeyboardHelp";
 
 import { useEffect, useMemo } from "react";
 import { getDomain } from "../ReferenceCards";
@@ -103,6 +104,7 @@ export function ReviewDeck() {
         <div className={styles.headerCopy}>
           <strong>Review</strong>
           <span>No / Maybe / Yes · decisions save immediately</span>
+          <KeyboardHelp items={reviewKeys} />
         </div>
         <div className={styles.lanes}>
           <button

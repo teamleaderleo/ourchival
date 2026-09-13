@@ -166,3 +166,12 @@
 from { opacity: .35; transform: scale(.92); }
 to { opacity: 1; transform: scale(1.05); }
 }
+
+.keyboard-help { margin-top: 10px; }
+.keyboard-help summary { color: var(--muted); cursor: pointer; font-size: .7rem; font-weight: 700; list-style: none; }
+.keyboard-help summary::-webkit-details-marker { display: none; }
+.keyboard-help summary:hover { color: var(--muted-strong); }
+.keyboard-help dl { display: grid; gap: 3px; margin: 6px 0 2px; }
+.keyboard-help dl > div { display: flex; gap: 8px; align-items: baseline; }
+.keyboard-help dt { min-width: 96px; flex: none; color: var(--muted-strong); font-size: .66rem; font-weight: 700; }
+.keyboard-help dd { margin: 0; color: var(--muted); font-size: .66rem; }

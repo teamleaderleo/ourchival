@@ -159,3 +159,10 @@
   .imageFrame { min-height: min(70dvh, 820px); }
   .decisionInner button { min-height: 64px; font-size: 1.05rem; }
 }
+
+.headerCopy details { margin-top: 6px; }
+.headerCopy summary { color: #aaa6a0; cursor: pointer; font-size: 0.72rem; font-weight: 700; }
+.headerCopy dl { display: flex; gap: 12px; margin: 6px 0 0; flex-wrap: wrap; }
+.headerCopy dl > div { display: flex; gap: 6px; align-items: baseline; }
+.headerCopy dt { color: #f5f3ef; font-size: 0.7rem; font-weight: 700; }
+.headerCopy dd { margin: 0; color: #aaa6a0; font-size: 0.7rem; }
