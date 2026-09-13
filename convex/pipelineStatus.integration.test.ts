@@ -14,6 +14,7 @@ test("pipeline status reports migration, mirror counts, and yield state", async 
     expect(idle.migration).toBeNull();
     expect(idle.drive).toMatchObject({ queued: 0, running: 0, succeeded: 0, failed: 0 });
     expect(idle.backgroundYielding).toBe(false);
+    expect(typeof idle.driveConfigured).toBe("boolean");
 
     await t.mutation(internal.previewMigration.start, {});
     await t.mutation(internal.httpDb.touchFeedActivity, {});

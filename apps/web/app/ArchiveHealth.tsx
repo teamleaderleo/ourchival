@@ -21,6 +21,7 @@ type PipelineStatus = {
   migration: MigrationStatus | null;
   drive: Record<string, number>;
   backgroundYielding: boolean;
+  driveConfigured: boolean;
   error?: string;
 };
 
@@ -53,7 +54,7 @@ export function ArchiveHealth({ siteUrl }: { siteUrl: string }) {
         if (cancelled) return;
         setStatus((await response.json()) as PipelineStatus);
       } catch {
-        if (!cancelled) setStatus({ ok: false, migration: null, drive: {}, backgroundYielding: false });
+        if (!cancelled) setStatus({ ok: false, migration: null, drive: {}, backgroundYielding: false, driveConfigured: true });
       }
     };
     void load();
@@ -88,6 +89,12 @@ export function ArchiveHealth({ siteUrl }: { siteUrl: string }) {
               ? "Not started yet."
               : `${done.toLocaleString()} done${active > 0 ? ` · ${active} in progress` : ""}.`}
           </p>
+          {status.driveConfigured === false ? (
+            <p>
+              <strong>Drive storage:</strong> not connected — new captures
+              stay in vault storage until it is.
+            </p>
+          ) : null}
           <p>
             {status.backgroundYielding
               ? "Background work is paused while you browse."

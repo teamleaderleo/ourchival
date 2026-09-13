@@ -1,4 +1,5 @@
 import { assetQuality } from "./lib/assetQuality";
+import { getDriveConfig } from "./lib/drive";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import {
@@ -86,6 +87,7 @@ export const pipelineStatus = internalQuery({
     } | null;
     drive: Record<string, number>;
     backgroundYielding: boolean;
+    driveConfigured: boolean;
   }> => {
     const [migration, drive, activity] = await Promise.all([
       ctx.db.query("previewMigrations").first(),
@@ -113,6 +115,8 @@ export const pipelineStatus = internalQuery({
       drive: drive.byStatus,
       backgroundYielding:
         activity != null && Date.now() - activity.lastFeedAt < ACTIVITY_TTL_MS,
+      // Booleans only; secret values never leave the backend.
+      driveConfigured: getDriveConfig() !== undefined,
     };
   },
 });
