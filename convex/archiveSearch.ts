@@ -2,7 +2,11 @@ import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requireOwnerAccess } from "./lib/privateAccess";
-import { refreshReferenceSearch, startSearchRebuild } from "./lib/searchIndex";
+import {
+  clearReferenceSearchMarker,
+  refreshReferenceSearch,
+  startSearchRebuild,
+} from "./lib/searchIndex";
 
 export const rebuild = mutation({
   args: { accessKey: v.string() },
@@ -29,6 +33,8 @@ export const status = query({
 export const refreshReference = internalMutation({
   args: { referenceId: v.id("references") },
   handler: async (ctx, args): Promise<null> => {
+    // Clear first: writes committed after this refresh schedule another one.
+    await clearReferenceSearchMarker(ctx, args.referenceId);
     await refreshReferenceSearch(ctx, args.referenceId);
     return null;
   },

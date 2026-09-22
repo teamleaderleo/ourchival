@@ -68,6 +68,13 @@ export const searchTables = {
       searchField: "text",
       filterFields: ["collection", "lane", "favorite", "kind", "referenceId"],
     }),
+  // At most one pending archiveSearch.refreshReference job per reference.
+  // Written by scheduleReferenceSearch, deleted when the job starts.
+  referenceSearchRefreshes: defineTable({
+    referenceId: v.id("references"),
+    jobId: v.id("_scheduled_functions"),
+    scheduledAt: v.number(),
+  }).index("by_reference_id", ["referenceId"]),
   referenceSearchState: defineTable({
     key: v.string(),
     generation: v.number(),
