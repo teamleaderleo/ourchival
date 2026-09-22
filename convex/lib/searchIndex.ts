@@ -16,13 +16,89 @@ import {
   type SearchMatch,
 } from "./searchDocument";
 
+/**
+ * Request a search refresh, coalescing with a refresh that has not started yet.
+ *
+ * The marker row is deleted in the same transaction as the refresh runs, so a
+ * write that commits after the refresh starts finds no marker and schedules
+ * another one; a write that commits before it is seen by the refresh (Convex
+ * mutations are serializable). A marker whose job is no longer pending or
+ * running (failed, canceled, missing) is treated as stale and replaced.
+ */
 export async function scheduleReferenceSearch(
   ctx: MutationCtx,
   referenceId: Id<"references">,
 ): Promise<void> {
-  await ctx.scheduler.runAfter(0, internal.archiveSearch.refreshReference, {
-    referenceId,
-  });
+  const marker = await ctx.db
+    .query("referenceSearchRefreshes")
+    .withIndex("by_reference_id", (q) => q.eq("referenceId", referenceId))
+    .first();
+  if (marker) {
+    const job = await ctx.db.system.get(marker.jobId);
+    if (
+      job &&
+      (job.state.kind === "pending" || job.state.kind === "inProgress")
+    )
+      return;
+  }
+  const jobId = await ctx.scheduler.runAfter(
+    0,
+    internal.archiveSearch.refreshReference,
+    { referenceId },
+  );
+  const payload = { referenceId, jobId, scheduledAt: Date.now() };
+  if (marker) await ctx.db.replace(marker._id, payload);
+  else await ctx.db.insert("referenceSearchRefreshes", payload);
+}
+
+/** Clear the pending-refresh marker so later writes schedule a new refresh. */
+export async function clearReferenceSearchMarker(
+  ctx: MutationCtx,
+  referenceId: Id<"references">,
+): Promise<void> {
+  const markers = await ctx.db
+    .query("referenceSearchRefreshes")
+    .withIndex("by_reference_id", (q) => q.eq("referenceId", referenceId))
+    .take(8);
+  for (const marker of markers) await ctx.db.delete(marker._id);
+}
+
+type SearchDocumentPayload = Omit<
+  Doc<"referenceSearchDocuments">,
+  "_id" | "_creationTime"
+>;
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b || a === null || b === null) return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, index) => sameValue(item, b[index]));
+  }
+  if (typeof a !== "object" || Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = new Set(
+    [...Object.keys(left), ...Object.keys(right)].filter(
+      (key) => left[key] !== undefined || right[key] !== undefined,
+    ),
+  );
+  for (const key of keys) if (!sameValue(left[key], right[key])) return false;
+  return true;
+}
+
+/** Compare search content, ignoring system fields and the indexedAt stamp. */
+export function sameSearchDocument(
+  existing: Doc<"referenceSearchDocuments">,
+  next: SearchDocumentPayload,
+): boolean {
+  // sameValue skips undefined keys, so blanking a field excludes it.
+  const ignored = {
+    _id: undefined,
+    _creationTime: undefined,
+    indexedAt: undefined,
+  };
+  return sameValue({ ...existing, ...ignored }, { ...next, ...ignored });
 }
 
 export async function refreshReferenceSearch(
@@ -111,7 +187,7 @@ export async function refreshReferenceSearch(
         .flatMap((id) => (assetTagMap.has(id) ? [assetTagMap.get(id)!] : [])),
     })),
   });
-  const payload = {
+  const payload: SearchDocumentPayload = {
     referenceId,
     ...document,
     collection: collectionOf(reference),
@@ -129,8 +205,11 @@ export async function refreshReferenceSearch(
       assets.length > 32 ||
       assetTagIds.length > 64,
   };
-  if (existing) await ctx.db.replace(existing._id, payload);
-  else await ctx.db.insert("referenceSearchDocuments", payload);
+  if (existing) {
+    // Rebuilding an unchanged reference must not rewrite the search document.
+    if (!sameSearchDocument(existing, payload))
+      await ctx.db.replace(existing._id, payload);
+  } else await ctx.db.insert("referenceSearchDocuments", payload);
 }
 
 /** Rare board/project renames request a coalesced, paginated rebuild. */
