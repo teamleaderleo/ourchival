@@ -18,6 +18,7 @@ const observationStatuses = [
   "failed",
 ] as const;
 const sweptSessionStatuses = ["completed", "interrupted"] as const;
+const sweptJobStatuses = ["succeeded", "failed", "dismissed"] as const;
 
 export const sweep = internalMutation({
   args: {},
@@ -70,21 +71,22 @@ export const sweep = internalMutation({
       }
     }
 
-    const candidates = await ctx.db
-      .query("enrichmentJobs")
-      .withIndex("by_updated_at")
-      .order("asc")
-      .take(jobBatch);
-    for (const job of candidates) {
-      if (
-        job.status !== "succeeded" &&
-        job.status !== "failed" &&
-        job.status !== "dismissed"
-      )
-        continue;
-      if (job.updatedAt > now - jobsTtlMs) continue;
-      await ctx.db.delete(job._id);
-      jobs += 1;
+    // Same shape for jobs: only terminal, aged-out rows are read, so
+    // queued/running jobs that stay oldest forever cannot fill the batch.
+    const jobCutoff = now - jobsTtlMs;
+    for (const status of sweptJobStatuses) {
+      if (jobs >= jobBatch) break;
+      const expired = await ctx.db
+        .query("enrichmentJobs")
+        .withIndex("by_status_and_updated_at", (q) =>
+          q.eq("status", status).lte("updatedAt", jobCutoff),
+        )
+        .order("asc")
+        .take(jobBatch - jobs);
+      for (const job of expired) {
+        await ctx.db.delete(job._id);
+        jobs += 1;
+      }
     }
 
     return { observations, jobs, sessionsSwept };

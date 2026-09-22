@@ -293,7 +293,10 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_reference_type", ["referenceId", "type"])
     .index("by_type_status", ["type", "status"])
-    .index("by_updated_at", ["updatedAt"]),
+    .index("by_updated_at", ["updatedAt"])
+    // Retention reads only terminal, aged-out jobs so live jobs can never
+    // pin its batch window.
+    .index("by_status_and_updated_at", ["status", "updatedAt"]),
 
   enrichmentSuggestions: defineTable({
     referenceId: v.id("references"),

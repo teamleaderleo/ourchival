@@ -173,6 +173,86 @@ describe("retention sweep", () => {
     });
   });
 
+  it("reaches expired terminal jobs past old live jobs", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", {
+        kind: "image",
+        platform: "manual",
+        sourceUrl: "https://example.com/r",
+        capturedAt: 1,
+        boardIds: [],
+        tagIds: [],
+        favorite: false,
+        archived: false,
+        deleted: false,
+      });
+      // 600 ancient non-terminal jobs used to fill the 500-row window forever.
+      const live = [];
+      for (let i = 0; i < 600; i++) {
+        live.push(
+          await ctx.db.insert(
+            "enrichmentJobs",
+            job({
+              referenceId,
+              status: i % 2 === 0 ? ("queued" as const) : ("running" as const),
+              updatedAt: old + i,
+            }),
+          ),
+        );
+      }
+      const expired = [];
+      for (const status of ["succeeded", "failed", "dismissed"] as const) {
+        expired.push(
+          await ctx.db.insert(
+            "enrichmentJobs",
+            job({ referenceId, status, updatedAt: 10_000 }),
+          ),
+        );
+      }
+      const fresh = await ctx.db.insert(
+        "enrichmentJobs",
+        job({ referenceId, status: "failed", updatedAt: recent }),
+      );
+      return { live, expired, fresh };
+    });
+
+    expect(await t.mutation(internal.retention.sweep, {})).toMatchObject({ jobs: 3 });
+    await t.run(async (ctx) => {
+      for (const id of ids.expired) expect(await ctx.db.get(id)).toBeNull();
+      expect(await ctx.db.get(ids.fresh)).not.toBeNull();
+      for (const id of ids.live) expect(await ctx.db.get(id)).not.toBeNull();
+    });
+  });
+
+  it("caps job deletions per run across terminal statuses", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      const referenceId = await ctx.db.insert("references", {
+        kind: "image",
+        platform: "manual",
+        sourceUrl: "https://example.com/r",
+        capturedAt: 1,
+        boardIds: [],
+        tagIds: [],
+        favorite: false,
+        archived: false,
+        deleted: false,
+      });
+      for (let i = 0; i < 300; i++) {
+        await ctx.db.insert("enrichmentJobs", job({ referenceId, updatedAt: old + i }));
+        await ctx.db.insert(
+          "enrichmentJobs",
+          job({ referenceId, status: "failed", updatedAt: old + i }),
+        );
+      }
+    });
+
+    expect(await t.mutation(internal.retention.sweep, {})).toMatchObject({ jobs: 500 });
+    expect(await t.mutation(internal.retention.sweep, {})).toMatchObject({ jobs: 100 });
+    expect(await t.mutation(internal.retention.sweep, {})).toMatchObject({ jobs: 0 });
+  });
+
   it("re-arms a swept session when new observations arrive", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
