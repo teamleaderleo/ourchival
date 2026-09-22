@@ -75,21 +75,30 @@ export const record = internalMutation({
       if (existing.status !== "archived" && nextStatus === "archived") {
         archivedDelta += 1;
       }
-      await ctx.db.patch(existing._id, {
+      const changes = {
         ...(observation.sourceUrl && !existing.sourceUrl
           ? { sourceUrl: observation.sourceUrl }
           : {}),
-        status: nextStatus,
+        ...(nextStatus !== existing.status ? { status: nextStatus } : {}),
         ...(isRendered(nextStatus) && !existing.renderedAt
           ? { renderedAt: observation.observedAt }
           : {}),
         ...(nextStatus === "archived" && !existing.archivedAt
           ? { archivedAt: observation.observedAt }
           : {}),
-        error:
-          nextStatus === "failed"
-            ? (observation.error ?? existing.error)
-            : undefined,
+      };
+      const error =
+        nextStatus === "failed"
+          ? (observation.error ?? existing.error)
+          : undefined;
+      // Sessions re-report every observation they have seen. Rewriting
+      // unchanged rows produced tens of thousands of revisions per row.
+      if (Object.keys(changes).length === 0 && error === existing.error) {
+        continue;
+      }
+      await ctx.db.patch(existing._id, {
+        ...changes,
+        error,
         updatedAt: args.updatedAt,
       });
     }
