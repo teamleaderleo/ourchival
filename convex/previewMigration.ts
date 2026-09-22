@@ -1,6 +1,6 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { queueAsset } from "./mediaDerivatives";
+import { failStalledDerivativeJob, queueAsset } from "./mediaDerivatives";
 import { paginationOptsValidator } from "convex/server";
 
 const key = "compact-previews-v2";
@@ -86,10 +86,9 @@ export const advance = internalMutation({
           // Orphaned: the action behind this job is gone and never coming
           // back. Fail it loudly and keep draining; the streak guard below
           // still halts the migration on systemic failure.
-          await ctx.db.patch(item.jobId, {
-            status: "failed", error: "Preview action stalled; eligible for retry.",
-            completedAt: Date.now(), updatedAt: Date.now(),
-          });
+          // Shared with the cron's recovery so the asset leaves
+          // `processing` too instead of reading as in-flight forever.
+          await failStalledDerivativeJob(ctx, job, "Preview action stalled; eligible for retry.");
           failed++;
           failureStreak++;
           if (failures.length < 40) failures.push({ assetId: item.assetId, reason: "Preview action stalled" });
