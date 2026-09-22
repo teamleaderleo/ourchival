@@ -1,5 +1,9 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import {
+  CAPTURE_SESSION_TOUCH_RESOLUTION_MS,
+  timestampBumpDue,
+} from "./lib/timestampOnlyWrites";
 
 const observationStatus = v.union(
   v.literal("discovered"),
@@ -134,16 +138,30 @@ export const record = internalMutation({
     const discoveredCount = (session.discoveredCount ?? 0) + discoveredDelta;
     const renderedCount = (session.renderedCount ?? 0) + renderedDelta;
     const archivedCount = (session.archivedCount ?? 0) + archivedDelta;
-    await ctx.db.patch(session._id, {
-      discoveredCount,
-      renderedCount,
-      archivedCount,
-      // New rows re-arm the retention sweep for this session.
-      ...(session.observationsSweptAt !== undefined
-        ? { observationsSweptAt: undefined }
-        : {}),
-      updatedAt: args.updatedAt,
-    });
+    const countsChanged =
+      discoveredCount !== session.discoveredCount ||
+      renderedCount !== session.renderedCount ||
+      archivedCount !== session.archivedCount;
+    // New rows re-arm the retention sweep for this session.
+    const rearm =
+      session.observationsSweptAt !== undefined && discoveredDelta > 0;
+    if (
+      countsChanged ||
+      rearm ||
+      timestampBumpDue(
+        session.updatedAt,
+        args.updatedAt,
+        CAPTURE_SESSION_TOUCH_RESOLUTION_MS,
+      )
+    ) {
+      await ctx.db.patch(session._id, {
+        discoveredCount,
+        renderedCount,
+        archivedCount,
+        ...(rearm ? { observationsSweptAt: undefined } : {}),
+        updatedAt: args.updatedAt,
+      });
+    }
     return receipt(discoveredCount, renderedCount, archivedCount);
   },
 });

@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireOwnerAccess } from "./lib/privateAccess";
+import { patchChangesFields } from "./lib/timestampOnlyWrites";
 
 const reviewState = v.union(
   v.literal("unreviewed"),
@@ -79,8 +80,12 @@ export const syncRecent = mutation({
       };
 
       if (existing) {
-        await ctx.db.patch(existing._id, patch);
-        updated += 1;
+        // Re-syncing an already reconciled session is not activity: bumping
+        // updatedAt reshuffled listRecent and reset retention's TTL clock.
+        if (patchChangesFields(existing, patch, ["updatedAt"])) {
+          await ctx.db.patch(existing._id, patch);
+          updated += 1;
+        }
       } else {
         await ctx.db.insert("captureSessions", {
           sessionKey,
@@ -168,6 +173,7 @@ export const setReviewState = mutation({
     await requireOwnerAccess(args.accessKey);
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Capture session not found.");
+    if (session.reviewState === args.reviewState) return session;
     await ctx.db.patch(session._id, {
       reviewState: args.reviewState,
       updatedAt: Date.now(),

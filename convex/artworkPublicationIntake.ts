@@ -3,6 +3,7 @@ import { refreshDiscoveryReference } from "./lib/discoveryIndex";
 import { mutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireOwnerAccess } from "./lib/privateAccess";
+import { touchArtwork } from "./lib/artworkTouch";
 
 const maxUrlLength = 2048;
 
@@ -41,7 +42,7 @@ export const linkByUrl = mutation({
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.db.patch(args.artworkId, { updatedAt: now });
+    await touchArtwork(ctx, args.artworkId, now);
     await refreshDiscoveryReference(ctx, reference._id);
     return {
       publication: await ctx.db.get(publicationId),

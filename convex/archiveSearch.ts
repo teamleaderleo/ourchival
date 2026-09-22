@@ -5,8 +5,10 @@ import { requireOwnerAccess } from "./lib/privateAccess";
 import {
   clearReferenceSearchMarker,
   refreshReferenceSearch,
+  SEARCH_REBUILD_HEARTBEAT_MS,
   startSearchRebuild,
 } from "./lib/searchIndex";
+import { timestampBumpDue } from "./lib/timestampOnlyWrites";
 
 export const rebuild = mutation({
   args: { accessKey: v.string() },
@@ -54,7 +56,9 @@ export const rebuildPage = internalMutation({
     for (const reference of page.page)
       await refreshReferenceSearch(ctx, reference._id);
     if (!page.isDone) {
-      await ctx.db.patch(state._id, { updatedAt: Date.now() });
+      const now = Date.now();
+      if (timestampBumpDue(state.updatedAt, now, SEARCH_REBUILD_HEARTBEAT_MS))
+        await ctx.db.patch(state._id, { updatedAt: now });
       await ctx.scheduler.runAfter(0, internal.archiveSearch.rebuildPage, {
         generation: args.generation,
         cursor: page.continueCursor,

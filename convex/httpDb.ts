@@ -21,6 +21,11 @@ import { normalizeSourceUrl } from "./lib/urls";
 import { updateAssetTags, updateReferenceTags } from "./lib/tags";
 import { scheduleReferenceSearch } from "./lib/searchIndex";
 import { recordReferenceOrigin } from "./lib/referenceOrigin";
+import {
+  CAPTURE_SESSION_TOUCH_RESOLUTION_MS,
+  patchChangesFields,
+  timestampBumpDue,
+} from "./lib/timestampOnlyWrites";
 
 const CLIPPER_LAST_USED_RESOLUTION_MS = 10 * 60 * 1000;
 
@@ -284,9 +289,9 @@ export const upsertCaptureSession = internalMutation({
       failedCount: Math.max(existing?.failedCount ?? 0, args.failedCount),
     };
     if (existing) {
-      await ctx.db.patch(existing._id, {
+      const patch = {
         source: args.source,
-        kind: "import",
+        kind: "import" as const,
         ...(args.label ? { label: args.label } : {}),
         ...(args.sourceUrl ? { sourceUrl: args.sourceUrl } : {}),
         ...counts,
@@ -294,8 +299,21 @@ export const upsertCaptureSession = internalMutation({
         startedAt: Math.min(existing.startedAt, args.startedAt),
         completedAt: captureSessionCompletedAt(args.status, args.completedAt),
         updatedAt: args.updatedAt,
-      });
-      return await ctx.db.get(existing._id);
+      };
+      // Clients re-post unchanged progress; only let those through as an
+      // hourly updatedAt heartbeat rather than a revision per request.
+      if (
+        patchChangesFields(existing, patch, ["updatedAt"]) ||
+        timestampBumpDue(
+          existing.updatedAt,
+          args.updatedAt,
+          CAPTURE_SESSION_TOUCH_RESOLUTION_MS,
+        )
+      ) {
+        await ctx.db.patch(existing._id, patch);
+        return await ctx.db.get(existing._id);
+      }
+      return existing;
     }
     const sessionId = await ctx.db.insert("captureSessions", {
       sessionKey: args.sessionKey,
@@ -1049,7 +1067,9 @@ export const importLinkBatch = internalMutation({
       ...(completedCount === input.total ? { completedAt: now } : {}),
       updatedAt: now,
     };
-    await ctx.db.patch(session._id, patch);
+    // An empty batch at the cursor changes nothing but the timestamp.
+    if (patchChangesFields(session, patch, ["updatedAt"]))
+      await ctx.db.patch(session._id, patch);
     return linkBatchReceipt({ ...session, ...patch }, false);
   },
 });
