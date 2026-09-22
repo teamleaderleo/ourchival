@@ -8,7 +8,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 
 describe("clipper authentication", () => {
-  it("records last use at minute-level resolution instead of on every request", async () => {
+  it("records last use at 10-minute resolution instead of on every request", async () => {
     const t = convexTest(schema, modules);
     const deviceId = await t.run((ctx) =>
       ctx.db.insert("clipperDevices", {

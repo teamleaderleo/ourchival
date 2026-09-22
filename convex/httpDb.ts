@@ -18,11 +18,11 @@ import {
 import { validateLinkBatch, linkBatchReceipt } from "./lib/linkIntake";
 import { detectPlatform } from "./lib/platform";
 import { normalizeSourceUrl } from "./lib/urls";
-
-const CLIPPER_LAST_USED_RESOLUTION_MS = 10 * 60 * 1000;
 import { updateAssetTags, updateReferenceTags } from "./lib/tags";
 import { scheduleReferenceSearch } from "./lib/searchIndex";
 import { recordReferenceOrigin } from "./lib/referenceOrigin";
+
+const CLIPPER_LAST_USED_RESOLUTION_MS = 10 * 60 * 1000;
 
 export const initializeReferenceStats = internalMutation({
   args: {},
@@ -221,7 +221,7 @@ export const authenticateClipper = internalMutation({
     if (device.revokedAt)
       return { ok: false as const, reason: "revoked" as const };
     // Every clipper request authenticates here. Recording each use rewrote the
-    // device document tens of thousands of times; minute-level recency is enough.
+    // device document tens of thousands of times; 10-minute recency is enough.
     if (
       device.lastUsedAt === undefined ||
       args.usedAt - device.lastUsedAt >= CLIPPER_LAST_USED_RESOLUTION_MS
