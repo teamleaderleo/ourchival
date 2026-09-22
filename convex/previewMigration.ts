@@ -10,6 +10,14 @@ const interval = 60_000;
 // make the sweep twitchier about systemic rot.
 const maxFailureStreak = 4;
 
+// Drive-mirrored assets are served from their verified Drive twins, and the
+// drive feeder reclaims (deletes) any local preview/thumb blobs on the next
+// sweep while never refreshing an existing twin. Re-encoding them here only
+// burns a Sharp action whose output is thrown away, so the sweep skips them.
+function mirroredToDrive(asset: { drivePreviewFileId?: string; driveThumbFileId?: string }) {
+  return Boolean(asset.drivePreviewFileId && asset.driveThumbFileId);
+}
+
 export const inventory = internalQuery({
   args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
@@ -103,6 +111,11 @@ export const advance = internalMutation({
         upgraded++;
         reclaimedBytes += job.reclaimedBytes ?? 0;
         failureStreak = 0;
+      } else if (job?.status === "succeeded" && asset && mirroredToDrive(asset)) {
+        // Mirrored since queueing: the Drive twin serves, a re-encode would
+        // be reclaimed unused.
+        skipped++;
+        failureStreak = 0;
       } else if (job?.status === "succeeded" && asset) {
         // Succeeded under an older recipe: requeue for the compact version
         // instead of writing the asset off as failed.
@@ -133,7 +146,7 @@ export const advance = internalMutation({
         const retryPending = [];
         for (const failure of failures) {
           const asset = await ctx.db.get(failure.assetId);
-          if (!asset) continue;
+          if (!asset || mirroredToDrive(asset)) continue;
           const job = await queueAsset(ctx, asset, true);
           retryPending.push({ jobId: job._id, assetId: asset._id });
         }
@@ -151,6 +164,7 @@ export const advance = internalMutation({
     const page = await ctx.db.query("assets").paginate({ cursor: state.cursor, numItems: batchSize });
     for (const asset of page.page) {
       if (asset.derivativeVersion === 2 && asset.previewStorageId && asset.thumbStorageId) { alreadyCurrent++; continue; }
+      if (mirroredToDrive(asset)) { if (asset.derivativeVersion === 2) alreadyCurrent++; else skipped++; continue; }
       const reference = await ctx.db.get(asset.referenceId);
       if (!reference || reference.deleted || (!asset.driveFileId && !asset.originalStorageId)) { skipped++; continue; }
       const job = await queueAsset(ctx, asset, true);
