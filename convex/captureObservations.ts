@@ -138,6 +138,10 @@ export const record = internalMutation({
       discoveredCount,
       renderedCount,
       archivedCount,
+      // New rows re-arm the retention sweep for this session.
+      ...(session.observationsSweptAt !== undefined
+        ? { observationsSweptAt: undefined }
+        : {}),
       updatedAt: args.updatedAt,
     });
     return receipt(discoveredCount, renderedCount, archivedCount);

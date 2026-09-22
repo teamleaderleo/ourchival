@@ -283,6 +283,9 @@ export default defineSchema({
     error: v.optional(v.string()),
     resultSummary: v.optional(v.string()),
     reclaimedBytes: v.optional(v.number()),
+    // The scheduled processor run, so stale-job recovery can ask the
+    // scheduler whether the action is still alive. Absent on older jobs.
+    scheduledFunctionId: v.optional(v.id("_scheduled_functions")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -397,11 +400,20 @@ export default defineSchema({
     ),
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
+    // Set by the retention sweep once every aged observation for this
+    // session is gone, so drained sessions drop out of the sweep's index
+    // range. Cleared when new observations arrive.
+    observationsSweptAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_session_key", ["sessionKey"])
-    .index("by_updated_at", ["updatedAt"]),
+    .index("by_updated_at", ["updatedAt"])
+    .index("by_status_and_observations_swept_at_and_updated_at", [
+      "status",
+      "observationsSweptAt",
+      "updatedAt",
+    ]),
 
   captureObservations: defineTable({
     sessionKey: v.string(),

@@ -1,6 +1,6 @@
 import { internalMutation, internalQuery, mutation, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import {
   makeFunctionReference,
   type FunctionReference,
@@ -99,6 +99,9 @@ export const queueMissing = internalMutation({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Orphan recovery is a handful of indexed reads, so it runs even while
+    // the human browses; only the queueing below yields.
+    await recoverStaleDerivativeJobs(ctx);
     // Backstop only: capture hook and heal-on-view cover fresh needs, so
     // this sweep yields while the human browses like the other pipelines.
     if (await ctx.runQuery(internal.httpDb.foregroundActive, {})) {
@@ -298,6 +301,83 @@ export const fail = internalMutation({
   },
 });
 
+/**
+ * Records a derivative job whose processor died as failed, the same way the
+ * processor's own `fail` does, and moves its asset off `processing` so
+ * heal-on-view, forced enqueues and migration retry laps can pick it up.
+ * The asset is left alone if another run for it is still live.
+ */
+export async function failStalledDerivativeJob(
+  ctx: MutationCtx,
+  job: Doc<"enrichmentJobs">,
+  error: string,
+) {
+  const now = Date.now();
+  await ctx.db.patch(job._id, {
+    status: "failed",
+    completedAt: now,
+    error,
+    resultSummary: "Media derivatives could not be generated.",
+    updatedAt: now,
+  });
+  if (!job.assetId) return;
+  const asset = await ctx.db.get(job.assetId);
+  if (!asset || asset.referenceId !== job.referenceId) return;
+  if (asset.derivativeStatus !== "processing") return;
+  const siblings = await ctx.db
+    .query("enrichmentJobs")
+    .withIndex("by_reference_type", (q) =>
+      q.eq("referenceId", job.referenceId).eq("type", "media_derivatives"),
+    )
+    .take(100);
+  const otherLive = siblings.some(
+    (other) =>
+      other._id !== job._id &&
+      other.assetId === asset._id &&
+      (other.status === "queued" || other.status === "running"),
+  );
+  if (!otherLive) await ctx.db.patch(asset._id, { derivativeStatus: "failed" });
+}
+
+// A processor run lasts minutes (actions cap at 10); a job idle this long is
+// orphaned unless the scheduler still holds its run, and even a pending run
+// is written off after the hard cap so a wedged queue cannot pin assets.
+export const staleDerivativeJobMs = 30 * 60_000;
+export const scheduledDerivativeJobCapMs = 6 * 60 * 60_000;
+const staleDerivativeJobBatch = 8;
+export const stalledDerivativeJobError =
+  "Media derivative processor stalled; eligible for retry.";
+
+/** Bounded sweep of orphaned media derivative jobs, oldest first. */
+export async function recoverStaleDerivativeJobs(ctx: MutationCtx) {
+  const now = Date.now();
+  let recovered = 0;
+  let live = 0;
+  for (const status of ["running", "queued"] as const) {
+    const jobs = await ctx.db
+      .query("enrichmentJobs")
+      .withIndex("by_type_status", (q) =>
+        q.eq("type", "media_derivatives").eq("status", status),
+      )
+      .take(staleDerivativeJobBatch);
+    for (const job of jobs) {
+      const idleMs =
+        now - Math.max(job.createdAt, job.startedAt ?? 0, job.updatedAt);
+      if (idleMs < staleDerivativeJobMs) continue;
+      if (job.scheduledFunctionId && idleMs < scheduledDerivativeJobCapMs) {
+        const run = await ctx.db.system.get(job.scheduledFunctionId);
+        if (run && (run.state.kind === "pending" || run.state.kind === "inProgress")) {
+          live += 1;
+          continue;
+        }
+      }
+      await failStalledDerivativeJob(ctx, job, stalledDerivativeJobError);
+      recovered += 1;
+    }
+  }
+  return { recovered, live };
+}
+
 async function queueMissingAssets(ctx: any, limit: number) {
   const candidates = await ctx.db
     .query("assets")
@@ -373,7 +453,8 @@ export async function queueAsset(ctx: any, asset: any, force: boolean) {
     updatedAt: now,
   });
   await ctx.db.patch(asset._id, { derivativeStatus: "processing" });
-  await ctx.scheduler.runAfter(0, processMediaDerivatives, { jobId });
+  const scheduledFunctionId = await ctx.scheduler.runAfter(0, processMediaDerivatives, { jobId });
+  await ctx.db.patch(jobId, { scheduledFunctionId });
   const job = await ctx.db.get(jobId);
   if (!job) throw new Error("Could not create media derivative job.");
   return job;

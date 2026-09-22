@@ -89,6 +89,29 @@ test("orphaned queued jobs fail loudly while the migration keeps draining", asyn
   } finally { vi.useRealTimers(); }
 });
 
+test("a stalled migration job also moves its asset off processing", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.previewMigration.start, {});
+    const assetId = await t.run(async ctx => {
+      const ref = await ctx.db.insert("references", { kind: "image", platform: "manual", sourceUrl: "https://example.com", capturedAt: 1, boardIds: [], tagIds: [], favorite: false, archived: false, deleted: false });
+      const id = await ctx.db.insert("assets", { referenceId: ref, dominantColors: [], derivativeStatus: "processing" });
+      const jobId = await ctx.db.insert("enrichmentJobs", { referenceId: ref, assetId: id, type: "media_derivatives", status: "running", attempts: 1, requestedAt: 1, startedAt: 1, createdAt: 1, updatedAt: 1 });
+      const state = await ctx.db.query("previewMigrations").first();
+      await ctx.db.patch(state!._id, { pending: [{ assetId: id, jobId }], scanned: 1 });
+      return id;
+    });
+    await t.mutation(internal.previewMigration.advance, {});
+    await t.run(async ctx => {
+      const [job] = await ctx.db.query("enrichmentJobs").collect();
+      expect(job).toMatchObject({ status: "failed", error: expect.stringMatching(/stalled/) });
+      expect((await ctx.db.get(assetId))?.derivativeStatus).toBe("failed");
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+  } finally { vi.useRealTimers(); }
+});
+
 test("jobs that succeeded under an older recipe requeue instead of failing", async () => {
   vi.useFakeTimers();
   try {

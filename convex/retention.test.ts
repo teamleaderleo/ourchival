@@ -94,7 +94,7 @@ describe("retention sweep", () => {
     });
 
     const result = await t.mutation(internal.retention.sweep, {});
-    expect(result).toEqual({ observations: 1, jobs: 1 });
+    expect(result).toMatchObject({ observations: 1, jobs: 1 });
 
     await t.run(async (ctx) => {
       expect(await ctx.db.get(ids.oldObservation)).toBeNull();
@@ -105,6 +105,92 @@ describe("retention sweep", () => {
       expect(await ctx.db.get(ids.freshJob)).not.toBeNull();
       // Session receipts are never deleted.
       expect((await ctx.db.query("captureSessions").collect()).length).toBe(3);
+    });
+  });
+
+  it("reaches newer eligible sessions past long-running ones", async () => {
+    const t = convexTest(schema, modules);
+    const target = await t.run(async (ctx) => {
+      // 60 ancient running sessions used to fill the 50-row batch forever.
+      for (let i = 0; i < 60; i++) {
+        await ctx.db.insert(
+          "captureSessions",
+          session({ sessionKey: `running-${i}`, status: "running", updatedAt: old + i }),
+        );
+      }
+      await ctx.db.insert(
+        "captureSessions",
+        session({ sessionKey: "eligible", status: "interrupted", updatedAt: 1000 }),
+      );
+      return await ctx.db.insert(
+        "captureObservations",
+        observation({ sessionKey: "eligible" }),
+      );
+    });
+
+    const result = await t.mutation(internal.retention.sweep, {});
+    expect(result).toMatchObject({ observations: 1 });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(target)).toBeNull();
+    });
+  });
+
+  it("drops drained sessions so later runs make progress", async () => {
+    const t = convexTest(schema, modules);
+    const target = await t.run(async (ctx) => {
+      // 60 aged, already-empty completed sessions are older than the one
+      // that still has observations to sweep.
+      for (let i = 0; i < 60; i++) {
+        await ctx.db.insert(
+          "captureSessions",
+          session({ sessionKey: `drained-${i}`, updatedAt: old + i }),
+        );
+      }
+      await ctx.db.insert(
+        "captureSessions",
+        session({ sessionKey: "eligible", updatedAt: 1000 }),
+      );
+      return await ctx.db.insert(
+        "captureObservations",
+        observation({ sessionKey: "eligible" }),
+      );
+    });
+
+    await t.mutation(internal.retention.sweep, {});
+    await t.mutation(internal.retention.sweep, {});
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(target)).toBeNull();
+      const sessions = await ctx.db.query("captureSessions").collect();
+      expect(sessions).toHaveLength(61);
+      expect(sessions.every((s) => s.observationsSweptAt !== undefined)).toBe(true);
+      // Stamping the marker never moves the receipt's own timestamp.
+      expect(sessions.find((s) => s.sessionKey === "eligible")?.updatedAt).toBe(1000);
+    });
+    // Nothing left to read: a third run touches no sessions.
+    expect(await t.mutation(internal.retention.sweep, {})).toMatchObject({
+      observations: 0,
+      sessionsSwept: 0,
+    });
+  });
+
+  it("re-arms a swept session when new observations arrive", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("captureSessions", session({ observationsSweptAt: 5 }));
+    });
+    await t.mutation(internal.captureObservations.record, {
+      sessionKey: "s-key",
+      source: "clipper",
+      observations: [{ providerId: "late", status: "archived", observedAt: 2 }],
+      updatedAt: 2,
+    });
+    await t.run(async (ctx) => {
+      const [row] = await ctx.db.query("captureSessions").collect();
+      expect(row.observationsSweptAt).toBeUndefined();
+    });
+    expect(await t.mutation(internal.retention.sweep, {})).toMatchObject({
+      observations: 1,
+      sessionsSwept: 1,
     });
   });
 });
