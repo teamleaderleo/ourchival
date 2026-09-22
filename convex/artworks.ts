@@ -10,6 +10,8 @@ import {
   artworkStorageProvider,
 } from "./lib/artworkSchema";
 import { requireOwnerAccess } from "./lib/privateAccess";
+import { touchArtwork } from "./lib/artworkTouch";
+import { patchChangesFields } from "./lib/timestampOnlyWrites";
 
 const maxPageSize = 100;
 const maxRelatedRows = 100;
@@ -144,7 +146,7 @@ export const update = mutation({
     const completedAt = args.completedAt ?? artwork.completedAt;
     assertDateOrder(startedAt, completedAt);
 
-    await ctx.db.patch(args.artworkId, {
+    const patch = {
       ...(args.title !== undefined
         ? { title: cleanRequired(args.title, 160, "Artwork title is required.") }
         : {}),
@@ -153,7 +155,10 @@ export const update = mutation({
       ...(args.startedAt !== undefined ? { startedAt: args.startedAt } : {}),
       ...(args.completedAt !== undefined ? { completedAt: args.completedAt } : {}),
       updatedAt: Date.now(),
-    });
+    };
+    // Saving an unchanged form is not an edit; don't reorder the list for it.
+    if (!patchChangesFields(artwork, patch, ["updatedAt"])) return artwork;
+    await ctx.db.patch(args.artworkId, patch);
     return await ctx.db.get(args.artworkId);
   },
 });
@@ -243,7 +248,7 @@ export const updateRepresentation = mutation({
     validateDimensions(args.width, args.height);
     validateFileSize(args.fileSize);
     const now = Date.now();
-    await ctx.db.patch(args.representationId, {
+    const patch = {
       ...(args.fileName !== undefined
         ? { fileName: cleanOptional(args.fileName, 255) }
         : {}),
@@ -260,7 +265,10 @@ export const updateRepresentation = mutation({
         ? { sourceApplication: args.sourceApplication }
         : {}),
       updatedAt: now,
-    });
+    };
+    if (!patchChangesFields(representation, patch, ["updatedAt"]))
+      return representation;
+    await ctx.db.patch(args.representationId, patch);
     await touchArtwork(ctx, representation.artworkId, now);
     return await ctx.db.get(args.representationId);
   },
@@ -410,10 +418,6 @@ function validateRepresentationLocator(args: {
   if (!cleanUrl(args.linkedUrl)) {
     throw new Error("Linked representations require an absolute http(s) URL.");
   }
-}
-
-async function touchArtwork(ctx: MutationCtx, artworkId: Id<"artworks">, now: number) {
-  await ctx.db.patch(artworkId, { updatedAt: now });
 }
 
 function cleanRequired(value: string, maxLength: number, error: string) {

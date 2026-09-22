@@ -7,6 +7,7 @@ import {
 } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireOwnerAccess } from "./lib/privateAccess";
+import { touchArtwork } from "./lib/artworkTouch";
 
 const maxAssetsPerReference = 64;
 const maxRepresentationsPerHash = 12;
@@ -335,7 +336,7 @@ async function linkPublication(
     createdAt: now,
     updatedAt: now,
   });
-  await ctx.db.patch(artworkId, { updatedAt: now });
+  await touchArtwork(ctx, artworkId, now);
   await refreshDiscoveryReference(ctx, referenceId);
   return publicationId;
 }

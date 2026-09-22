@@ -212,6 +212,18 @@ export async function refreshReferenceSearch(
   } else await ctx.db.insert("referenceSearchDocuments", payload);
 }
 
+/**
+ * A rebuild that has not advanced updatedAt for this long is presumed dead and
+ * a new request restarts it instead of coalescing into it.
+ */
+const SEARCH_REBUILD_STALE_MS = 30 * 60_000;
+/**
+ * rebuildPage advances updatedAt as a liveness heartbeat. Writing it on every
+ * 4-reference page made the singleton almost all timestamp-only revisions;
+ * one beat a minute is plenty against the 30-minute stale window.
+ */
+export const SEARCH_REBUILD_HEARTBEAT_MS = 60_000;
+
 /** Rare board/project renames request a coalesced, paginated rebuild. */
 export async function startSearchRebuild(
   ctx: MutationCtx,
@@ -224,9 +236,9 @@ export async function startSearchRebuild(
   if (
     state?.rebuilding &&
     !restart &&
-    Date.now() - state.updatedAt < 30 * 60_000
+    Date.now() - state.updatedAt < SEARCH_REBUILD_STALE_MS
   ) {
-    await ctx.db.patch(state._id, { dirty: true });
+    if (!state.dirty) await ctx.db.patch(state._id, { dirty: true });
     return state.generation;
   }
   const generation = (state?.generation ?? 0) + 1;
