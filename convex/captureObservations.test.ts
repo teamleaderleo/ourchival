@@ -110,3 +110,29 @@ describe("capture observations", () => {
     });
   });
 });
+
+describe("capture observation writes", () => {
+  it("leaves an unchanged observation untouched when a session re-reports it", async () => {
+    const t = convexTest(schema, modules);
+    const report = (updatedAt: number) =>
+      t.mutation(internal.captureObservations.record, {
+        sessionKey: "x-likes-repeat",
+        source: "x_likes",
+        updatedAt,
+        observations: [{ providerId: "1", status: "discovered", observedAt: 90 }],
+      });
+    const row = () =>
+      t.run((ctx) =>
+        ctx.db
+          .query("captureObservations")
+          .withIndex("by_session_key_and_provider_id", (q) =>
+            q.eq("sessionKey", "x-likes-repeat").eq("providerId", "1"),
+          )
+          .unique(),
+      );
+
+    await report(100);
+    await report(200);
+    expect(await row()).toMatchObject({ status: "discovered", updatedAt: 100 });
+  });
+});

@@ -22,6 +22,8 @@ import { updateAssetTags, updateReferenceTags } from "./lib/tags";
 import { scheduleReferenceSearch } from "./lib/searchIndex";
 import { recordReferenceOrigin } from "./lib/referenceOrigin";
 
+const CLIPPER_LAST_USED_RESOLUTION_MS = 10 * 60 * 1000;
+
 export const initializeReferenceStats = internalMutation({
   args: {},
   handler: async (ctx) => await ensureReferenceStats(ctx),
@@ -218,7 +220,14 @@ export const authenticateClipper = internalMutation({
     if (!device) return { ok: false as const, reason: "invalid" as const };
     if (device.revokedAt)
       return { ok: false as const, reason: "revoked" as const };
-    await ctx.db.patch(device._id, { lastUsedAt: args.usedAt });
+    // Every clipper request authenticates here. Recording each use rewrote the
+    // device document tens of thousands of times; 10-minute recency is enough.
+    if (
+      device.lastUsedAt === undefined ||
+      args.usedAt - device.lastUsedAt >= CLIPPER_LAST_USED_RESOLUTION_MS
+    ) {
+      await ctx.db.patch(device._id, { lastUsedAt: args.usedAt });
+    }
     return {
       ok: true as const,
       deviceId: String(device._id),
